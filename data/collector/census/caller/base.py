@@ -7,6 +7,7 @@ import os, sys, argparse, urllib.parse
 class BaseCensusCaller(ABC):
     API_BASE = "https://api.census.gov/data"
     api_key = os.getenv("CENSUS_API_KEY")
+    column_dict = {}
 
     def __init__(self, dataset, column_dict):
         self.dataset = dataset
@@ -89,6 +90,8 @@ class BaseCensusCaller(ABC):
             df = pd.DataFrame(rows, columns=header)
             df = self.preprocess_df(df)
             df = BaseCensusCaller._add_geoid(df, level)
+            # rename columns
+            df = df.rename(columns=self.column_dict)
             return df
         except requests.exceptions.RequestException as e:
             raise Exception(f"Error calling Census API: {e}")

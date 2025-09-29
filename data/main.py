@@ -1,5 +1,5 @@
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
-from collector.census.main import CensusCollector
+from collector.census import CensusCollector
 
 if __name__ == "__main__":
     schema = {

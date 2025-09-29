@@ -1,12 +1,15 @@
-from ..base import BaseCollector
-from .caller import PopulationCaller
-from .caller import MobilityCaller
+from .mobility import MobilityCaller
+from .population import PopulationCaller
 
 
-class CensusCollector(BaseCollector):
+class CensusCollector:
+    caller_map = {}
+
     def __init__(self):
-        self.population_caller = PopulationCaller()
-        self.mobility_caller = MobilityCaller()
+        self.caller_map = {
+            "population": PopulationCaller(),
+            "mobility": MobilityCaller(),
+        }
 
     def collect(
         self,
@@ -17,9 +20,4 @@ class CensusCollector(BaseCollector):
         county: str | None,
         tract: str | None,
     ):
-        if type == "population":
-            return self.population_caller.call(level, year, state, county, tract)
-        elif type == "mobility":
-            return self.mobility_caller.call(level, year, state, county, tract)
-        else:
-            raise ValueError(f"Invalid type: {type}")
+        return self.caller_map[type].call(level, year, state, county, tract)

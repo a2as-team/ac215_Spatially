@@ -1,0 +1,37 @@
+name: "General Request"
+description: "Use this template for requests that do not fall under metric calculation, bug, or fix categories."
+title: "Request: [Short and clear title]"
+labels: ["🪖 General"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        📌 **General Request Template**  
+        Use this template for any requests that don't fall under a fix, metric, or bug. This can include new features, data needs, tooling, or process improvements.
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: "🎯 Purpose"
+      description: "Explain why this request is needed. What problem are you solving or what opportunity are you pursuing?"
+      placeholder: "The current zoning shapefiles are outdated and affect the accuracy of property type classification."
+
+  - type: textarea
+    id: request_details
+    attributes:
+      label: "🔧 Request Details"
+      description: "Describe exactly what you're requesting. Include file paths, links, visual aids, or specific deliverables."
+      placeholder: |
+        - Add new zoning shapefile to the preprocessing folder  
+        - Update the script to ingest the new layer  
+        - Ensure compatibility with metric XYZ  
+
+  - type: textarea
+    id: related_links
+    attributes:
+      label: "🔗 Related Resources (Optional)"
+      description: "Links to relevant data, documents, dashboards, or past issues."
+      placeholder: |
+        - [Project Plan](https://...)  
+        - [Zoning Dataset](https://...)  

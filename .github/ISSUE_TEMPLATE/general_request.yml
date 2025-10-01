@@ -34,4 +34,3 @@ body:
       description: "Links to relevant data, documents, dashboards, or past issues."
       placeholder: |
         - [Project Plan](https://...)  
-        - [Zoning Dataset](https://...)  

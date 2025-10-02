@@ -167,25 +167,25 @@ class ZoningCodeCollector(BaseCollector):
                 # If popup doesn't exist or can't be closed, that's fine
                 pass
 
-    def _get_section_names(self):
+    def _get_sections_with_buttons(self):
         """
-        Extract all section names from the table of contents (top-level list).
+        Extract all sections with their clickable buttons from TOC.
 
         Returns:
-            List[str]: Section names to process (excluded filtered out)
+            List[tuple]: (section_name, button_element, has_select_all, li_element)
         """
-        section_names = []
+        sections = []
 
         # Wait for the expandable TOC to load
         self._wait_for_element(By.CSS_SELECTOR, ".exp-toc", timeout=15)
-        time.sleep(2)  # Additional wait for Angular to render
+        time.sleep(1.5)  # Reduced from 2s - Angular render wait
 
-        # Collect headings from the top-level TOC
+        # Collect sections and buttons from the top-level TOC
         toc_items = self.driver.find_elements(By.CSS_SELECTOR, "ul.gen-toc-nav > li")
 
-        for item in toc_items:
+        for li_elem in toc_items:
             try:
-                heading_elem = item.find_element(By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]")
+                heading_elem = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]")
                 raw_name = heading_elem.text
                 section_name = self._normalize_heading(raw_name)
 
@@ -194,11 +194,21 @@ class ZoningCodeCollector(BaseCollector):
                     logger.info(f"Skipping excluded section: {section_name}")
                     continue
 
-                section_names.append(section_name)
+                # Try to find SELECT ALL button first
+                button = None
+                has_select_all = False
+                try:
+                    button = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                    has_select_all = True
+                except NoSuchElementException:
+                    # Fall back to checkbox selector
+                    button = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+
+                sections.append((section_name, button, has_select_all, li_elem))
             except NoSuchElementException:
                 continue
 
-        return section_names
+        return sections
 
     def _find_section_button(self, section_name):
         """
@@ -260,7 +270,7 @@ class ZoningCodeCollector(BaseCollector):
         btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
         return btn, False
 
-    def _wait_export_enabled(self, timeout=15):
+    def _wait_export_enabled(self, timeout=5):
         """
         Wait until the Export (.xlsx) button becomes enabled (aria-disabled != 'true').
 
@@ -344,18 +354,23 @@ class ZoningCodeCollector(BaseCollector):
         os.rename(old_path, new_path)
         logger.info(f"Renamed file to: {new_filename}")
 
-    def _retry_failed_sections(self, all_section_names, failed_section_names, max_retries=3):
+    def _retry_failed_sections(self, all_sections, failed_section_names, max_retries=3):
         """
         Retry downloading failed sections.
 
         Args:
-            all_sections: List of all (section_name, button, has_select_all) tuples
+            all_sections: List of all (section_name, button, has_select_all, li_elem) tuples
             failed_section_names: List of section names that failed
             max_retries: Maximum number of retry attempts
 
         Returns:
             dict: Results of retry attempts
         """
+        # Create lookup for failed sections
+        failed_lookup = {name: (btn, has_select_all, li_elem)
+                        for name, btn, has_select_all, li_elem in all_sections
+                        if name in failed_section_names}
+
         downloaded = 0
         still_failed = []
 
@@ -366,20 +381,33 @@ class ZoningCodeCollector(BaseCollector):
                 try:
                     logger.info(f"Retry {attempt + 1}/{max_retries} for: {section_name}")
 
-                    # Try to find the section button again (avoid stale references)
-                    select_all_btn, has_select_all = self._find_section_button(section_name)
+                    if section_name not in failed_lookup:
+                        logger.warning(f"Section not found in lookup: {section_name}")
+                        still_failed.append(section_name)
+                        break
+
+                    select_all_btn, has_select_all, li_elem = failed_lookup[section_name]
 
                     # Dismiss any popups
                     self._dismiss_popups()
-                    time.sleep(1)
+                    time.sleep(0.5)  # Reduced from 1s
 
                     # Scroll into view
                     self.driver.execute_script("arguments[0].scrollIntoView(true);", select_all_btn)
-                    time.sleep(1)
+                    time.sleep(0.5)  # Reduced from 1s
 
                     # Use JavaScript click to bypass popup interception
-                    self.driver.execute_script("arguments[0].click();", select_all_btn)
-                    time.sleep(1)
+                    try:
+                        self.driver.execute_script("arguments[0].click();", select_all_btn)
+                    except Exception:
+                        # Re-find within li if stale
+                        if has_select_all:
+                            select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                        else:
+                            select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+                        self.driver.execute_script("arguments[0].click();", select_all_btn)
+
+                    time.sleep(0.5)  # Reduced from 1s
 
                     # Wait for export enabled and click
                     export_btn = self._wait_export_enabled()
@@ -397,16 +425,24 @@ class ZoningCodeCollector(BaseCollector):
                         logger.info(f"✓ Successfully downloaded on retry: {section_name}")
 
                         # Deselect
-                        time.sleep(1)
-                        self.driver.execute_script("arguments[0].click();", select_all_btn)
-                        time.sleep(0.5)
+                        time.sleep(0.5)  # Reduced from 1s
+                        try:
+                            self.driver.execute_script("arguments[0].click();", select_all_btn)
+                        except Exception:
+                            # Re-find if needed
+                            if has_select_all:
+                                select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                            else:
+                                select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+                            self.driver.execute_script("arguments[0].click();", select_all_btn)
+                        time.sleep(0.3)  # Reduced from 0.5s
                         break
                     else:
                         logger.warning(f"Download timeout on retry {attempt + 1}")
 
                 except Exception as e:
                     logger.error(f"Retry {attempt + 1} failed for '{section_name}': {e}")
-                    time.sleep(2)  # Wait before next retry
+                    time.sleep(1)  # Reduced from 2s - Wait before next retry
 
             if not success:
                 still_failed.append(section_name)
@@ -443,42 +479,48 @@ class ZoningCodeCollector(BaseCollector):
             self._wait_for_element(By.CSS_SELECTOR, ".modal-content", timeout=10)
             time.sleep(2)
 
-            # Get all section names
-            section_names = self._get_section_names()
-            logger.info(f"Found {len(section_names)} sections to download")
+            # Get all sections with buttons upfront (O(n) instead of O(n²))
+            sections = self._get_sections_with_buttons()
+            logger.info(f"Found {len(sections)} sections to download")
 
             downloaded_count = 0
             failed_sections = []
 
+            # Dismiss popups once at the start
+            self._dismiss_popups()
+
             # Download each section
-            for section_name in section_names:
+            for section_name, clickable_btn, has_select_all, li_elem in sections:
                 try:
                     logger.info(f"Processing section: {section_name}")
 
-                    # Dismiss any popups that might interfere
-                    self._dismiss_popups()
-
-                    # Find the button fresh each iteration (avoid stale references)
-                    clickable_btn, has_select_all = self._find_section_button(section_name)
-
                     # Scroll element into view (center it inside the modal)
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", clickable_btn)
-                    time.sleep(0.6)
+                    time.sleep(0.3)  # Reduced from 0.6s
 
-                    # Click selection button; fall back to JS click
+                    # Click selection button with stale element recovery
                     try:
                         clickable_btn.click()
                     except Exception as e:
-                        logger.warning(f"Regular click failed, using JavaScript click: {e}")
-                        self.driver.execute_script("arguments[0].click();", clickable_btn)
-                    time.sleep(0.6)
+                        # Try JS click first
+                        try:
+                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                        except Exception:
+                            # If stale, re-find button quickly within the same li element
+                            logger.warning(f"Stale element, re-finding button for: {section_name}")
+                            if has_select_all:
+                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                            else:
+                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+
+                    time.sleep(0.3)  # Reduced from 0.6s
 
                     # Wait until Export is enabled, then click
                     export_btn = self._wait_export_enabled()
                     try:
                         export_btn.click()
-                    except Exception as e:
-                        logger.warning(f"Regular click on export failed, using JavaScript click: {e}")
+                    except Exception:
                         self.driver.execute_script("arguments[0].click();", export_btn)
 
                     # Wait for download to complete
@@ -490,12 +532,20 @@ class ZoningCodeCollector(BaseCollector):
                         failed_sections.append(section_name)
 
                     # Deselect all (click the same button again to reset)
-                    time.sleep(1)
+                    time.sleep(0.5)  # Reduced from 1s
                     try:
                         clickable_btn.click()
                     except Exception:
-                        self.driver.execute_script("arguments[0].click();", clickable_btn)
-                    time.sleep(0.5)
+                        try:
+                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                        except Exception:
+                            # Re-find if needed
+                            if has_select_all:
+                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                            else:
+                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                    time.sleep(0.2)  # Reduced from 0.5s
 
                 except Exception as e:
                     logger.error(f"Error downloading section '{section_name}': {e}")
@@ -504,19 +554,19 @@ class ZoningCodeCollector(BaseCollector):
             # Retry failed sections
             if failed_sections:
                 logger.info(f"\nRetrying {len(failed_sections)} failed sections...")
-                retry_results = self._retry_failed_sections(section_names, failed_sections)
+                retry_results = self._retry_failed_sections(sections, failed_sections)
                 downloaded_count += retry_results["downloaded"]
                 failed_sections = retry_results["failed_sections"]
 
             results = {
-                "total_sections": len(section_names),
+                "total_sections": len(sections),
                 "downloaded": downloaded_count,
                 "failed": len(failed_sections),
                 "failed_sections": failed_sections,
                 "download_directory": self.download_dir
             }
 
-            logger.info(f"Collection complete: {downloaded_count}/{len(section_names)} sections downloaded")
+            logger.info(f"Collection complete: {downloaded_count}/{len(sections)} sections downloaded")
             return results
 
         except Exception as e:

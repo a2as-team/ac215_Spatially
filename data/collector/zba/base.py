@@ -31,5 +31,6 @@ class BaseZBACollector(ABC):
         pass
 
     def collect(self):
-        self.collect_video_urls()
+        video_urls = self.collect_video_urls()
+        print(video_urls)
         self._transcribe_video_urls()

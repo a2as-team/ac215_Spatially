@@ -16,13 +16,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from collector.base import BaseCollector
+from collector.zoning_ordinance.base import ZoningOrdinanceBaseCollector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ChicagoZoningCollector(BaseCollector):
+class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
     """Collector for Chicago Municipal Code data from amlegal.com."""
 
     def __init__(self, headless: bool = True, download_dir: Optional[str] = None):
@@ -31,63 +31,14 @@ class ChicagoZoningCollector(BaseCollector):
         Args:
             headless: Whether to run Chrome in headless mode
             download_dir: Directory to save downloaded files. Defaults to
-                         collector/chicago/collected_data_chicago/
+                         collector/zoning_ordinance/chicago_collected_data/
         """
-        super().__init__()
-        self.headless = headless
+        super().__init__(headless=headless, download_dir=download_dir)
         self.base_url = "https://codelibrary.amlegal.com/codes/chicago/latest/overview"
 
-        # Set up download directory
-        if download_dir is None:
-            self.download_dir = Path(__file__).parent / "collected_data_chicago"
-        else:
-            self.download_dir = Path(download_dir)
-
-        self.download_dir.mkdir(parents=True, exist_ok=True)
-        self.download_dir = self.download_dir.resolve()
-
-        self.driver = None
-
-    def _setup_driver(self):
-        """Set up Chrome WebDriver with download preferences."""
-        chrome_options = Options()
-
-        if self.headless:
-            chrome_options.add_argument("--headless=new")
-
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-        # Set download preferences
-        prefs = {
-            "download.default_directory": str(self.download_dir),
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True,
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-
-        self.driver = webdriver.Chrome(options=chrome_options)
-        logger.info(f"Chrome WebDriver initialized (headless={self.headless})")
-
-        # Enable automatic downloads in headless mode via DevTools
-        try:
-            download_path = str(self.download_dir.resolve())
-            self.driver.execute_cdp_cmd("Page.setDownloadBehavior", {
-                "behavior": "allow",
-                "downloadPath": download_path
-            })
-            logger.info(f"Set download path via CDP: {download_path}")
-        except Exception as e:
-            logger.warning(f"Could not set download behavior via CDP: {e}")
-            # Best-effort; not all driver versions support this
-            pass
+    def _get_default_download_dir(self) -> Path:
+        """Get the default download directory for Chicago collector."""
+        return Path(__file__).parent / "chicago_collected_data"
 
     def _wait_for_download_complete(self, timeout: int = 600) -> bool:
         """Wait for download to complete by checking for .crdownload files.
@@ -398,9 +349,7 @@ class ChicagoZoningCollector(BaseCollector):
             results["errors"].append(error_msg)
 
         finally:
-            if self.driver:
-                self.driver.quit()
-                logger.info("Browser closed")
+            self._cleanup_driver()
 
         return results
 

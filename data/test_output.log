@@ -1,0 +1,96 @@
+/Users/devraj/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+INFO:collector.chicago.base:Chrome WebDriver initialized (headless=True)
+INFO:collector.chicago.base:Set download path via CDP: /Users/devraj/Documents/Development/ac215_Spatially/data/collector/chicago/collected_data_chicago
+INFO:collector.chicago.base:Starting Chicago zoning code collection
+INFO:collector.chicago.base:Target URL: https://codelibrary.amlegal.com/codes/chicago/latest/overview
+INFO:collector.chicago.base:Download directory: /Users/devraj/Documents/Development/ac215_Spatially/data/collector/chicago/collected_data_chicago
+INFO:collector.chicago.base:Loading page...
+INFO:collector.chicago.base:Waiting for page to load...
+INFO:collector.chicago.base:Searching for download button...
+INFO:collector.chicago.base:Trying selector: button[aria-label="Download"]
+INFO:collector.chicago.base:Found download button with selector: button[aria-label="Download"]
+INFO:collector.chicago.base:Clicking download button...
+INFO:collector.chicago.base:Waiting for download modal...
+INFO:collector.chicago.base:Modal opened
+INFO:collector.chicago.base:Searching for 'Municipal Code of Chicago' checkbox...
+INFO:collector.chicago.base:Found checkbox: Municipal Code of Chicago
+INFO:collector.chicago.base:Selecting checkbox...
+INFO:collector.chicago.base:Waiting for Download button to be enabled...
+INFO:collector.chicago.base:Found 2 buttons in modal footer
+INFO:collector.chicago.base:Button text: 'Cancel'
+INFO:collector.chicago.base:Button text: 'Download'
+INFO:collector.chicago.base:Selected download button: 'Download'
+INFO:collector.chicago.base:Clicking Download button...
+INFO:collector.chicago.base:Waiting for download to complete...
+INFO:collector.chicago.base:Waiting for download... (0s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (5s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (10s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (15s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (20s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (25s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (30s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (35s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (40s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (45s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (50s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (55s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (60s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (65s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (70s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (75s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (80s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (85s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (90s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (95s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (100s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (105s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (110s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (115s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (120s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (125s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (130s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (135s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (140s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (145s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (150s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (155s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (160s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (165s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (170s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (175s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (180s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (185s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (190s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (195s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (200s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (205s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (210s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (215s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (220s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (225s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (230s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (235s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (240s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (245s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (250s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (255s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (260s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (265s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (270s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (275s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (280s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (285s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (290s elapsed, 0 in progress, 0 completed)
+INFO:collector.chicago.base:Waiting for download... (295s elapsed, 0 in progress, 0 completed)
+ERROR:collector.chicago.base:Download did not complete within 300 seconds
+INFO:collector.chicago.base:Browser closed
+Creating collector...
+Collector created
+Headless: True
+Download dir: /Users/devraj/Documents/Development/ac215_Spatially/data/collector/chicago/collected_data_chicago
+URL: https://codelibrary.amlegal.com/codes/chicago/latest/overview
+
+Attempting collection...
+
+Results: {'success': False, 'files_downloaded': [], 'errors': ['Download did not complete in time']}

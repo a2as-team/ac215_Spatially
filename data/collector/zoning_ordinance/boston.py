@@ -12,13 +12,13 @@ import sys
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from collector.base import BaseCollector
+from collector.zoning_ordinance.base import ZoningOrdinanceBaseCollector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class ZoningCodeCollector(BaseCollector):
+class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
     """
     Collector for Boston zoning code data from Municode library.
     Uses Selenium to automate downloading Excel files for each zoning article.
@@ -42,21 +42,13 @@ class ZoningCodeCollector(BaseCollector):
         Args:
             headless (bool): Whether to run browser in headless mode
             download_dir (str): Directory to save downloaded files.
-                              Defaults to collected_data in the zoningcode directory.
+                              Defaults to boston_collected_data in the zoning_ordinance directory.
         """
-        self.headless = headless
-        zoningcode_dir = os.path.dirname(__file__)
-        if download_dir is None or str(download_dir).strip() == "":
-            self.download_dir = os.path.join(zoningcode_dir, "collected_data")
-        else:
-            # If a relative path is provided, make it relative to the zoningcode directory
-            self.download_dir = (
-                download_dir if os.path.isabs(download_dir) else os.path.join(zoningcode_dir, download_dir)
-            )
+        super().__init__(headless=headless, download_dir=download_dir)
 
-        # Create download directory if it doesn't exist
-        os.makedirs(self.download_dir, exist_ok=True)
-        self.driver = None
+    def _get_default_download_dir(self) -> Path:
+        """Get the default download directory for Boston collector."""
+        return Path(__file__).parent / "boston_collected_data"
 
     def _normalize_heading(self, text):
         """
@@ -68,41 +60,6 @@ class ZoningCodeCollector(BaseCollector):
             return ""
         normalized = " ".join(text.split())
         return normalized.strip()
-
-    def _setup_driver(self):
-        """Initialize Chrome WebDriver with appropriate options."""
-        chrome_options = Options()
-
-        if self.headless:
-            # Use new headless for better compatibility with downloads
-            chrome_options.add_argument("--headless=new")
-
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--window-size=1920,1080")
-
-        # Set download preferences
-        prefs = {
-            "download.default_directory": os.path.abspath(self.download_dir),
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": False
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-
-        self.driver = webdriver.Chrome(options=chrome_options)
-        logger.info("WebDriver initialized successfully")
-
-        # Enable automatic downloads in headless mode via DevTools
-        try:
-            download_path = os.path.abspath(self.download_dir)
-            self.driver.execute_cdp_cmd("Page.setDownloadBehavior", {
-                "behavior": "allow",
-                "downloadPath": download_path
-            })
-        except Exception:
-            # Best-effort; not all driver versions support this
-            pass
 
     def _wait_for_element(self, by, value, timeout=10):
         """
@@ -573,6 +530,4 @@ class ZoningCodeCollector(BaseCollector):
             logger.error(f"Collection failed: {e}")
             raise
         finally:
-            if self.driver:
-                self.driver.quit()
-                logger.info("WebDriver closed")
+            self._cleanup_driver()

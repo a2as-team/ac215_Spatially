@@ -531,3 +531,28 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             raise
         finally:
             self._cleanup_driver()
+
+    def validate(self, data: dict) -> bool:
+        """
+        Validate the collected data.
+
+        Args:
+            data: The collection results to validate
+
+        Returns:
+            True if validation passes, False otherwise
+        """
+        if not data:
+            logger.error("No data provided for validation")
+            return False
+
+        if data.get("failed", 0) > 0:
+            logger.warning(f"Collection had {data['failed']} failed sections")
+            # Not a hard failure - some sections may fail
+
+        if data.get("downloaded", 0) == 0:
+            logger.error("No sections were downloaded")
+            return False
+
+        logger.info("Validation passed")
+        return True

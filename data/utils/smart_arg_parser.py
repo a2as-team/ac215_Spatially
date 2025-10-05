@@ -3,6 +3,22 @@ from dataclasses import dataclass
 from typing import Optional, Any
 
 
+def str_to_bool(value: str) -> bool:
+    """
+    Convert string to boolean.
+
+    Accepts: true, false (case-insensitive)
+    """
+    if isinstance(value, bool):
+        return value
+    if value.lower() == 'true':
+        return True
+    elif value.lower() == 'false':
+        return False
+    else:
+        raise ValueError(f"Invalid value '{value}'. Please enter 'true' or 'false'")
+
+
 @dataclass
 class SmartArgItem:
     """
@@ -60,7 +76,8 @@ class SmartArgParser:
             if config.action:
                 kwargs["action"] = config.action
             else:
-                kwargs["type"] = config.arg_type
+                # Use str_to_bool for boolean types to handle "True"/"False" strings
+                kwargs["type"] = str_to_bool if config.arg_type is bool else config.arg_type
                 if config.choices:
                     kwargs["choices"] = config.choices
 
@@ -88,7 +105,9 @@ class SmartArgParser:
 
             # 3) convert type
             try:
-                return cfg.arg_type(raw)
+                # Use str_to_bool for boolean types
+                converter = str_to_bool if cfg.arg_type is bool else cfg.arg_type
+                return converter(raw)
             except Exception as e:
                 print(f"⚠️  Could not convert '{raw}': {e}")
 

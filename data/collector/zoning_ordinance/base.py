@@ -85,10 +85,16 @@ class ZoningOrdinanceBaseCollector(BaseCollector, ABC):
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
 
-        # Anti-detection
+        # Enhanced anti-detection measures
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
+
+        # Additional anti-detection for Cloudflare and similar
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--allow-running-insecure-content")
+        chrome_options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
         # Set download preferences
         prefs = {
@@ -96,11 +102,24 @@ class ZoningOrdinanceBaseCollector(BaseCollector, ABC):
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
+            "profile.default_content_setting_values.notifications": 2,
         }
         chrome_options.add_experimental_option("prefs", prefs)
 
         self.driver = webdriver.Chrome(options=chrome_options)
         logger.info(f"Chrome WebDriver initialized (headless={self.headless})")
+
+        # Set navigator.webdriver to undefined to avoid detection
+        try:
+            self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": """
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """
+            })
+        except Exception as e:
+            logger.warning(f"Could not set webdriver property: {e}")
 
         # Enable automatic downloads in headless mode via DevTools
         try:

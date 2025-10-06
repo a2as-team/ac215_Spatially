@@ -1,45 +1,71 @@
-# Reports Collector (Modular)
+# Reports Collector (Modular) — Lee & Associates
 
-This module provides a small, extensible framework for collecting research report PDFs and storing them with consistent, human-readable names and folders. It includes a concrete integration for **Lee & Associates**.
+A small, extensible framework to collect report PDFs with consistent names.
+This module includes a concrete collector for **Lee & Associates** reports.
 
-## Quickstart
-
+## Install
 ```bash
-# Install minimal deps
 pip install requests beautifulsoup4
+Python 3.8+ supported. This module uses typing.List/Union for 3.8 compatibility.
 
-# Preview only (no downloads)
-python -m data.collector.reports.run --limit 20 --dry-run
+CLI (run from repo root)
+The CLI mirrors the census SmartArg style. If utils.smart_arg_parser is missing, it falls back to argparse.
 
-# Download a small sample
-python -m data.collector.reports.run --limit 40
-```
+1) Discover options (report types / locations / years)
+bash
+复制代码
+python -m data.collector.reports.run --source lee_and_associates --action options --limit 20
+2) List URLs (no download)
+bash
+复制代码
+python -m data.collector.reports.run --source lee_and_associates --action list --limit 20
+python -m data.collector.reports.run --source lee_and_associates --action list \
+  --report-type Industrial --location "United States/GA/Atlanta" --year 2024 --limit 50
+3) Download a filtered subset
+bash
+复制代码
+python -m data.collector.reports.run --source lee_and_associates --action download \
+  --report-type Industrial --location "United States/GA/Atlanta" --year 2024 --limit 50
+# dry run first
+python -m data.collector.reports.run --source lee_and_associates --action download --dry-run --limit 10
+Output layout (per review)
+Files are saved under the source-specific folder:
 
-Downloaded files are saved to:
-```
-data/collector/reports/downloads/<report_type>/<location>/<year>/<standardized-filename>.pdf
-```
+php-template
+复制代码
+data/collector/reports/lee_and_associates/downloads/<report_type>/<location>/<year>/<standardized-filename>.pdf
+Add to .gitignore:
 
-Example:
-```
-data/collector/reports/downloads/
-  industrial/
-    united-states/ga/atlanta/2024/2024-q4-united-states-ga-atlanta-industrial.pdf
-  north-america-market-report/
-    north-america/2024/2024-q2-north-america-north-america-market-report.pdf
-```
+swift
+复制代码
+data/collector/reports/lee_and_associates/downloads/
+Public API
+Base (BaseReportCollector)
 
-> Tip: add `data/collector/reports/downloads/` to `.gitignore` to avoid committing large binaries.
+get_downloadable_file_urls(limit=None) -> List[str]
 
-## Architecture
+download_urls(urls, dest_dir, filename_fn=None, dry_run=False)
 
-- **`BaseReportCollector`** (`data/collector/reports/base.py`)
-  - Unified `ReportItem` dataclass
-  - `fetch_select_options()` — derive **Report Type / Location / Year** from discoverable PDFs
-  - `iter_reports(limit=None)` — iterate normalized items
-  - `download_all(dest_root, ...)` — store in a standard layout and filenames
-- **`LeeAndAssociatesCollector`** (`data/collector/reports/lee_and_associates.py`)
-  - Paginates `/research/`, discovers direct PDF links, parses year/quarter/type/location from filenames, with fallbacks
-- **CLI** (`data/collector/reports/run.py`)
-  - `--dry-run` to preview, `--limit` to keep runs small
+get_select_options(limit=None) (optional)
 
+Lee & Associates (LeeAndAssociatesCollector)
+
+get_select_options(limit=None) -> dict
+
+list_urls_for(report_type=None, location=None, year=None, limit=None) -> List[str]
+
+download_for_options(report_type, location, year, dest_root, dry_run=False, limit=None) -> List[str]
+
+Dev workflow (short)
+Create a feature branch (e.g., feat/lee-and-associates-collector)
+
+Commit small changes; open a PR
+
+Use Issues to track review items and TODOs
+
+Keep downloads out of git (.gitignore above)
+
+Troubleshooting
+Slow/no output: add --limit 10/20 and try --dry-run
+
+Python 3.8 typing errors: ensure you’re on this module version

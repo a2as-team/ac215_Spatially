@@ -1,96 +1,75 @@
 from __future__ import annotations
 
 import os
-import urllib.request
-from dataclasses import dataclass
-from typing import Iterator, Optional
+import re
 import time
+import pathlib
+from abc import ABC, abstractmethod
+from typing import Callable, Iterable, List, Optional, Union
 
 
-@dataclass
-class ReportItem:
-    """Represents a single report item with metadata."""
-    url: str
-    title: str
-    report_type: str
-    location: str
-    year: int
-    quarter: Optional[str] = None
-    extra: Optional[dict] = None
+class BaseReportCollector(ABC):
+    """
+    Minimal, generic base for *any* report source.
+    - Does NOT assume pagination, HTML, or a specific data model.
+    - Provides a common downloader for a list of URLs.
+    - Subclasses must implement `get_downloadable_file_urls()`.
+    - Subclasses may implement `get_select_options()` if the source supports options.
+    - Subclasses can also expose convenience methods like `list_urls_for(...)`.
+    """
 
+    def __init__(self, polite_delay_sec: float = 0.5):
+        self.polite_delay_sec = polite_delay_sec
 
-class BaseReportCollector:
-    """Base class for report collectors."""
-    
-    def __init__(self):
-        self.session = None
-    
-    def _fetch(self, url: str) -> str:
-        """Fetch HTML content from URL with basic error handling."""
-        try:
-            with urllib.request.urlopen(url) as response:
-                return response.read().decode('utf-8')
-        except Exception as e:
-            print(f"Error fetching {url}: {e}")
-            return ""
-    
-    def fetch_select_options(self) -> dict:
-        """Fetch and return select options for filtering reports."""
-        # Default implementation - can be overridden by subclasses
-        return {}
-    
-    def iter_reports(self, limit: Optional[int] = None) -> Iterator[ReportItem]:
-        """Iterate through all available reports."""
-        count = 0
-        for page_url in self._iter_report_pages():
-            for item in self._parse_report_links(page_url):
-                if limit and count >= limit:
-                    return
-                yield item
-                count += 1
-    
-    def _iter_report_pages(self) -> Iterator[str]:
-        """Iterate through pagination URLs. Must be implemented by subclasses."""
+    # ---------- Required ----------
+    @abstractmethod
+    def get_downloadable_file_urls(self, limit: Optional[int] = None) -> List[str]:
+        """Return a list of downloadable file URLs (typically PDFs)."""
         raise NotImplementedError
-    
-    def _parse_report_links(self, html_url: str) -> Iterator[ReportItem]:
-        """Parse report links from HTML page. Must be implemented by subclasses."""
-        raise NotImplementedError
-    
-    def download_all(self, dest_dir: str, dry_run: bool = False) -> list[str]:
-        """Download all reports to destination directory."""
-        downloaded_files = []
-        os.makedirs(dest_dir, exist_ok=True)
-        
-        for item in self.iter_reports():
-            filename = self._generate_filename(item)
-            filepath = os.path.join(dest_dir, filename)
-            
+
+    # ---------- Optional (per-source) ----------
+    def get_select_options(self, limit: Optional[int] = None) -> dict:
+        """Return available select options (e.g., report_types/locations/years) if applicable."""
+        raise NotImplementedError("This source does not expose select options.")
+
+    # ---------- Common utility ----------
+    def download_urls(
+        self,
+        urls: Iterable[str],
+        dest_dir: Union[str, os.PathLike],
+        filename_fn: Optional[Callable[[str], str]] = None,
+        dry_run: bool = False,
+    ) -> List[str]:
+        """
+        Download a set of URLs into `dest_dir`. Returns list of local filepaths.
+        - `filename_fn(url) -> str` lets subclasses decide filenames; default uses the URL basename.
+        - No assumptions about metadata; suitable for sources without pages/options.
+        """
+        import urllib.request
+
+        outdir = pathlib.Path(dest_dir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        saved: List[str] = []
+
+        for url in urls:
+            fname = filename_fn(url) if filename_fn else _basename(url)
+            outpath = outdir / fname
             if dry_run:
-                print(f"Would download: {item.title} -> {filepath}")
-                downloaded_files.append(filepath)
-            else:
-                try:
-                    self._download_file(item.url, filepath)
-                    print(f"Downloaded: {item.title} -> {filepath}")
-                    downloaded_files.append(filepath)
-                    # Add small delay to be respectful to the server
-                    time.sleep(0.5)
-                except Exception as e:
-                    print(f"Failed to download {item.url}: {e}")
-        
-        return downloaded_files
-    
-    def _generate_filename(self, item: ReportItem) -> str:
-        """Generate filename for report item."""
-        # Clean up title for filename
-        safe_title = "".join(c for c in item.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        safe_title = safe_title.replace(' ', '_')
-        return f"{item.year}_{item.quarter or 'Q0'}_{safe_title}.pdf"
-    
-    def _download_file(self, url: str, filepath: str):
-        """Download file from URL to filepath."""
-        with urllib.request.urlopen(url) as response:
-            with open(filepath, 'wb') as f:
-                f.write(response.read())
+                print(f"Would download: {url} -> {outpath}")
+                saved.append(str(outpath))
+                continue
 
+            try:
+                with urllib.request.urlopen(url) as r, open(outpath, "wb") as f:
+                    f.write(r.read())
+                saved.append(str(outpath))
+                time.sleep(self.polite_delay_sec)
+            except Exception as e:
+                print(f"Failed to download {url}: {e}")
+        return saved
+
+
+def _basename(url: str) -> str:
+    name = url.split("/")[-1]
+    name = re.sub(r"[^\w.\-]+", "-", name)
+    return name

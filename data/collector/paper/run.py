@@ -5,8 +5,8 @@ from mdpi_land import MDPICollector
 
 if __name__ == "__main__":
     # Example CLI-ish usage:
-    #   python mdpi_collector.py           -> dump latest from page 1
-    #   python mdpi_collector.py crime 3   -> search 'crime' across 3 pages
+    #   python run.py           -> dump latest from page 1
+    #   python run.py crime 3   -> search 'crime' across 3 pages
     query = None
     pages = 1
     if len(sys.argv) >= 2:

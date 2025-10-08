@@ -1,42 +1,17 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
+from pathlib import Path
 import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 
-
 class BasePaperCollector(ABC):
-    """
-    Abstract base class for journal collectors that download PDF articles.
-
-    Subclasses should implement the site-specific pieces:
-      - home_url
-      - build_search_url
-      - collect_article_links_from_results
-      - find_pdf_link_on_article
-
-    This base class manages:
-      - Selenium driver lifecycle
-      - Headless/non-headless options (non-headless often helps avoid 403)
-      - A polite sleep between requests
-      - Waiting for Chrome downloads to finish
-      - Two public methods:
-          * download_all_dump(...)
-          * download_by_keyword(...)
-
-    Design notes:
-      - We keep the 'how to get article links' and 'how to get the PDF link
-        from an article page' abstract so different publishers can plug in.
-      - Returns a list of file paths downloaded.
-    """
-
     def __init__(
         self,
         out_dir: str | Path = "downloads/journals",
-        headless: bool = False,
+        headless: bool = True,
         per_page_timeout_s: int = 25,
         polite_sleep_s: float = 1.2,
         download_wait_s: int = 90,
@@ -55,11 +30,6 @@ class BasePaperCollector(ABC):
         self._wait: Optional[WebDriverWait] = None
 
     # ---------- Required, site-specific pieces ----------
-    @property
-    @abstractmethod
-    def site_name(self) -> str:
-        """A short identifier for the site (e.g., 'mdpi')."""
-
     @abstractmethod
     def home_url(self) -> str:
         """Landing page to initiate the session (e.g., journal root)."""
@@ -72,36 +42,21 @@ class BasePaperCollector(ABC):
         """
 
     @abstractmethod
-    def collect_article_links_from_results(self) -> List[str]:
+    def collect_article_links(self) -> List[str]:
         """
         On the current results page (already loaded in driver),
         return absolute article URLs to visit.
         """
 
     @abstractmethod
-    def find_pdf_link_on_article(self) -> Optional[str]:
+    def find_pdf_link(self) -> Optional[str]:
         """
         On the current article page (already loaded), return the absolute PDF URL.
         Return None if not found.
         """
 
-    # ---------- Public API: two required functions ----------
-    def download_all_dump(self, *, max_pages: int = 1) -> List[Path]:
-        """
-        Download PDFs from the latest listings (page 1..max_pages).
-        """
-        return self._run(query=None, max_pages=max_pages)
-
-    def download_by_keyword(self, *, query: str, max_pages: int = 1) -> List[Path]:
-        """
-        Download PDFs matching a keyword from the search listing (page 1..max_pages).
-        """
-        query = (query or "").strip()
-        return self._run(query=query, max_pages=max_pages)
-
-    # ---------- Core flow (shared) ----------
-    def _run(self, *, query: Optional[str], max_pages: int) -> List[Path]:
-        dl_dir = (self.out_dir / self.site_name).resolve()
+    def collect(self, *, query: Optional[str], max_pages: int) -> List[Path]:
+        dl_dir = (self.out_dir / query).resolve()
         dl_dir.mkdir(parents=True, exist_ok=True)
 
         driver, wait = self._ensure_driver(download_dir=dl_dir)
@@ -117,7 +72,7 @@ class BasePaperCollector(ABC):
                 driver.get(self.build_search_url(page=page, query=query))
                 time.sleep(self.polite_sleep_s)
 
-                article_links = self.collect_article_links_from_results()
+                article_links = self.collect_article_links()
                 if not article_links:
                     break
 
@@ -128,7 +83,7 @@ class BasePaperCollector(ABC):
 
                     try:
                         # Let subclass find the PDF link
-                        pdf_url = self.find_pdf_link_on_article()
+                        pdf_url = self.find_pdf_link()
 
                         # One gentle refresh attempt if missing (sites build DOM via JS)
                         if not pdf_url:

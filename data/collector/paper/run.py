@@ -1,33 +1,54 @@
-import os
 import sys
 from pathlib import Path
-from mdpi_land import MDPICollector
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.smart_arg_parser import SmartArgItem, SmartArgParser
+from collector.paper import PaperCollector
 
 if __name__ == "__main__":
-    # Example CLI-ish usage:
-    #   python run.py           -> dump latest from page 1
-    #   python run.py crime 3   -> search 'crime' across 3 pages
-    query = None
-    pages = 1
-    if len(sys.argv) >= 2:
-        query = sys.argv[1] if sys.argv[1].lower() != "none" else None
-    if len(sys.argv) >= 3:
-        pages = int(sys.argv[2])
+    # Define schema for CLI arguments
+    schema = {
+        "query": SmartArgItem(
+            flags=["--query"],
+            prompt="Search keyword (type 'none' for latest papers)",
+            arg_type=str,
+            required=False,
+        ),
+        "pages": SmartArgItem(
+            flags=["--pages"],
+            prompt="Number of pages to scrape",
+            arg_type=int,
+            required=False,
+        ),
+        "journal": SmartArgItem(
+            flags=["--journal"],
+            prompt="MDPI journal slug (e.g., land, sensors, electronics)",
+            arg_type=str,
+            required=False,
+        ),
+        "provider": SmartArgItem(
+            flags=["--provider"],
+            prompt="Paper provider (default: mdpi)",
+            arg_type=str,
+            required=False,
+        ),
+    }
 
-    collector = MDPICollector(
-        journal="land",
-        out_dir="downloads/mdpi",
-        headless=False,            # try non-headless first if you’ve seen 403s
-        per_page_timeout_s=25,
-        polite_sleep_s=1.2,
-        download_wait_s=90,
+    parser = SmartArgParser(schema)
+    args = parser.parse()
+
+    # Fallback defaults if user skipped some arguments
+    query = args.get("query")
+    if query and query.lower() == "none":
+        query = None
+    pages = args.get("pages", 1)
+    journal = args.get("journal", "land").lower()
+    provider = args.get("provider", "mdpi").lower()
+
+    # Run collector
+    paper_collector = PaperCollector()
+    paper_collector.collect(
+        provider=provider,
+        journal=journal,
+        query=query,
+        pages=pages,
     )
-
-    if query:
-        files = collector.download_by_keyword(query=query, max_pages=pages)
-    else:
-        files = collector.download_all_dump(max_pages=pages)
-
-    print(f"Downloaded {len(files)} files:")
-    for f in files:
-        print(" -", f)

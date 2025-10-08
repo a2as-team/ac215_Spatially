@@ -1,15 +1,16 @@
 from __future__ import annotations
 from typing import List, Optional
 from urllib.parse import urljoin
-import time
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 
-from base import BasePaperCollector
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from collector.paper.base import BasePaperCollector
 
 BASE = "https://www.mdpi.com"
-
 
 class MDPICollector(BasePaperCollector):
     """
@@ -29,10 +30,6 @@ class MDPICollector(BasePaperCollector):
         super().__init__(**kwargs)
         self.journal = journal
 
-    @property
-    def site_name(self) -> str:
-        return f"mdpi_{self.journal}"
-
     def home_url(self) -> str:
         return f"{BASE}/journal/{self.journal}"
 
@@ -45,7 +42,7 @@ class MDPICollector(BasePaperCollector):
             f"&sort=pubdate&page_no={page}"
         )
 
-    def collect_article_links_from_results(self) -> List[str]:
+    def collect_article_links(self) -> List[str]:
         driver, wait = self._driver, self._wait
         assert driver and wait
 
@@ -69,7 +66,7 @@ class MDPICollector(BasePaperCollector):
 
         return sorted(links)
 
-    def find_pdf_link_on_article(self) -> Optional[str]:
+    def find_pdf_link(self) -> Optional[str]:
         driver, wait = self._driver, self._wait
         assert driver and wait
 

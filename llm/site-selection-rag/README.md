@@ -242,16 +242,14 @@ python cli.py --chunk --chunk_type semantic-split
 2. Run the pipeline: `python cli.py --chunk --embed --load --chunk_type semantic-split`
 3. Query: `python query.py "your question" --category "{category}"`
 
-## Future Improvements
+## TODO
 
 ### 1. Better PDF Parsers
 
-The current system uses `pypdf` for PDF text extraction. Consider upgrading to more robust parsers:
+The current system uses `pypdf` for PDF text extraction. Consider upgrading to (better?) parsers:
 
 - **[PyMuPDF](https://pypi.org/project/PyMuPDF/)**: Fast and accurate PDF parsing with better layout preservation
 - **[pymupdf4llm](https://pypi.org/project/pymupdf4llm/)**: Optimized for LLM workflows with markdown output and semantic structure
-
-**Benefits**: Improved text extraction quality, better handling of complex layouts, tables, and figures in academic papers.
 
 ### 2. Pre and Post Optimization
 
@@ -260,21 +258,7 @@ Implement query optimization and result enhancement:
 - **Pre-optimization**: Query expansion, reformulation, or multi-query generation before retrieval
 - **Post-optimization**: Result reranking, deduplication, or context filtering after retrieval
 
-**Benefits**: Higher quality context for the LLM, more relevant answers, reduced hallucination.
-
 ### 3. Different Models for Embedding and Generation
 
-Experiment with alternative models:
-
-**Embedding Models:**
-- `text-embedding-005` (newer Vertex AI model)
-- `textembedding-gecko@003`
-- OpenAI `text-embedding-3-large`
-
-**Generative Models:**
-- `gemini-1.5-pro` (more capable, higher cost)
-- `gemini-2.0-flash-thinking-exp` (with reasoning)
-- Claude via Vertex AI
-
-**Benefits**: Performance benchmarking, cost optimization, task-specific model selection.
+Experiment with alternative embedding and generative models.
 

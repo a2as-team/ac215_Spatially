@@ -1,4 +1,4 @@
-# Site Selection RAG System
+# RAG System (MDPI Land Journal)
 
 A Retrieval-Augmented Generation (RAG) system for real estate site selection, urban planning, and zoning analysis. This system processes academic research papers from the MDPI Land journal to provide insights for development projects.
 

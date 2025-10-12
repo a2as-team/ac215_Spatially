@@ -244,21 +244,9 @@ python cli.py --chunk --chunk_type semantic-split
 
 ## TODO
 
-### 1. Better PDF Parsers
+**1. Add Better PDF Parsers**: The current system uses `pypdf` for PDF text extraction. Consider upgrading to (better?) parsers: [PyMuPDF](https://pypi.org/project/PyMuPDF/), [pymupdf4llm](https://pypi.org/project/pymupdf4llm/).
+  
+**2. Incorporate Pre and Post Optimization**: Implement query optimization and result enhancement.
 
-The current system uses `pypdf` for PDF text extraction. Consider upgrading to (better?) parsers:
-
-- **[PyMuPDF](https://pypi.org/project/PyMuPDF/)**: Fast and accurate PDF parsing with better layout preservation
-- **[pymupdf4llm](https://pypi.org/project/pymupdf4llm/)**: Optimized for LLM workflows with markdown output and semantic structure
-
-### 2. Pre and Post Optimization
-
-Implement query optimization and result enhancement:
-
-- **Pre-optimization**: Query expansion, reformulation, or multi-query generation before retrieval
-- **Post-optimization**: Result reranking, deduplication, or context filtering after retrieval
-
-### 3. Different Models for Embedding and Generation
-
-Experiment with alternative embedding and generative models.
+**3. Try Different Models for Embedding and Generation**: Experiment with alternative embedding and generative models.
 

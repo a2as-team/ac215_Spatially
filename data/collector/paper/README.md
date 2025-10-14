@@ -107,3 +107,26 @@ To add another provider (e.g., Springer):
 ```
 self.registry["springer"] = SpringerCollector
 ```
+## 2. Taylor & Francis (T&F / tandfonline)
+
+- Root (LOI): `https://www.tandfonline.com/loi/<journal_code>` (e.g., `rupt20`)
+- Volumes are addressed via `?treeId=v<journal_code>-<N>`, where `N = (year - 2013) + 1`.
+- Flow: Volume -> Issue -> Article landing -> derive `/doi/pdf/<DOI>?download=true` -> download via `requests` with Selenium cookies.
+
+### Usage
+
+**Recommended (attach to an already open Chrome so Cloudflare challenge is already passed):**
+```bash
+# 1) Manually start Chrome with remote debugging
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.tfo_chrome_profile" \
+  --profile-directory=Default
+
+# 2) In that Chrome window, open the volume page at least once and pass any challenge:
+#    https://www.tandfonline.com/loi/rupt20?treeId=vrupt20-13
+
+# 3) Run the collector
+python data/collector/paper/run.py --provider tfo \
+  --journal_code rupt20 --from_year 2013 --to_year 2025 \
+  --out_dir ./downloads/tfo/rupt20 --debugger 127.0.0.1:9222

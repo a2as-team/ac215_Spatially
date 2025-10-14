@@ -6,3 +6,4 @@ downloads
 .venv-*
 secrets/*
 !secrets/.gitkeep
+.DS_Store

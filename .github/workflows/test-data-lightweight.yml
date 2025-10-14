@@ -20,14 +20,29 @@ jobs:
       run: uv python install 3.13
 
     - name: Install dependencies
-      run: uv sync --all-packages
+      run: uv sync 
       working-directory: ./data
 
-    - name: Run lightweight tests (excluding transcription)
+    - name: Run all tests except heavy tests
       run: |
-        for test_file in tests/test_*.py; do
-          if [[ "$test_file" != "tests/test_transcribe.py" ]]; then
-            uv run python -m unittest "${test_file%.py//\//.}" -v
-          fi
+        # Define tests to exclude (require GPU, Selenium, or are too heavy for CI)
+        EXCLUDE_TESTS=(
+          "test_transcribe.py"
+          # Add more heavy tests here as needed, e.g.:
+          # "test_some_other_gpu_test.py"
+        )
+
+        # Build exclude pattern for find command
+        EXCLUDE_PATTERN=""
+        for test in "${EXCLUDE_TESTS[@]}"; do
+          EXCLUDE_PATTERN="$EXCLUDE_PATTERN -not -name $test"
+        done
+
+        # Find and run all tests except excluded ones
+        find tests -name "test_*.py" $EXCLUDE_PATTERN | while read test_file; do
+          # Convert path to module format: tests/collector/zba/test_zba_boston.py -> tests.collector.zba.test_zba_boston
+          test_module=$(echo "$test_file" | sed 's/\//./g' | sed 's/\.py$//')
+          echo "Running $test_module"
+          uv run python -m unittest "$test_module" -v
         done
       working-directory: ./data

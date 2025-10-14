@@ -1,0 +1,63 @@
+<View>
+  <Header value="Boston Development Plans - NER Annotation"/>
+
+  <Text name="text" value="$text"/>
+
+  <View style="box-shadow: 2px 2px 5px #999; padding: 20px; margin-top: 2em; border-radius: 5px;">
+    <Header value="Entity Types (7 NER Labels)"/>
+
+    <Labels name="label" toName="text">
+      <!-- Construction Details (How property designed/constructed, e.g. Lot Area: 27,371 sf) -->
+      <Label value="CONSTRUCTION_DETAILS" background="#FFE4B5" hotkey="1"/>
+
+      <!-- Property's Usage (Purpose, e.g. commercial building) -->
+      <Label value="PROPERTY_USAGE" background="#87CEEB" hotkey="2"/>
+
+      <!-- Zoning District (Specific zoning district name, e.g. New Market Industrial Development Area) -->
+      <Label value="ZONING_DISTRICT" background="#9370DB" hotkey="3"/>
+
+      <!-- Zoning Relief (Requests for relief, e.g. Off-street parking insufficient) -->
+      <Label value="ZONING_RELIEF" background="#FF6B6B" hotkey="4"/>
+
+      <!-- Article Reference (Specific zoning article, e.g. Article 50, Section 32) -->
+      <Label value="ARTICLE_REFERENCE" background="#DDA0DD" hotkey="5"/>
+
+      <!-- Expected Impact (Property's expected impact, job creation, e.g. will activate the Site with new manufacturing use) -->
+      <Label value="EXPECTED_IMPACT" background="#98FB98" hotkey="6"/>
+
+      <!-- Location Context (Neighborhood history, transportation, e.g. located walking distance to 9 buses) -->
+      <Label value="LOCATION_CONTEXT" background="#B0E0E6" hotkey="7"/>
+    </Labels>
+  </View>
+
+  <View style="box-shadow: 2px 2px 5px #999; padding: 20px; margin-top: 2em; border-radius: 5px;">
+    <Header value="Document Metadata"/>
+    <TextArea name="notes" toName="text"
+              rows="3"
+              editable="true"
+              maxSubmissions="1"
+              placeholder="Add notes about this document (optional)"/>
+  </View>
+
+  <View style="box-shadow: 2px 2px 5px #999; padding: 20px; margin-top: 2em; border-radius: 5px;">
+    <Header value="Document Classification"/>
+    <Choices name="doc_type" toName="text" choice="single" showInline="true">
+      <Choice value="Letter of Intent (LOI)"/>
+      <Choice value="Small Project Review Application (SPRA)"/>
+      <Choice value="BPDA Board Approval"/>
+      <Choice value="Planned Development Area (PDA)"/>
+      <Choice value="PDA Fact Sheet"/>
+      <Choice value="Institutional Master Plan (IMP)"/>
+      <Choice value="Other"/>
+    </Choices>
+  </View>
+
+  <View style="box-shadow: 2px 2px 5px #999; padding: 20px; margin-top: 2em; border-radius: 5px;">
+    <Header value="Quality Check"/>
+    <Choices name="quality" toName="text" choice="single" showInline="true">
+      <Choice value="High Quality - Clear text"/>
+      <Choice value="Medium Quality - Some unclear sections"/>
+      <Choice value="Low Quality - Difficult to read"/>
+    </Choices>
+  </View>
+</View>

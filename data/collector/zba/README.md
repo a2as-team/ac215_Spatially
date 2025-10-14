@@ -15,6 +15,8 @@ This is the official website of the Boston Zoning Board of Appeals that provides
 - Development Review: https://www.bostonplans.org/projects/development-projects/the-innovation-and-design-building
 - Development Project: https://www.bostonplans.org/projects/development-projects?viewall=1
 - - Document center: https://www.bostonplans.org/document-center?searchtext=&searchmode=anyword&doctype=&neighborhood=&project=&department=&program=&language=&date=&page=5
+- Article 80 locations: https://boston.maps.arcgis.com/home/item.html?id=653106e7f9d24d8bba8b47c10aabc95d
+- Article 80 Records library: https://apps.bostonplans.org/recordslibrary/
 
 ## 2. Chicago
 

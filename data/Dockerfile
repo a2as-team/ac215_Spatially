@@ -38,4 +38,7 @@ WORKDIR /app
 # Copy the source code
 COPY --chown=app:app . ./
 
+# Make scripts executable
+RUN chmod +x scripts/*.sh
+
 RUN uv sync

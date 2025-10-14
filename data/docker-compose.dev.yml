@@ -1,0 +1,85 @@
+version: '3.8'
+
+# Docker Compose for Data Pipeline Services
+# Usage:
+#   docker compose -f docker-compose.dev.yml up <service-name>
+#
+# Available services:
+#   - census-collector: Collect census data
+#   - dev-plans-collector: Collect development plans
+#   - dev-plans-parser: Parse development plans (requires ollama)
+#   - ollama: LLM service for parsing
+#   - label-studio: NER annotation tool
+#
+# Configuration: Edit environment variables below
+
+x-environment: &default-env
+  CITY: boston
+  MODEL: llama3.2
+  CENSUS_TYPE: acs5
+  LEVEL: tract
+
+x-collector-env: &collector-env
+  <<: *default-env
+  COLLECTOR_NAME: development_plans
+
+# x-parser-env: &parser-env
+#   <<: *default-env
+#   PARSER_NAME: development_plans
+#   OLLAMA_HOST: http://ollama:11434
+
+services:
+  census-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: census_collector
+    environment:
+      <<: *default-env
+      COLLECTOR_NAME: census
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./downloads:/app/downloads
+      - ../secrets:/secrets:ro
+    command: /app/scripts/run-collector.sh
+
+  dev-plans-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dev_plans_collector
+    environment:
+      <<: *collector-env
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./downloads:/app/downloads
+      - ../secrets:/secrets:ro
+    command: /app/scripts/run-collector.sh
+
+  # this will automatically start label studio
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: label_studio
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../secrets/spatially-postgres-db.env
+      - ../secrets/spatially-labelstudio-db.env
+    environment:
+      # PostgreSQL Database Configuration
+      - DJANGO_DB=default
+      # Local file serving for PDFs (for fallback, not used with GCS)
+      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
+      # Google Cloud Storage Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./label_studio:/label-studio/config
+      - ./downloads/development_plans:/label-studio/files:ro
+      - label_studio_data:/label-studio/data
+      - ../secrets:/secrets:ro
+    command: label-studio --host 0.0.0.0
+
+volumes:
+  label_studio_data:
+    driver: local

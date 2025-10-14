@@ -1,0 +1,20 @@
+# Generated import files
+imports/*
+!imports/.gitkeep
+!imports/*/
+!imports/*/.gitkeep
+
+# Exports
+exports/*
+!exports/.gitkeep
+!exports/*/
+!exports/*/.gitkeep
+
+# Backups
+*.tar.gz
+*.zip
+
+# Keep config and README
+!config.xml
+!README.md
+

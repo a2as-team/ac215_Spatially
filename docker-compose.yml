@@ -1,0 +1,144 @@
+version: '3.8'
+
+# MLOps Pipeline for Spatially Project
+#
+# Pipeline Stages:
+# 1. Data Collection (collectors)
+# 2. Data Processing (parsers)
+# 3. Model Training (llm)
+# 4. Model Serving (backend API)
+# 5. User Interface (frontend)
+#
+# Usage:
+#   # Full pipeline
+#   docker compose up
+#
+#   # Individual stages
+#   docker compose up data-collection    # Stage 1
+#   docker compose up data-processing    # Stage 2
+#   docker compose up model-training     # Stage 3
+#   docker compose up backend frontend   # Stage 4 & 5
+#
+#   # Development (just app)
+#   docker compose up postgres backend frontend
+
+services:
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: spatially_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ============================================================================
+  # Stage 1: Data Collection
+  # ============================================================================
+
+  census-collector:
+    build:
+      context: ./data
+      dockerfile: Dockerfile
+    container_name: spatially_census_collector
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./data/downloads:/app/downloads
+      - ./secrets:/secrets:ro
+    command: uv run python collector/census/run.py --type acs5 --level tract
+    profiles:
+      - data-collection
+      - full-pipeline
+
+  dev-plans-collector:
+    build:
+      context: ./data
+      dockerfile: Dockerfile
+    container_name: spatially_dev_plans_collector
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./data/downloads:/app/downloads
+      - ./secrets:/secrets:ro
+    command: uv run python collector/development_plans/run.py
+    profiles:
+      - data-collection
+      - full-pipeline
+
+
+  # ==================================================================
+  # Stage 4: Model Serving (API Backend)
+  # ============================================================================
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spatially_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-spatially}
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./backend/app:/app/app
+      - ./data/downloads:/app/data
+      - ./llm/models:/app/models
+    ports:
+      - "8000:8000"
+    profiles:
+      - app
+      - full-pipeline
+
+  # ============================================================================
+  # Stage 5: User Interface
+  # ============================================================================
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spatially_frontend
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+    ports:
+      - "5173:5173"
+    profiles:
+      - app
+      - full-pipeline
+
+volumes:
+  postgres_data:
+    driver: local
+
+# Profile Usage Examples:
+#
+# Development (just the app):
+#   docker compose --profile app up
+#
+# Data pipeline only:
+#   docker compose --profile data-collection up
+#   docker compose --profile data-processing up
+#
+# Training only:
+#   docker compose --profile model-training up
+#
+# Full MLOps pipeline:
+#   docker compose --profile full-pipeline up
+#
+# Individual services (no profiles needed):
+#   docker compose up postgres backend frontend

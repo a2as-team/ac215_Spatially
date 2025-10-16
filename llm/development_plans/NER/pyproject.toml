@@ -1,0 +1,13 @@
+[project]
+name = "ner"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=1.10.1",
+    "datasets>=4.2.0",
+    "ipykernel>=7.0.1",
+    "seqeval>=1.2.2",
+    "transformers>=4.57.1",
+]

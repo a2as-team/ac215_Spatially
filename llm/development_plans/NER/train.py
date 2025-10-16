@@ -218,7 +218,7 @@ class Trainer:
         offsets = encoding["offset_mapping"]
 
         # Default all tokens to "O"
-        labels = ["O"] * len(tokens)
+        labels = [self.NULL_LABEL] * len(tokens)
 
         # Assign BIO labels based on entity spans
         for ent in entities:
@@ -229,7 +229,9 @@ class Trainer:
                 if start >= ent_start and end <= ent_end:
                     prefix = "B-" if start == ent_start else "I-"
                     label_tag = prefix + ent_label
-                    labels[i] = label_tag if label_tag in self.label_to_id else "O"
+                    labels[i] = (
+                        label_tag if label_tag in self.label_to_id else self.NULL_LABEL
+                    )
 
         return {"tokens": tokens, "labels": labels}
 
@@ -259,7 +261,9 @@ class Trainer:
                     label_ids.append(-100)
                 else:
                     label = labels[word_idx]
-                    label_ids.append(self.label_to_id.get(label, self.label_to_id["O"]))
+                    label_ids.append(
+                        self.label_to_id.get(label, self.label_to_id[self.NULL_LABEL])
+                    )
 
             all_label_ids.append(label_ids)
 
@@ -347,8 +351,8 @@ class Trainer:
             # evaluate the model
             self.evaluate(val_loader, device)
 
-        # self.model.save_pretrained("tmp/ner_model")
-        # self.tokenizer.save_pretrained("tmp/ner_tokenizer")
+        self.model.save_pretrained("tmp/ner_model")
+        self.tokenizer.save_pretrained("tmp/ner_tokenizer")
 
     def evaluate(self, loader: DataLoader, device: torch.device) -> float:
         # the eval() would set the model to evaluation mode, making it not trainable

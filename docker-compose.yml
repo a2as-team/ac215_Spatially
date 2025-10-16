@@ -1,49 +1,6 @@
 version: '3.8'
 
-# MLOps Pipeline for Spatially Project
-#
-# Pipeline Stages:
-# 1. Data Collection (collectors)
-# 2. Data Processing (parsers)
-# 3. Model Training (llm)
-# 4. Model Serving (backend API)
-# 5. User Interface (frontend)
-#
-# Usage:
-#   # Full pipeline
-#   docker compose up
-#
-#   # Individual stages
-#   docker compose up data-collection    # Stage 1
-#   docker compose up data-processing    # Stage 2
-#   docker compose up model-training     # Stage 3
-#   docker compose up backend frontend   # Stage 4 & 5
-#
-#   # Development (just app)
-#   docker compose up postgres backend frontend
-
 services:
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: spatially_ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    # Uncomment for GPU support
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-  # ============================================================================
-  # Stage 1: Data Collection
-  # ============================================================================
-
   census-collector:
     build:
       context: ./data
@@ -74,10 +31,34 @@ services:
       - data-collection
       - full-pipeline
 
+  ner-trainer:
+    build:
+      context: ./llm/development_plans/NER
+      dockerfile: Dockerfile
+    container_name: spatially_ner_trainer
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      # Mount training data and model outputs
+      - ./llm/development_plans/NER/tmp:/app/tmp
+      # Mount config for labels
+      - ./llm/development_plans/NER/config:/app/config:ro
+      # Persist models to shared location for backend access
+      - ./llm/models:/app/models
+      # Mount secrets for GCS access (if needed)
+      - ./secrets:/secrets:ro
+    profiles:
+      - model-training
+      - full-pipeline
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
-  # ==================================================================
-  # Stage 4: Model Serving (API Backend)
-  # ============================================================================
 
   backend:
     build:
@@ -99,10 +80,6 @@ services:
     profiles:
       - app
       - full-pipeline
-
-  # ============================================================================
-  # Stage 5: User Interface
-  # ============================================================================
 
   frontend:
     build:

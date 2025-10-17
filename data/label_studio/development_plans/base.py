@@ -65,28 +65,3 @@ class BaseDevelopmentPlansLabelStudio(BaseLabelStudioService):
     def export_directory(self) -> Path:
         """Return path to exports directory."""
         return self.label_studio_dir / "development_plans" / "exports" / self.city()
-
-    def infer_document_type(self, filename: str) -> str:
-        """
-        Infer development plan document type from filename.
-
-        Args:
-            filename: PDF filename
-
-        Returns:
-            Document type string
-        """
-        filename_lower = filename.lower()
-
-        if "Small_Project_Review_Application" in filename_lower:
-            return "Small Project Review Application (SPRA)"
-        elif "Letter_of_Intent" in filename_lower:
-            return "Letter of Intent (LOI)"
-        elif "bpda_board" in filename_lower or "board_approval" in filename_lower:
-            return "BPDA Board"
-        elif "Institutional_Master_Plan" in filename_lower:
-            return "Institutional Master Plan (IMP)"
-        elif "Planned_Development_Area__PDA" in filename_lower:
-            return "Planned Development Area (PDA)"
-        else:
-            return "Other"

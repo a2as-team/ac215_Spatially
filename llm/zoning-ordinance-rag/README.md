@@ -383,8 +383,12 @@ python query.py "What are the sign regulations?" --city chicago --district-code 
 - `--collection`: Collection name (default: `zoning-ordinance-collection`)
 - `--n-results`: Number of chunks to retrieve (default: 15)
 
-**Filter Behavior:**
-- **Manual filters override automatic detection**: If you specify any manual filter, automatic extraction is skipped
+**Filter Behavior (Smart Hybrid Filtering):**
+- **Type-specific override**: Manual filters override automatic detection ONLY for that specific filter type
+  - Example: `--district-code RS5` overrides LLM's district code extraction, but LLM can still extract city and category
+- **Best of both worlds**: LLM fills in filter types you didn't manually specify
+  - Example: Query mentions "chicago" and "RM5", you provide `--district-code RS3` → Result: city=chicago (LLM), district_code=RS3 (manual), category="Residential Districts" (LLM)
+- **Complete control**: Use `--no-auto-filter` to disable all automatic extraction
 - **OR logic within filter type**: Multiple district codes or categories use OR (matches any)
 - **AND logic between filter types**: Different filter types use AND (must match all)
 
@@ -413,23 +417,28 @@ python query.py "Compare RS3 and RT4 districts in Chicago"
 python query.py "Differences between H-1 and H-2 zones in Boston"
 ```
 
-**Manual Filters (Override Automatic Detection):**
+**Smart Hybrid Filtering (Manual + Automatic):**
 
 ```bash
-# Explicit city filter
-python query.py "front yard setback requirements" --city boston
+# Manual city override, LLM detects category
+python query.py "front yard setback requirements for residential zones" --city boston
+# Result: city=boston (manual), category="Residential Districts" (LLM)
 
-# Specific district codes
+# Manual district code, LLM detects city and category
+python query.py "height limits in chicago residential zones" --district-code RM5
+# Result: city=chicago (LLM), district_code=RM5 (manual), category="Residential Districts" (LLM)
+
+# Manual overrides specific code mentioned in query
+python query.py "what are height limits in RS3 district?" --district-code RS5
+# Result: district_code=RS5 (manual override, RS3 from query ignored)
+
+# Multiple manual filters, LLM fills gaps
 python query.py "height restrictions" --city chicago --district-code RM5 --district-code RM6
+# Result: city=chicago (manual), district_codes=[RM5, RM6] (manual)
 
-# District category filter
-python query.py "permitted uses" --city chicago --district-category "Residential Districts"
-
-# Article/section filters
-python query.py "dimensional requirements" --city boston --article "ARTICLE 13"
-
-# Disable auto-filtering
-python query.py "What are parking requirements?" --no-auto-filter
+# Disable all automatic filtering
+python query.py "What are parking requirements?" --no-auto-filter --city boston
+# Result: city=boston (manual only), no LLM extraction
 ```
 
 **Specific Topics:**
@@ -446,10 +455,12 @@ python query.py "How are lot sizes calculated?"
 The query response includes:
 
 1. **User Question**: Your query
-2. **Active Filters**: Which metadata filters are currently applied (if any)
+2. **Active Filters**: Which metadata filters are currently applied (combined manual + automatic)
 3. **Search Results**: Number of relevant chunks found
 4. **LLM Response**: AI-generated answer based on retrieved chunks
-5. **Filters Applied by LLM**: Which filters were automatically extracted (if any)
+5. **Filter Sources**: Shows which filters were manual vs automatic
+   - **Manual Filters**: Explicitly provided via CLI flags
+   - **Automatic Filters**: Extracted by LLM from your query
 6. **Sources & Metadata**: Detailed information for each retrieved chunk
 
 **Example output with automatic filter extraction:**
@@ -482,11 +493,13 @@ LLM RESPONSE:
 [AI-generated answer about RM5 height limits in Chicago]
 
 ==================================================
-Filters Applied by LLM:
+Filter Sources:
 --------------------------------------------------
-  City: chicago
-  District Codes: RM5
-  District Categories: Residential Districts
+
+  Automatic Filters (LLM-extracted):
+    City: chicago
+    District Codes: RM5
+    District Categories: Residential Districts
 
 ==================================================
 Sources & Metadata:
@@ -513,12 +526,57 @@ Chunk 2:
 ==================================================
 ```
 
-**Example output with manual filters:**
+**Example output with Smart Hybrid Filtering (manual + automatic):**
 ```
 ==================================================
 RAG (ZONING ORDINANCES)
 ==================================================
 
+User Question:
+--------------------------------------------------
+What are the height restrictions for residential buildings in Chicago?
+
+Active Filters:
+  - City: chicago
+  - District Code(s): RM5
+  - District Category(ies): Residential Districts
+
+Found 8 relevant chunks
+
+==================================================
+LLM RESPONSE:
+==================================================
+[AI-generated answer about Chicago RM5 height restrictions]
+
+==================================================
+Filter Sources:
+--------------------------------------------------
+
+  Manual Filters (user-specified):
+    District Codes: RM5
+
+  Automatic Filters (LLM-extracted):
+    City: chicago
+    District Categories: Residential Districts
+
+==================================================
+Sources & Metadata:
+--------------------------------------------------
+
+Chunk 1:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  Chapter: CHAPTER 17-3 BULK REGULATIONS
+  Section: SECTION 17-3-0401 BUILDING HEIGHT
+  Heading: SECTION 17-3-0401 BUILDING HEIGHT
+  District Codes: RM5
+  District Categories: Residential Districts
+==================================================
+```
+
+**Example output with manual-only filters (automatic disabled):**
+```
+==================================================
 User Question:
 --------------------------------------------------
 What are the height restrictions?
@@ -527,36 +585,28 @@ Active Filters:
   - City: boston
   - District Code(s): B-3-65
 
-Found 8 relevant chunks
-
 ==================================================
-LLM RESPONSE:
-==================================================
-[AI-generated answer about Boston B-3-65 height restrictions]
-
-==================================================
-Sources & Metadata:
+Filter Sources:
 --------------------------------------------------
 
-Chunk 1:
-  City: BOSTON
-  Document: ARTICLE_13_-_DIMENSIONAL_REQUIREMENTS
-  Article: ARTICLE 13 - DIMENSIONAL REQUIREMENTS
-  Section: Section 13-1. Dimensional Regulations.
-  URL: https://library.municode.com/MA/Boston/codes/...
-  District Codes: B-3-65
-  District Categories: General Business Districts
+  Manual Filters (user-specified):
+    City: boston
+    District Codes: B-3-65
+
 ==================================================
 ```
 
-### Benefits of Smart Filtering
+### Benefits of Smart Hybrid Filtering
 
-**Automatic filter extraction improves:**
+**Smart Hybrid Filtering provides:**
 
-1. **Retrieval Precision**: Narrows down results to only relevant ordinance sections
-2. **Response Quality**: LLM receives more focused context for better answers
-3. **Performance**: Fewer chunks to process means faster responses
-4. **Transparency**: See exactly which filters were applied
+1. **Intelligent Automation**: LLM automatically detects context from your natural language query
+2. **Selective Control**: Override specific filters when you need precision, keep automatic detection for others
+3. **No Lost Context**: Manual filters don't wipe out all automatic detection - only their specific type
+4. **Retrieval Precision**: Narrows down results to only relevant ordinance sections
+5. **Response Quality**: LLM receives more focused context for better answers
+6. **Performance**: Fewer chunks to process means faster responses
+7. **Complete Transparency**: See exactly which filters came from where (manual vs automatic)
 
 **Rich metadata helps you:**
 - Verify the source of information
@@ -654,7 +704,7 @@ Boston Excel files should follow this structure:
 
 The system processes each row independently, chunking the Content and preserving the row's metadata (Title+Subtitle, URL) across all chunks.
 
-## Key Differences from site-selection-rag
+## Differences from site-selection-rag
 
 1. **Multi-format Support**: Handles both Excel (.xlsx) and PDF files
 2. **PyMuPDF for PDF Processing**: Uses PyMuPDF (fitz) instead of pypdf for better text extraction quality
@@ -667,55 +717,3 @@ The system processes each row independently, chunking the Content and preserving
 9. **Specialized Prompts**: Focused on zoning regulations rather than academic research
 10. **Separate Network**: Uses different Docker network and ports to avoid conflicts
 
-## Future Improvements
-
-### 1. Better Excel Parsing
-- Preserve table structures and relationships
-- Handle merged cells and complex layouts
-- Extract embedded images and charts
-
-### 2. Structured Data Extraction
-- Parse article numbers and section references
-- Create hierarchical relationships between ordinance sections
-- Enable navigation through document structure
-
-### 3. Cross-Reference Resolution
-- Identify references to other sections (e.g., "See Article 13")
-- Create links between related ordinance sections
-- Support multi-hop queries across documents
-
-### 4. Comparison Features
-- Direct comparison between Boston and Chicago ordinances
-- Highlight differences in similar regulations
-- Generate comparison reports
-
-### 5. Enhanced PDF Parsing
-Consider upgrading to:
-- **[PyMuPDF](https://pypi.org/project/PyMuPDF/)**: Better layout preservation
-- **[pymupdf4llm](https://pypi.org/project/pymupdf4llm/)**: Optimized for LLM workflows
-
-### 6. Pre and Post Optimization
-- Query expansion and reformulation
-- Result reranking and filtering
-- Context deduplication
-
-## Troubleshooting
-
-### Port Conflicts
-If port 8001 is already in use, modify `docker-compose.yml`:
-```yaml
-ports:
-    - 8002:8000  # Change host port to 8002 or any available port
-```
-
-### Excel Reading Errors
-Ensure Excel files:
-- Are valid .xlsx format (not .xls)
-- Are not password-protected
-- Have at least one sheet with data
-
-### Memory Issues
-For large ordinance documents:
-- Reduce batch size in `cli.py`
-- Process cities separately
-- Use `char-split` instead of `semantic-split`

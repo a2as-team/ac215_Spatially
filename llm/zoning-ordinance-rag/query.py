@@ -180,42 +180,47 @@ def main(args=None):
     print("-" * 50)
     print(query)
 
-    # LLM-based automatic filter extraction
-    # Check if user provided any manual filters
-    has_manual_filters = any([
-        args.city,
-        args.district_codes,
-        args.district_categories,
-        args.article,
-        args.section
-    ])
-
+    # LLM-based automatic filter extraction (Smart Hybrid Filtering)
     # Track which filters were auto-applied
     llm_applied_filters = {}
+    manual_filters = {}
 
-    # Only use LLM extraction if no manual filters and not disabled
-    if not has_manual_filters and not args.no_auto_filter:
+    # Track which filters were manually specified
+    if args.city:
+        manual_filters["city"] = args.city
+    if args.district_codes:
+        manual_filters["district_codes"] = args.district_codes
+    if args.district_categories:
+        manual_filters["district_categories"] = args.district_categories
+    if args.article:
+        manual_filters["article"] = args.article
+    if args.section:
+        manual_filters["section"] = args.section
+
+    # Always run LLM extraction unless explicitly disabled
+    # Manual filters override only their specific type, not all filters
+    if not args.no_auto_filter:
         print("\nExtracting relevant filters from query...")
         extracted_filters = extract_filters_from_query(query)
 
-        # Apply extracted filters to args if they were detected
-        if extracted_filters["city"]:
+        # Apply extracted filters ONLY if user didn't manually specify that filter type
+        if extracted_filters["city"] and not args.city:
             args.city = extracted_filters["city"]
             llm_applied_filters["city"] = extracted_filters["city"]
 
-        if extracted_filters["district_categories"]:
+        if extracted_filters["district_categories"] and not args.district_categories:
             args.district_categories = extracted_filters["district_categories"]
             llm_applied_filters["district_categories"] = extracted_filters["district_categories"]
 
-        if extracted_filters["district_codes"]:
+        if extracted_filters["district_codes"] and not args.district_codes:
             args.district_codes = extracted_filters["district_codes"]
             llm_applied_filters["district_codes"] = extracted_filters["district_codes"]
 
-        if extracted_filters["article"]:
+        if extracted_filters["article"] and not args.article:
             args.article = extracted_filters["article"]
             llm_applied_filters["article"] = extracted_filters["article"]
 
-        if extracted_filters["section"]:
+        if extracted_filters["section"] and not args.section:
             args.section = extracted_filters["section"]
             llm_applied_filters["section"] = extracted_filters["section"]
 
@@ -321,21 +326,39 @@ Ordinance excerpts:
     print("=" * 50)
     print(response.text)
 
-    # Display LLM-applied filters if any
-    if llm_applied_filters:
+    # Display filter sources (manual vs LLM) if any filters were used
+    if llm_applied_filters or manual_filters:
         print("\n" + "=" * 50)
-        print("Filters Applied by LLM:")
+        print("Filter Sources:")
         print("-" * 50)
-        if "city" in llm_applied_filters:
-            print(f"  City: {llm_applied_filters['city']}")
-        if "district_categories" in llm_applied_filters:
-            print(f"  District Categories: {', '.join(llm_applied_filters['district_categories'])}")
-        if "district_codes" in llm_applied_filters:
-            print(f"  District Codes: {', '.join(llm_applied_filters['district_codes'])}")
-        if "article" in llm_applied_filters:
-            print(f"  Article: {llm_applied_filters['article']}")
-        if "section" in llm_applied_filters:
-            print(f"  Section: {llm_applied_filters['section']}")
+
+        # Display manual filters
+        if manual_filters:
+            print("\n  Manual Filters (user-specified):")
+            if "city" in manual_filters:
+                print(f"    City: {manual_filters['city']}")
+            if "district_categories" in manual_filters:
+                print(f"    District Categories: {', '.join(manual_filters['district_categories'])}")
+            if "district_codes" in manual_filters:
+                print(f"    District Codes: {', '.join(manual_filters['district_codes'])}")
+            if "article" in manual_filters:
+                print(f"    Article: {manual_filters['article']}")
+            if "section" in manual_filters:
+                print(f"    Section: {manual_filters['section']}")
+
+        # Display LLM-applied filters
+        if llm_applied_filters:
+            print("\n  Automatic Filters (LLM-extracted):")
+            if "city" in llm_applied_filters:
+                print(f"    City: {llm_applied_filters['city']}")
+            if "district_categories" in llm_applied_filters:
+                print(f"    District Categories: {', '.join(llm_applied_filters['district_categories'])}")
+            if "district_codes" in llm_applied_filters:
+                print(f"    District Codes: {', '.join(llm_applied_filters['district_codes'])}")
+            if "article" in llm_applied_filters:
+                print(f"    Article: {llm_applied_filters['article']}")
+            if "section" in llm_applied_filters:
+                print(f"    Section: {llm_applied_filters['section']}")
 
     print("\n" + "=" * 50)
     print("Sources & Metadata:")

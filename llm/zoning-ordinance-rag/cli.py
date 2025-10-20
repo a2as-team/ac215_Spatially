@@ -1,29 +1,38 @@
+#############################################################################
+#                               IMPORTS                                     #
+#############################################################################
+
+# Standard library imports
 import os
 import argparse
-import pandas as pd
 import json
 import time
 import glob
 import hashlib
-import chromadb
 import re
+
+# Third-party imports
+import pandas as pd
+import chromadb
 import fitz  # PyMuPDF
 import openpyxl
 from dotenv import load_dotenv
 
+# Google Vertex AI imports
+from google import genai
+from google.genai import types
+from google.genai import errors
+
+# Local imports
+from semantic_splitter import SemanticChunker
+
 # Load environment variables from .env file
 load_dotenv()
 
-# Vertex AI
-from google import genai
-from google.genai import types
-from google.genai.types import Content, Part, GenerationConfig, ToolConfig
-from google.genai import errors
 
-# Langchain
-from semantic_splitter import SemanticChunker
-import agent_tools
-
+#############################################################################
+#                           CONFIGURATION                                   #
+#############################################################################
 
 # Setup
 GCP_PROJECT = os.environ["GCP_PROJECT"]
@@ -43,6 +52,11 @@ DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/collected_data/di
 _district_codes_cache = {}
 _district_categories_cache = {}
 _code_to_category_cache = {}
+
+
+#############################################################################
+#                      DISTRICT CODE UTILITIES                              #
+#############################################################################
 
 def load_district_codes(city):
     """Load district codes from JSON file for a given city
@@ -117,12 +131,13 @@ def get_code_to_category_mapping(city):
     return code_to_category
 
 #############################################################################
-#                       Initialize the LLM Client                           #
-llm_client = genai.Client(
-    vertexai=True, project=GCP_PROJECT, location=GCP_LOCATION)
+#                      INITIALIZE LLM CLIENT                                #
 #############################################################################
 
-# Initialize the GenerativeModel with specific system instructions
+llm_client = genai.Client(
+    vertexai=True, project=GCP_PROJECT, location=GCP_LOCATION)
+
+# System instructions for the generative model
 SYSTEM_INSTRUCTION = """
 You are an AI assistant specialized in zoning regulations, building codes, and urban planning ordinances. Your responses are based solely on the information provided in the zoning ordinance documents from Boston and Chicago given to you. Do not use any external knowledge or make assumptions beyond what is explicitly stated in these documents.
 
@@ -144,6 +159,11 @@ Remember:
 
 Your goal is to provide accurate, ordinance-backed information about zoning regulations and building codes based solely on the content of the text chunks from Boston and Chicago ordinances you receive with each query.
 """
+
+
+#############################################################################
+#                   DOCUMENT EXTRACTION UTILITIES                           #
+#############################################################################
 
 def extract_district_codes(text, city):
     """Extract district codes from text by matching against known codes for the city
@@ -389,6 +409,31 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
         return []
 
 
+#############################################################################
+#                         EMBEDDING UTILITIES                               #
+#############################################################################
+
+def normalize_district_code_to_field(code):
+    """Convert district code to valid ChromaDB field name for filtering.
+
+    Replaces special characters with underscores and adds 'district_' prefix.
+
+    Examples:
+        'RS3' -> 'district_RS3'
+        'RT3.5' -> 'district_RT3_5'
+        'H-1' -> 'district_H_1'
+        'B-3-65' -> 'district_B_3_65'
+
+    Args:
+        code (str): District code from ordinance
+
+    Returns:
+        str: Normalized field name safe for ChromaDB metadata
+    """
+    normalized = code.replace('.', '_').replace('-', '_').replace(' ', '_')
+    return f"district_{normalized}"
+
+
 def generate_query_embedding(query):
     kwargs = {
         "output_dimensionality": EMBEDDING_DIMENSION
@@ -464,9 +509,25 @@ def load_text_embeddings(df, collection, batch_size=500):
             metadata = {
                 "document": row["document"],
                 "city": row["city"],
+                # Keep original JSON for display/backward compatibility
                 "district_code": json.dumps(row["district_code"]) if isinstance(row["district_code"], list) else row["district_code"],
                 "district_category": json.dumps(row["district_category"]) if isinstance(row["district_category"], list) else row["district_category"]
             }
+
+            # Add flattened boolean fields for filtering district codes
+            if isinstance(row["district_code"], list):
+                for code in row["district_code"]:
+                    if code:  # Skip empty strings
+                        field_name = normalize_district_code_to_field(code)
+                        metadata[field_name] = True
+
+            # Add flattened boolean fields for filtering district categories
+            if isinstance(row["district_category"], list):
+                for category in row["district_category"]:
+                    if category:  # Skip empty strings
+                        # Normalize category name: replace spaces with underscores
+                        cat_field = f"category_{category.replace(' ', '_')}"
+                        metadata[cat_field] = True
 
             # Handle Boston (article + section) vs Chicago (hierarchical or old title)
             if "article" in row and row["article"]:  # Boston
@@ -495,6 +556,10 @@ def load_text_embeddings(df, collection, batch_size=500):
     print(
         f"Finished inserting {total_inserted} items into collection '{collection.name}'")
 
+
+#############################################################################
+#                      RAG PIPELINE FUNCTIONS                               #
+#############################################################################
 
 def chunk():
     print("chunk()")
@@ -683,6 +748,10 @@ def load():
         # Load data
         load_text_embeddings(data_df, collection)
 
+
+#############################################################################
+#                          MAIN ENTRY POINT                                 #
+#############################################################################
 
 def main(args=None):
     print("CLI Arguments:", args)

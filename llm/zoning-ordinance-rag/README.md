@@ -1,6 +1,6 @@
 # Zoning Ordinance RAG System
 
-A Retrieval-Augmented Generation (RAG) system for zoning regulations and building codes. This system processes zoning ordinance documents from Boston (Excel files) and Chicago (PDF files) to provide expert guidance on compliance and development requirements.
+A Retrieval-Augmented Generation (RAG) system for zoning regulations and building codes. This system processes zoning ordinance documents from Boston and Chicago to provide expert guidance on compliance and development requirements.
 
 ## Overview
 
@@ -9,7 +9,7 @@ The system uses semantic chunking to split ordinance documents, generates embedd
 ## Architecture
 
 ```
-Excel/PDF Files → Text Extraction → Semantic Chunking → Embeddings (Vertex AI) → ChromaDB → Query Interface → Gemini LLM
+Excel/PDF Files → Text Extraction → Semantic Chunking → Embeddings → ChromaDB → Query Interface → LLM
 ```
 
 ## Data Sources
@@ -27,9 +27,9 @@ Excel/PDF Files → Text Extraction → Semantic Chunking → Embeddings (Vertex
   - Format: Single PDF file (chicago-il-1.pdf)
   - Sections detected automatically using heading patterns
 
-## Enhanced Metadata Structure
+## Metadata Structure
 
-Each chunk in the vector database includes rich metadata for precise retrieval:
+Each chunk in the vector database includes metadata for precise retrieval:
 
 ### Common Fields (Both Cities)
 - **document**: Source document filename
@@ -300,60 +300,239 @@ Use the query script for questions about zoning ordinances:
 python query.py "What are the height restrictions for residential buildings?"
 ```
 
-**Query options:**
+### Automatic Filter Extraction (Smart Querying)
+
+The system uses **LLM-based automatic filter extraction** to intelligently analyze your query and apply relevant metadata filters. This improves retrieval precision by narrowing down results to the most relevant ordinance sections.
+
+**How it works:**
+
+1. **Detects City Context**: Recognizes when you mention "Boston" or "Chicago"
+2. **Extracts District Codes**: Identifies explicit district codes (e.g., "RM5", "B-3-65")
+3. **Understands Categories**: Maps general terms to district categories
+   - "residential buildings" → "Residential Districts"
+   - "commercial zones" → "Business and Commercial Districts"
+4. **Conservative by Default**: Only applies filters that are clearly indicated in your query
+
+**Examples of automatic filtering:**
 
 ```bash
-# Filter by city (Boston or Chicago)
-python query.py "What are the parking requirements for commercial buildings?" --city boston
+# Automatically detects city=chicago
+python query.py "what are the height limits in chicago?"
 
-# Specify collection
-python query.py "What are setback requirements?" --collection zoning-ordinance-collection
+# Detects city=chicago + district_category="Residential Districts"
+python query.py "residential buildings in chicago"
+
+# Detects city=chicago + district_code="RM5" + district_category="Residential Districts"
+python query.py "what are the height limits for chicago's residential buildings in RM5 zone?"
+
+# Detects district_codes=["RS3", "RT4"] + district_category="Residential Districts"
+python query.py "compare RS3 and RT4 districts"
+```
+
+The system will display which filters were automatically applied:
+
+```
+Filters Applied by LLM:
+  City: chicago
+  District Codes: RM5
+  District Categories: Residential Districts
+```
+
+### Manual Filter Options
+
+You can manually specify filters to override or supplement automatic detection:
+
+```bash
+# Filter by city
+python query.py "What are the parking requirements?" --city boston
+
+# Filter by specific district code(s) - can use multiple times
+python query.py "What are the height limits?" --district-code RM5 --district-code RM6
+
+# Filter by district category
+python query.py "What uses are allowed?" --district-category "Residential Districts"
+
+# Filter by article or section
+python query.py "What are the definitions?" --article "ARTICLE 2"
+python query.py "What are dimensional requirements?" --section "13-1"
+
+# Disable automatic filter extraction (use only manual filters or no filters)
+python query.py "What are height limits?" --no-auto-filter
 
 # Adjust number of results
-python query.py "What are the definitions for mixed-use development?" --n-results 20
+python query.py "What are setback requirements?" --n-results 20
 
-# Combined example
-python query.py "What are the sign regulations?" --city chicago --n-results 10
+# Combined example with manual filters
+python query.py "What are the sign regulations?" --city chicago --district-code B1-1 --n-results 10
 ```
 
 ### Query Parameters
 
-- `query` (required): Your question about zoning ordinances
+**Required:**
+- `query`: Your question about zoning ordinances
+
+**Optional Filters:**
+- `--city`: Filter by city - `boston` or `chicago`
+- `--district-code`: Filter by specific district code (e.g., `RM5`, `B-3-65`). Can be used multiple times for multiple codes.
+- `--district-category`: Filter by district category (e.g., `"Residential Districts"`). Can be used multiple times.
+- `--article`: Filter by article name/number
+- `--section`: Filter by section name/number
+- `--no-auto-filter`: Disable automatic LLM-based filter extraction (default: enabled)
+
+**Other Options:**
 - `--collection`: Collection name (default: `zoning-ordinance-collection`)
 - `--n-results`: Number of chunks to retrieve (default: 15)
-- `--city`: Filter by city - `boston` or `chicago` (optional)
+
+**Filter Behavior:**
+- **Manual filters override automatic detection**: If you specify any manual filter, automatic extraction is skipped
+- **OR logic within filter type**: Multiple district codes or categories use OR (matches any)
+- **AND logic between filter types**: Different filter types use AND (must match all)
 
 ### Example Queries
 
+**Automatic Filter Extraction (No Manual Filters):**
+
 ```bash
-# General zoning questions
+# General question - no filters applied
 python query.py "What is the definition of a dwelling unit?"
 
-# Boston-specific
-python query.py "What are the front yard requirements?" --city boston
+# City automatically detected
+python query.py "What are the height restrictions in Boston?"
+python query.py "Chicago parking requirements for commercial buildings"
 
-# Chicago-specific
-python query.py "What are the permitted uses in residential zones?" --city chicago
+# City + category automatically detected
+python query.py "What uses are allowed in Chicago residential zones?"
+python query.py "Boston commercial district regulations"
 
-# Specific topics
+# City + specific district code + category detected
+python query.py "What are the height limits for Chicago's RM5 zone?"
+python query.py "What is allowed in Boston's B-3-65 district?"
+
+# Multiple district codes detected
+python query.py "Compare RS3 and RT4 districts in Chicago"
+python query.py "Differences between H-1 and H-2 zones in Boston"
+```
+
+**Manual Filters (Override Automatic Detection):**
+
+```bash
+# Explicit city filter
+python query.py "front yard setback requirements" --city boston
+
+# Specific district codes
+python query.py "height restrictions" --city chicago --district-code RM5 --district-code RM6
+
+# District category filter
+python query.py "permitted uses" --city chicago --district-category "Residential Districts"
+
+# Article/section filters
+python query.py "dimensional requirements" --city boston --article "ARTICLE 13"
+
+# Disable auto-filtering
+python query.py "What are parking requirements?" --no-auto-filter
+```
+
+**Specific Topics:**
+
+```bash
 python query.py "What are the parking space dimensions?"
 python query.py "What are the requirements for outdoor lighting?"
 python query.py "What is allowed in transition zoning?"
+python query.py "How are lot sizes calculated?"
 ```
 
 ### Query Output Format
 
 The query response includes:
 
-1. **LLM Response**: AI-generated answer based on retrieved chunks
-2. **Sources & Metadata**: Detailed information for each retrieved chunk
+1. **User Question**: Your query
+2. **Active Filters**: Which metadata filters are currently applied (if any)
+3. **Search Results**: Number of relevant chunks found
+4. **LLM Response**: AI-generated answer based on retrieved chunks
+5. **Filters Applied by LLM**: Which filters were automatically extracted (if any)
+6. **Sources & Metadata**: Detailed information for each retrieved chunk
 
-**Example output:**
+**Example output with automatic filter extraction:**
 ```
+==================================================
+RAG (ZONING ORDINANCES)
+==================================================
+Connecting to ChromaDB at localhost:8000
+
+User Question:
+--------------------------------------------------
+what are the height limits for chicago's residential buildings in RM5 zone?
+
+Extracting relevant filters from query...
+
+Searching zoning ordinance documents...
+
+Active Filters:
+  - City: chicago
+  - District Code(s): RM5
+  - District Category(ies): Residential Districts
+
+Found 5 relevant chunks
+
+Generating LLM response based on extracted information...
+
 ==================================================
 LLM RESPONSE:
 ==================================================
-[AI-generated answer based on ordinance text]
+[AI-generated answer about RM5 height limits in Chicago]
+
+==================================================
+Filters Applied by LLM:
+--------------------------------------------------
+  City: chicago
+  District Codes: RM5
+  District Categories: Residential Districts
+
+==================================================
+Sources & Metadata:
+--------------------------------------------------
+
+Chunk 1:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  Chapter: CHAPTER 17-3 BULK REGULATIONS
+  Section: SECTION 17-3-0401 BUILDING HEIGHT
+  Heading: SECTION 17-3-0401 BUILDING HEIGHT
+  District Codes: RM5
+  District Categories: Residential Districts
+
+Chunk 2:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  Chapter: CHAPTER 17-2 USE REGULATIONS
+  Article: ARTICLE 17-2-0200 RESIDENTIAL
+  Section: SECTION 17-2-0207 MULTI-UNIT
+  Heading: SECTION 17-2-0207 MULTI-UNIT
+  District Codes: RM4.5, RM5, RM5.5
+  District Categories: Residential Districts
+==================================================
+```
+
+**Example output with manual filters:**
+```
+==================================================
+RAG (ZONING ORDINANCES)
+==================================================
+
+User Question:
+--------------------------------------------------
+What are the height restrictions?
+
+Active Filters:
+  - City: boston
+  - District Code(s): B-3-65
+
+Found 8 relevant chunks
+
+==================================================
+LLM RESPONSE:
+==================================================
+[AI-generated answer about Boston B-3-65 height restrictions]
 
 ==================================================
 Sources & Metadata:
@@ -365,28 +544,28 @@ Chunk 1:
   Article: ARTICLE 13 - DIMENSIONAL REQUIREMENTS
   Section: Section 13-1. Dimensional Regulations.
   URL: https://library.municode.com/MA/Boston/codes/...
-  District Codes: B-1, R-2
-  District Categories: General Business Districts, Residential Districts
-
-Chunk 2:
-  City: CHICAGO
-  Document: chicago-il-1
-  Chapter: CHAPTER 17-1 DEFINITIONS
-  Article: ARTICLE 17-1-0400 USE REGULATIONS
-  Section: SECTION 17-1-0403 PERMITTED USES
-  Heading: SECTION 17-1-0403 PERMITTED USES
-  District Codes: B2-1, C1-1
-  District Categories: Business and Commercial Districts
+  District Codes: B-3-65
+  District Categories: General Business Districts
 ==================================================
 ```
 
-This rich metadata helps you:
+### Benefits of Smart Filtering
+
+**Automatic filter extraction improves:**
+
+1. **Retrieval Precision**: Narrows down results to only relevant ordinance sections
+2. **Response Quality**: LLM receives more focused context for better answers
+3. **Performance**: Fewer chunks to process means faster responses
+4. **Transparency**: See exactly which filters were applied
+
+**Rich metadata helps you:**
 - Verify the source of information
 - Access the full ordinance online (Boston URLs)
 - Identify relevant district codes and categories for further research
 - Understand which city's regulations apply
 - Navigate the hierarchical structure of ordinances (Chapter → Article → Section)
 - Filter and compare regulations across different district types
+- Trust the results by seeing exactly how the system filtered the data
 
 ## Database Management
 
@@ -540,7 +719,3 @@ For large ordinance documents:
 - Reduce batch size in `cli.py`
 - Process cities separately
 - Use `char-split` instead of `semantic-split`
-
-## License
-
-See main project LICENSE file.

@@ -8,7 +8,7 @@ if "GCP_PROJECT" not in os.environ:
 if "CHROMADB_HOST" not in os.environ:
     os.environ["CHROMADB_HOST"] = "localhost"
 if "CHROMADB_PORT" not in os.environ:
-    os.environ["CHROMADB_PORT"] = "8000"
+    os.environ["CHROMADB_PORT"] = os.getenv("CHROMADB_PORT", "8001")
 if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "../secrets/llm-service-account.json"
 

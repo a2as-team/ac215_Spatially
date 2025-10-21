@@ -2,16 +2,14 @@ import os
 import chromadb
 import argparse
 
-# Set default environment variables if not already set
-if "CHROMADB_HOST" not in os.environ:
-    os.environ["CHROMADB_HOST"] = "localhost"
-if "CHROMADB_PORT" not in os.environ:
-    os.environ["CHROMADB_PORT"] = "8000"
+# # Set default environment variables if not already set
+# CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
+# CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8001"))
 
 def get_chromadb_client():
     """Create and return a ChromaDB client using environment variables"""
     chromadb_host = os.environ.get("CHROMADB_HOST", "localhost")
-    chromadb_port = int(os.environ.get("CHROMADB_PORT", "8000"))
+    chromadb_port = int(os.environ.get("CHROMADB_PORT", "8001"))
     return chromadb.HttpClient(host=chromadb_host, port=chromadb_port)
 
 def list_collections():

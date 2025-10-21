@@ -411,7 +411,7 @@ python query.py "what are the height limits for chicago's residential buildings 
 ==================================================
 RAG (ZONING ORDINANCES)
 ==================================================
-Connecting to ChromaDB at localhost:8000
+Connecting to ChromaDB at localhost:8001
 
 User Question:
 --------------------------------------------------
@@ -425,15 +425,31 @@ Active Filters:
   - City: chicago
   - District Code(s): RM5
   - District Category(ies): Residential Districts
-
-Found 5 relevant chunks
+Found 15 relevant chunks
 
 Generating LLM response based on extracted information...
 
 ==================================================
 LLM RESPONSE:
 ==================================================
-[AI-generated answer about RM5 height limits in Chicago]
+Based on the provided excerpts from the Chicago Zoning Ordinance, here are the height limits for residential buildings in the RM5 zone:
+
+**General Height Limits (Section 17-2-0311-A):**
+
+*   For residential buildings in the RM5 district:
+    *   If the lot frontage is less than 32 feet, the maximum building height is 45 feet.
+    *   If the lot frontage is 32 feet or more, the maximum building height is 47 feet.
+
+**Near North Historic Overlay District (Section 17-7-0303-A):**
+
+*   Within the Near North Historic Overlay District No. 2, for properties with a base zoning classification of RM5, the maximum building height is 45 feet and 4 stories, whichever is greater.
+*   Within the Near North Historic Overlay District No. 1, for properties with a base zoning classification of RM5, the maximum building height is 45 feet and 4 stories, whichever is greater.
+
+**Additional Information:**
+
+*   Section 17-7-0303-C states that chimneys, heating and cooling equipment, parapets, unenclosed roof decks, enclosed stairways to roof decks, and similar structures are not included in the building height measurement.
+*   Section 17-7-0304 and 17-7-0204 state that the Zoning Administrator is authorized to consider and decide requests for administrative adjustments to exceed the height limits by up to 10% in Near North Historic Overlay District No. 1 and No. 2.
+
 
 ==================================================
 Filter Sources:
@@ -441,8 +457,8 @@ Filter Sources:
 
   Automatic Filters (LLM-extracted):
     City: chicago
-    District Codes: RM5
     District Categories: Residential Districts
+    District Codes: RM5
 
 ==================================================
 Sources & Metadata:
@@ -451,20 +467,19 @@ Sources & Metadata:
 Chunk 1:
   City: CHICAGO
   Document: chicago_zoning_ordinance
-  Chapter: CHAPTER 17-3 BULK REGULATIONS
-  Section: SECTION 17-3-0401 BUILDING HEIGHT
-  Heading: SECTION 17-3-0401 BUILDING HEIGHT
-  District Codes: RM5
+  District Codes: R, RM4.5, RM5, RM5.5, RM6, RM6.5, RS1, RS2, RS3, RT3.5, RT4
   District Categories: Residential Districts
 
 Chunk 2:
   City: CHICAGO
   Document: chicago_zoning_ordinance
-  Chapter: CHAPTER 17-2 USE REGULATIONS
-  Article: ARTICLE 17-2-0200 RESIDENTIAL
-  Section: SECTION 17-2-0207 MULTI-UNIT
-  Heading: SECTION 17-2-0207 MULTI-UNIT
-  District Codes: RM4.5, RM5, RM5.5
+  District Codes: RM5, RM6, RM6.5
+  District Categories: Residential Districts
+
+Chunk 3:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  District Codes: RM5, RM6, RM6.5
   District Categories: Residential Districts
 ==================================================
 ```
@@ -479,22 +494,63 @@ python query.py "What are the height restrictions for residential buildings in C
 ==================================================
 RAG (ZONING ORDINANCES)
 ==================================================
+Connecting to ChromaDB at localhost:8001
 
 User Question:
 --------------------------------------------------
 What are the height restrictions for residential buildings in Chicago?
 
+Extracting relevant filters from query...
+
+Searching zoning ordinance documents...
+
 Active Filters:
   - City: chicago
   - District Code(s): RM5
   - District Category(ies): Residential Districts
+Found 15 relevant chunks
 
-Found 8 relevant chunks
+Generating LLM response based on extracted information...
 
 ==================================================
 LLM RESPONSE:
 ==================================================
-[AI-generated answer about Chicago RM5 height restrictions]
+This document from the Chicago Zoning Ordinance provides height restrictions for residential buildings but the specific regulations vary depending on the zoning district. Here's a breakdown:
+
+**General Height Standards in R Districts (Residential):**
+
+*   **RS1, RS2, RS3:** The maximum building height for principal residential buildings is 30 feet.
+*   **RT3.5:** The maximum building height for principal residential buildings is 35 feet.
+*   **RT4:** The maximum building height for principal residential buildings is 38 feet, but multi-unit residential buildings in the RT4 district that contain no more than 19 dwelling units and in which at least 25% of the dwelling units are Type A units are subject to a maximum building height standard of 42 feet.
+*   **RM4.5:** The maximum building height for principal residential buildings depends on lot frontage:
+    *   Lot frontage of less than 32 feet: 45 feet.
+    *   Lot frontage of 32 feet or more: 47 feet.
+*   **RM5:** The maximum building height for principal residential buildings depends on lot frontage:
+    *   Lot frontage of less than 32 feet: 45 feet.
+    *   Lot frontage of 32 feet or more: 47 feet.
+*   **RM5.5:** The maximum building height for principal residential buildings depends on lot frontage:
+    *   Lot frontage of 75 feet or less: 47 feet.
+    *   Lot frontage of more than 75 feet: 60 feet.
+*   **RM6 and RM6.5:** There are no specific height limits listed for these districts. Tall buildings in these districts require Planned Development approval.
+
+**Near North Historic Overlay Districts No. 1 and No. 2:**
+
+These overlay districts have specific height limits based on the underlying base zoning district:
+
+*   **RM5:** Maximum height is 45 feet or 4 stories (whichever is greater).
+*   **RM6:** Maximum height is 90 feet or 8 stories (whichever is greater).
+*   **RM6.5:** Maximum height is 125 feet or 11 stories (whichever is greater). The height in RM6.5 may be increased to a maximum of 175 feet or 16 stories if reviewed and approved as a Planned Development.
+
+**Planned Development:**
+
+*   In RM6 and RM6.5 districts, tall buildings require Planned Development approval.
+*   Buildings exceeding certain height thresholds also require planned development review and approval. For RM6 the threshold is 110 feet and for RM6.5 it is 140 feet.
+
+**Exemptions:**
+
+*   The building height limits do not apply to residential construction in the "Wrigley Field Adjacent Area".
+*   Chimneys, heating and cooling equipment, parapets, unenclosed roof decks, and enclosed stairways to roof decks are not included in the building height measurement.
+
 
 ==================================================
 Filter Sources:
@@ -514,10 +570,19 @@ Sources & Metadata:
 Chunk 1:
   City: CHICAGO
   Document: chicago_zoning_ordinance
-  Chapter: CHAPTER 17-3 BULK REGULATIONS
-  Section: SECTION 17-3-0401 BUILDING HEIGHT
-  Heading: SECTION 17-3-0401 BUILDING HEIGHT
-  District Codes: RM5
+  District Codes: RM5, RM6, RM6.5
+  District Categories: Residential Districts
+
+Chunk 2:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  District Codes: R, RM4.5, RM5, RM5.5, RM6, RM6.5, RS1, RS2, RS3, RT3.5, RT4
+  District Categories: Residential Districts
+
+Chunk 3:
+  City: CHICAGO
+  Document: chicago_zoning_ordinance
+  District Codes: RM5, RM6, RM6.5
   District Categories: Residential Districts
 ==================================================
 ```
@@ -530,13 +595,48 @@ python query.py "What are the height restrictions?" --city "boston" --district-c
 
 ```
 ==================================================
+RAG (ZONING ORDINANCES)
+==================================================
+Connecting to ChromaDB at localhost:8001
+
 User Question:
 --------------------------------------------------
 What are the height restrictions?
 
+Extracting relevant filters from query...
+
+Searching zoning ordinance documents...
+
 Active Filters:
   - City: boston
   - District Code(s): B-3-65
+Found 8 relevant chunks
+
+Generating LLM response based on extracted information...
+
+==================================================
+LLM RESPONSE:
+==================================================
+Based on the excerpts provided from the zoning ordinance documents, here's what I can tell you about height restrictions:
+
+**Boston**
+
+1.  **General Height Limit Exceedance:**
+
+    *   In districts other than H-2-45, H-3-65, B-3-65, B-6-90a, B-6-90b, B-8-120a, or B-8-120c, if a legally existing structure exceeds the height limit, a new structure on an adjoining lot can exceed the height limit. However, it cannot project above a line drawn from the highest point of the existing structure to a point at the height limit, where the distance from the highest point is three times its height above the limit.
+2.  **H-3-65 and B-3-65 Districts:**
+
+    *   In H-3-65 or B-3-65 districts, existing structures as of December 31, 1964, can only increase by one story or 10 feet above their pre-code height. The total height cannot exceed the limit specified in Table B of Section 13-1. Additional stories and mechanical equipment must be set back from the front and rear walls by one-half foot for each foot of height above those walls.
+3.  **Sign Height Restrictions:**
+
+    *   **Wall Signs:** The top of a wall sign should not be higher than the lowest of these options: 25 feet above grade, the top of the sills of the first-level windows above the first story, or the lowest point of the roof surface (or the top of the parapet for one-story buildings with a continuous horizontal parapet).
+    *   **Signs Attached at Right Angles:** The top of a sign attached at right angles to a building should not be higher than the lowest of these options: 25 feet above grade, the top of the sills of the first-level windows above the first story, or the lowest point of the roof surface (or the top of the parapet for one-story buildings with a continuous horizontal parapet).
+    *   **Free Standing Signs:**
+        *   If there is one use on the lot, the top of the sign can be no higher than 25 feet above grade.
+        *   If there are two or more uses on the lot, the top of the sign can be no higher than 30 feet above grade.
+
+Please note that the information provided is based solely on the text excerpts given. For a comprehensive understanding of height restrictions, it is recommended to consult the full zoning ordinance and any relevant maps for the specific location in question.
+
 
 ==================================================
 Filter Sources:
@@ -546,6 +646,36 @@ Filter Sources:
     City: boston
     District Codes: B-3-65
 
+==================================================
+Sources & Metadata:
+--------------------------------------------------
+
+Chunk 1:
+  City: BOSTON
+  Document: ARTICLE_16_-_HEIGHT_OF_BUILDINGS
+  Article: ARTICLE 16 HEIGHT OF BUILDINGS
+  Section: Section 16-3. Exceptions Adjoining Nonconforming Structures.
+  URL: https://library.municode.com/MA/Boston/codes/Redevelopment_Authority?nodeId=ART16HEBU_S16-3EXADNOST
+  District Codes: B-3-65, B-6-90a, B-6-90b, B-8, B-8-120a, B-8-120c, H-2, H-3, H-3-65
+  District Categories: General Business Districts, Residential Districts
+
+Chunk 2:
+  City: BOSTON
+  Document: ARTICLE_16_-_HEIGHT_OF_BUILDINGS
+  Article: ARTICLE 16 HEIGHT OF BUILDINGS
+  Section: Section 16-7. Increase in Height of pre-Code Structures in H-3-65 and B-3-65 Districts.
+  URL: https://library.municode.com/MA/Boston/codes/Redevelopment_Authority?nodeId=ART16HEBU_S16-7INHEPDEST6565DI
+  District Codes: B-3-65, H-3, H-3-65
+  District Categories: General Business Districts, Residential Districts
+
+Chunk 3:
+  City: BOSTON
+  Document: ARTICLE_11_-_SIGNS
+  Article: ARTICLE 11 SIGNS
+  Section: Section 11-2. On-Premise Signs in all Other Districts.
+  URL: https://library.municode.com/MA/Boston/codes/Redevelopment_Authority?nodeId=ART11SI_S11-2EMSIALOTDI
+  District Codes: B-10, B-2, B-3-65, B-4, B-6-90a, B-6-90b, B-8, B-8-120a, B-8-120b, B-8-120c, S0, S1, S2, S3, S4, S5
+  District Categories: General Business Districts, Mixed Use Districts
 ==================================================
 ```
 

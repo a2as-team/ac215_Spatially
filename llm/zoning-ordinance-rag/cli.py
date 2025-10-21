@@ -43,7 +43,7 @@ GENERATIVE_MODEL = "gemini-2.0-flash-001"
 INPUT_FOLDER = "../../data/collector/zoning_ordinance/collected_data"
 OUTPUT_FOLDER = "outputs"
 CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
-CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8000"))
+CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8001"))
 
 # District code JSON file paths
 DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/collected_data/district_codes"

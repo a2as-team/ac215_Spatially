@@ -76,46 +76,26 @@ Chicago uses **hierarchical metadata** to capture the document structure:
 {
   "document": "ARTICLE_13_-_DIMENSIONAL_REQUIREMENTS",
   "city": "boston",
+  "district_code": ["B-1", "R-2"],
+  "district_category": ["General Business Districts", "Residential Districts"],
   "article": "ARTICLE 13 - DIMENSIONAL REQUIREMENTS",
   "section": "Section 13-1. Dimensional Regulations.",
-  "url": "https://library.municode.com/MA/Boston/codes/...",
-  "district_code": ["B-1", "R-2"],
-  "district_category": ["General Business Districts", "Residential Districts"]
+  "url": "https://library.municode.com/MA/Boston/codes/..."
 }
 ```
 
-**Chicago chunk (with full hierarchy):**
+**Chicago chunk:**
 ```json
 {
   "document": "chicago-il-1",
   "city": "chicago",
-  "chapter": "CHAPTER 17-1 DEFINITIONS",
-  "article": "ARTICLE 17-1-0400 USE REGULATIONS",
-  "section": "SECTION 17-1-0403 PERMITTED USES",
-  "heading": "SECTION 17-1-0403 PERMITTED USES",
   "district_code": ["B2-1", "C1-1"],
-  "district_category": ["Business and Commercial Districts"]
+  "district_category": ["Business and Commercial Districts"],
+  "title": "TITLE 5 HOUSING AND ECONOMIC DEVELOPMENT",
+  "chapter": "CHAPTER 5-13 CHICAGO RELOCATION PLAN ORDINANCE"
 }
 ```
 
-**Chicago chunk (irregular nesting - Chapter → Section):**
-```json
-{
-  "document": "chicago-il-1",
-  "city": "chicago",
-  "chapter": "CHAPTER 13 PARKING",
-  "section": "SECTION 13-1 PARKING REQUIREMENTS",
-  "heading": "SECTION 13-1 PARKING REQUIREMENTS",
-  "district_code": [],
-  "district_category": []
-}
-```
-
-## Prerequisites
-
-- Docker and Docker Compose installed
-- Google Cloud Project with Vertex AI API enabled
-- GCP Service Account with appropriate permissions
 
 ## Setup
 
@@ -130,34 +110,9 @@ Chicago uses **hierarchical metadata** to capture the document structure:
 5. Create and download a JSON key
 6. Place the JSON key in `../secrets/llm-service-account.json`
 
-### 2. Project Structure
 
-```
-llm/
-├── secrets/
-│   └── llm-service-account.json
-└── zoning-ordinance-rag/
-    ├── cli.py                      # Main RAG pipeline with Excel/PDF support
-    ├── query.py                    # Interactive query interface
-    ├── manage_chromadb.py          # Database management utility
-    ├── agent_tools.py              # Agent function calling tools (placeholder)
-    ├── semantic_splitter.py        # Semantic chunking implementation
-    ├── Dockerfile                  # Container definition
-    ├── docker-compose.yml          # Multi-container orchestration
-    ├── docker-shell.sh             # Helper script to build and run
-    ├── docker-entrypoint.sh        # Container startup script
-    ├── pyproject.toml              # Python dependencies (uv)
-    ├── uv.lock                     # Locked dependencies (generated)
-    ├── README.md                   # This file
-    ├── .venv/                      # Virtual environment (local dev)
-    ├── outputs/                    # Generated chunks and embeddings
-    │   ├── chunks-*.jsonl
-    │   └── embeddings-*.jsonl
-    └── docker-volumes/             # Persistent Docker storage
-        └── chromadb/               # ChromaDB data persistence
-```
 
-### 3. Environment Configuration
+### 2. Environment Configuration
 
 The project expects:
 - Zoning ordinance data in: `../../data/collector/zoning_ordinance/collected_data/`
@@ -292,17 +247,15 @@ python cli.py --chunk --embed --load
 
 ## Querying the System
 
-### Interactive Query
-
 Use the query script for questions about zoning ordinances:
 
 ```bash
 python query.py "What are the height restrictions for residential buildings?"
 ```
 
-### Automatic Filter Extraction (Smart Querying)
+### Automatic Filter Extraction
 
-The system uses **LLM-based automatic filter extraction** to intelligently analyze your query and apply relevant metadata filters. This improves retrieval precision by narrowing down results to the most relevant ordinance sections.
+The system uses **LLM-based automatic filter extraction** to analyze your query and apply relevant metadata filters. This improves retrieval precision by narrowing down results to the most relevant ordinance sections.
 
 **How it works:**
 
@@ -352,10 +305,6 @@ python query.py "What are the height limits?" --district-code RM5 --district-cod
 # Filter by district category
 python query.py "What uses are allowed?" --district-category "Residential Districts"
 
-# Filter by article or section
-python query.py "What are the definitions?" --article "ARTICLE 2"
-python query.py "What are dimensional requirements?" --section "13-1"
-
 # Disable automatic filter extraction (use only manual filters or no filters)
 python query.py "What are height limits?" --no-auto-filter
 
@@ -375,8 +324,6 @@ python query.py "What are the sign regulations?" --city chicago --district-code 
 - `--city`: Filter by city - `boston` or `chicago`
 - `--district-code`: Filter by specific district code (e.g., `RM5`, `B-3-65`). Can be used multiple times for multiple codes.
 - `--district-category`: Filter by district category (e.g., `"Residential Districts"`). Can be used multiple times.
-- `--article`: Filter by article name/number
-- `--section`: Filter by section name/number
 - `--no-auto-filter`: Disable automatic LLM-based filter extraction (default: enabled)
 
 **Other Options:**
@@ -441,15 +388,6 @@ python query.py "What are parking requirements?" --no-auto-filter --city boston
 # Result: city=boston (manual only), no LLM extraction
 ```
 
-**Specific Topics:**
-
-```bash
-python query.py "What are the parking space dimensions?"
-python query.py "What are the requirements for outdoor lighting?"
-python query.py "What is allowed in transition zoning?"
-python query.py "How are lot sizes calculated?"
-```
-
 ### Query Output Format
 
 The query response includes:
@@ -464,6 +402,11 @@ The query response includes:
 6. **Sources & Metadata**: Detailed information for each retrieved chunk
 
 **Example output with automatic filter extraction:**
+
+```bash
+python query.py "what are the height limits for chicago's residential buildings in RM5 zone?"
+```
+
 ```
 ==================================================
 RAG (ZONING ORDINANCES)
@@ -527,6 +470,11 @@ Chunk 2:
 ```
 
 **Example output with Smart Hybrid Filtering (manual + automatic):**
+
+```bash
+python query.py "What are the height restrictions for residential buildings in Chicago?" --district-code RM5
+```
+
 ```
 ==================================================
 RAG (ZONING ORDINANCES)
@@ -574,7 +522,12 @@ Chunk 1:
 ==================================================
 ```
 
-**Example output with manual-only filters (automatic disabled):**
+**Example output with manual-only filters:**
+
+```bash
+python query.py "What are the height restrictions?" --city "boston" --district-code "B-3-65"
+```
+
 ```
 ==================================================
 User Question:
@@ -596,26 +549,6 @@ Filter Sources:
 ==================================================
 ```
 
-### Benefits of Smart Hybrid Filtering
-
-**Smart Hybrid Filtering provides:**
-
-1. **Intelligent Automation**: LLM automatically detects context from your natural language query
-2. **Selective Control**: Override specific filters when you need precision, keep automatic detection for others
-3. **No Lost Context**: Manual filters don't wipe out all automatic detection - only their specific type
-4. **Retrieval Precision**: Narrows down results to only relevant ordinance sections
-5. **Response Quality**: LLM receives more focused context for better answers
-6. **Performance**: Fewer chunks to process means faster responses
-7. **Complete Transparency**: See exactly which filters came from where (manual vs automatic)
-
-**Rich metadata helps you:**
-- Verify the source of information
-- Access the full ordinance online (Boston URLs)
-- Identify relevant district codes and categories for further research
-- Understand which city's regulations apply
-- Navigate the hierarchical structure of ordinances (Chapter → Article → Section)
-- Filter and compare regulations across different district types
-- Trust the results by seeing exactly how the system filtered the data
 
 ## Database Management
 
@@ -647,8 +580,8 @@ EMBEDDING_DIMENSION = 256
 GENERATIVE_MODEL = "gemini-2.0-flash-001"
 INPUT_FOLDER = "../../data/collector/zoning_ordinance/collected_data"
 OUTPUT_FOLDER = "outputs"
-CHROMADB_HOST = "zoning-ordinance-rag-chromadb"
-CHROMADB_PORT = 8000
+CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
+CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8000"))
 ```
 
 ### Docker Configuration
@@ -674,7 +607,7 @@ source .venv/bin/activate
 
 # Set environment variables
 export CHROMADB_HOST="localhost"
-export CHROMADB_PORT="8000"
+export CHROMADB_PORT="8001"
 export GOOGLE_APPLICATION_CREDENTIALS="../secrets/llm-service-account.json"
 export GCP_PROJECT="your-project-id"
 
@@ -689,31 +622,4 @@ python cli.py --chunk
 3. Run the pipeline: `python cli.py --chunk --embed --load`
 4. Query: `python query.py "your question" --city {city}`
 
-### Excel File Format
-
-Boston Excel files should follow this structure:
-- **Row 1**: Empty
-- **Row 2**: Headers (Url, NodeId, Title, Subtitle, Content)
-- **Row 3+**: Data rows
-
-**Required columns:**
-- **Url**: Link to the ordinance on municode.com
-- **Title**: Section title (e.g., "Section 13-1.", "ARTICLE 13")
-- **Subtitle**: Section subtitle (e.g., "Dimensional Regulations")
-- **Content**: Full text of the ordinance section
-
-The system processes each row independently, chunking the Content and preserving the row's metadata (Title+Subtitle, URL) across all chunks.
-
-## Differences from site-selection-rag
-
-1. **Multi-format Support**: Handles both Excel (.xlsx) and PDF files
-2. **PyMuPDF for PDF Processing**: Uses PyMuPDF (fitz) instead of pypdf for better text extraction quality
-3. **Hierarchical Metadata**: Chicago chunks include ordinance structure (chapter, article, section, heading)
-4. **Rich Metadata**: Each chunk includes chapter/article, URL (Boston), section, district codes, and district categories
-5. **Row-level Processing**: Boston Excel files processed row-by-row to preserve section metadata
-6. **Context Tracking**: Maintains hierarchical context while parsing Chicago PDF (handles irregular nesting)
-7. **District Code Extraction**: JSON-based matching against authoritative district code lists (not regex-based)
-8. **Structured Excel Data**: Processes Excel columns (Url, Title, Subtitle, Content) individually
-9. **Specialized Prompts**: Focused on zoning regulations rather than academic research
-10. **Separate Network**: Uses different Docker network and ports to avoid conflicts
 

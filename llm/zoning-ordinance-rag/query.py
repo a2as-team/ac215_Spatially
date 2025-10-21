@@ -73,8 +73,6 @@ def extract_filters_from_query(query: str) -> dict:
             - city (str|None): 'boston' or 'chicago'
             - district_categories (list): Category names if applicable
             - district_codes (list): Specific district codes if applicable
-            - article (str|None): Article filter if mentioned
-            - section (str|None): Section filter if mentioned
     """
     filter_extraction_prompt = f"""You are a filter extraction assistant for a zoning ordinance database.
 
@@ -119,9 +117,7 @@ Return your response as a JSON object with this exact structure:
 {{
     "city": null or "boston" or "chicago",
     "district_categories": [],
-    "district_codes": [],
-    "article": null,
-    "section": null
+    "district_codes": []
 }}
 
 Return ONLY the JSON object, nothing else."""
@@ -144,9 +140,7 @@ Return ONLY the JSON object, nothing else."""
         return {
             "city": extracted_filters.get("city"),
             "district_categories": extracted_filters.get("district_categories", []),
-            "district_codes": extracted_filters.get("district_codes", []),
-            "article": extracted_filters.get("article"),
-            "section": extracted_filters.get("section")
+            "district_codes": extracted_filters.get("district_codes", [])
         }
     except Exception as e:
         print(f"Warning: Failed to extract filters with LLM: {e}")
@@ -154,9 +148,7 @@ Return ONLY the JSON object, nothing else."""
         return {
             "city": None,
             "district_categories": [],
-            "district_codes": [],
-            "article": None,
-            "section": None
+            "district_codes": []
         }
 
 
@@ -192,10 +184,6 @@ def main(args=None):
         manual_filters["district_codes"] = args.district_codes
     if args.district_categories:
         manual_filters["district_categories"] = args.district_categories
-    if args.article:
-        manual_filters["article"] = args.article
-    if args.section:
-        manual_filters["section"] = args.section
 
     # Always run LLM extraction unless explicitly disabled
     # Manual filters override only their specific type, not all filters
@@ -215,14 +203,6 @@ def main(args=None):
         if extracted_filters["district_codes"] and not args.district_codes:
             args.district_codes = extracted_filters["district_codes"]
             llm_applied_filters["district_codes"] = extracted_filters["district_codes"]
-
-        if extracted_filters["article"] and not args.article:
-            args.article = extracted_filters["article"]
-            llm_applied_filters["article"] = extracted_filters["article"]
-
-        if extracted_filters["section"] and not args.section:
-            args.section = extracted_filters["section"]
-            llm_applied_filters["section"] = extracted_filters["section"]
 
     print("\nSearching zoning ordinance documents...")
     query_embedding = cli.generate_query_embedding(query)
@@ -271,16 +251,6 @@ def main(args=None):
             where_conditions.append({"$or": category_conditions})
 
         active_filters.append(f"District Category(ies): {', '.join(args.district_categories)}")
-
-    # Add article filter (exact match or substring)
-    if args.article:
-        where_conditions.append({"article": args.article})
-        active_filters.append(f"Article: {args.article}")
-
-    # Add section filter (exact match or substring)
-    if args.section:
-        where_conditions.append({"section": args.section})
-        active_filters.append(f"Section: {args.section}")
 
     # Combine all where conditions with AND logic
     if len(where_conditions) == 1:
@@ -341,10 +311,6 @@ Ordinance excerpts:
                 print(f"    District Categories: {', '.join(manual_filters['district_categories'])}")
             if "district_codes" in manual_filters:
                 print(f"    District Codes: {', '.join(manual_filters['district_codes'])}")
-            if "article" in manual_filters:
-                print(f"    Article: {manual_filters['article']}")
-            if "section" in manual_filters:
-                print(f"    Section: {manual_filters['section']}")
 
         # Display LLM-applied filters
         if llm_applied_filters:
@@ -355,10 +321,6 @@ Ordinance excerpts:
                 print(f"    District Categories: {', '.join(llm_applied_filters['district_categories'])}")
             if "district_codes" in llm_applied_filters:
                 print(f"    District Codes: {', '.join(llm_applied_filters['district_codes'])}")
-            if "article" in llm_applied_filters:
-                print(f"    Article: {llm_applied_filters['article']}")
-            if "section" in llm_applied_filters:
-                print(f"    Section: {llm_applied_filters['section']}")
 
     print("\n" + "=" * 50)
     print("Sources & Metadata:")
@@ -454,16 +416,6 @@ if __name__ == "__main__":
         action="append",
         dest="district_categories",
         help="Filter by district category(ies) - can be used multiple times (e.g., --district-category Residential)"
-    )
-    parser.add_argument(
-        "--article",
-        type=str,
-        help="Filter by article name/number (optional)"
-    )
-    parser.add_argument(
-        "--section",
-        type=str,
-        help="Filter by section name/number (optional)"
     )
     parser.add_argument(
         "--no-auto-filter",

@@ -42,8 +42,8 @@ EMBEDDING_DIMENSION = 256
 GENERATIVE_MODEL = "gemini-2.0-flash-001"
 INPUT_FOLDER = "../../data/collector/zoning_ordinance/collected_data"
 OUTPUT_FOLDER = "outputs"
-CHROMADB_HOST = "localhost"
-CHROMADB_PORT = 8000
+CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
+CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8000"))
 
 # District code JSON file paths
 DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/collected_data/district_codes"
@@ -715,6 +715,7 @@ def load():
     chromadb.api.client.SharedSystemClient.clear_system_cache()
 
     # Connect to chroma DB
+    print(f"Connecting to ChromaDB at {CHROMADB_HOST}:{CHROMADB_PORT}")
     client = chromadb.HttpClient(host=CHROMADB_HOST, port=CHROMADB_PORT)
 
     # Get a collection object from an existing collection, by name. If it doesn't exist, create it.

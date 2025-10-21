@@ -63,8 +63,9 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - ../secrets/spatially-postgres-db.env
+      - ../secrets/spatially-aws-postgres-db.env
       - ../secrets/spatially-labelstudio-db.env
+      - ../secrets/spatially-gcp-bucket.env
     environment:
       # PostgreSQL Database Configuration
       - DJANGO_DB=default

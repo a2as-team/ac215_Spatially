@@ -93,8 +93,10 @@ class BaseLabelStudioService(ABC):
             full_text = "\n\n".join(text_parts)
 
             # Clean up text - remove null bytes and control characters for PostgreSQL
-            full_text = full_text.replace('\x00', '')  # Remove null bytes
-            full_text = re.sub(r'[\x01-\x08\x0b-\x0c\x0e-\x1f\x7f]', '', full_text)  # Remove other control chars
+            full_text = full_text.replace("\x00", "")  # Remove null bytes
+            full_text = re.sub(
+                r"[\x01-\x08\x0b-\x0c\x0e-\x1f\x7f]", "", full_text
+            )  # Remove other control chars
             full_text = re.sub(r"\n{3,}", "\n\n", full_text)
             full_text = re.sub(r" {2,}", " ", full_text)
 
@@ -143,19 +145,39 @@ class BaseLabelStudioService(ABC):
             return {}
 
     @abstractmethod
+    def get_document_types(self) -> dict:
+        """
+        Return document types mapping.
+
+        Returns:
+            Dictionary mapping document type keys to their display names
+            Example: {"spra": "Small Project Review Application", "loi": "Letter of Intent"}
+        """
+        pass
+
     def infer_document_type(self, filename: str) -> str:
         """
-        Infer document type from filename.
+        Infer document type key from filename.
 
-        This is dataset-specific and should be implemented by subclasses.
+        Uses get_document_types() and automatically derives patterns from names.
 
         Args:
             filename: Document filename
 
         Returns:
-            Document type string
+            Document type key (e.g., "spra", "loi", "imp")
         """
-        pass
+        filename_lower = filename.lower()
+        doc_types = self.get_document_types()
+
+        # Check each document type by matching the lowercased name in the filename
+        for key, name in doc_types.items():
+            if key == "all":
+                continue
+            if name.lower() in filename_lower:
+                return key
+
+        return "other"
 
     def prepare_annotation_data(
         self,
@@ -182,18 +204,17 @@ class BaseLabelStudioService(ABC):
         metadata_lookup = self.load_metadata_from_csv()
 
         # Find all PDFs
-        pdf_files = sorted(pdf_dir.rglob("*.pdf"))
+        pdf_files = sorted(pdf_dir.rglob("*.pdf"))  # full path objects
 
-        if doc_type_filter:
-            doc_type_filter = doc_type_filter.lower()
+        if doc_type_filter and doc_type_filter != "all":
+            doc_type_filter_name = self.get_document_types()[doc_type_filter]
             pdf_files = [
-                f
-                for f in pdf_files
-                if doc_type_filter in f.name.lower()
-                or doc_type_filter in str(f.parent).lower()
+                f for f in pdf_files if doc_type_filter_name in f.name.replace("_", " ")
             ]
 
-        self.logger.info(f"Processing {len(pdf_files)} PDF files from {pdf_dir}")
+        self.logger.info(f"Document type filter: {doc_type_filter}")
+        self.logger.info(f"Found {len(pdf_files)} PDF files")
+        self.logger.info(f"Processing PDFs from {pdf_dir}")
 
         tasks = []
         for idx, pdf_path in enumerate(pdf_files, 1):
@@ -212,11 +233,12 @@ class BaseLabelStudioService(ABC):
             )
             project_name = project_name_raw.replace("_", " ")
 
-            # Infer document type
-            doc_type = self.infer_document_type(pdf_path.name)
+            # Infer document type key (replace underscores with spaces for consistency)
+            doc_type_key = self.infer_document_type(pdf_path.name.replace("_", " "))
+            doc_type_name = self.get_document_types().get(doc_type_key, "Other")
 
             # Get metadata
-            metadata_key = (project_name, doc_type)
+            metadata_key = (project_name, doc_type_name)
             metadata = metadata_lookup.get(metadata_key, {})
 
             # Helper function to convert NaN to None for JSON serialization
@@ -254,7 +276,7 @@ class BaseLabelStudioService(ABC):
                 "meta": {
                     "source": source_path,
                     "project": project_name,
-                    "doc_type_hint": doc_type,
+                    "doc_type_hint": doc_type_name,
                     "char_count": len(text),
                     "storage_mode": "gcs" if self.use_gcs else "local",
                     "neighborhood": clean_value(metadata.get("neighborhood", "")),
@@ -271,7 +293,7 @@ class BaseLabelStudioService(ABC):
             tasks.append(task)
             enriched = "✓" if metadata else "○"
             self.logger.info(
-                f"  {enriched} Added ({len(text)} chars, type: {doc_type})"
+                f"  {enriched} Added ({len(text)} chars, type: {doc_type_name})"
             )
 
         # Write output with doc type in filename

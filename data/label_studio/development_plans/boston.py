@@ -18,12 +18,16 @@ class BostonDevelopmentPlansLabelStudio(BaseDevelopmentPlansLabelStudio):
 
     @classmethod
     def get_document_types(cls) -> dict:
-        """Return Boston-specific document types."""
+        """
+        Return Boston-specific document types.
+
+        The document type names are automatically used as patterns for matching filenames.
+        """
         return {
             "all": "All document types",
             "spra": "Small Project Review Application",
             "loi": "Letter of Intent",
-            "bpda": "BPDA Board Approval",
+            "bpda": "BPDA Board",
             "pda": "Planned Development Area",
             "imp": "Institutional Master Plan",
         }

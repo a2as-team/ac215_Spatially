@@ -93,7 +93,9 @@ def main():
         doc_types_to_process = {k: v for k, v in doc_types.items() if k != "all"}
 
         for idx, (dt_key, dt_desc) in enumerate(doc_types_to_process.items(), 1):
-            print(f"[{idx}/{len(doc_types_to_process)}] Processing {dt_key} ({dt_desc})...")
+            print(
+                f"[{idx}/{len(doc_types_to_process)}] Processing {dt_key} ({dt_desc})..."
+            )
 
             tasks = service.prepare(doc_type_filter=dt_key)
 
@@ -105,13 +107,17 @@ def main():
             else:
                 print(f"   ⚠️  No tasks found for {dt_key}\n")
 
-        print(f"\n✅ Successfully prepared {total_tasks} total tasks across {len(created_files)} files")
+        print(
+            f"\n✅ Successfully prepared {total_tasks} total tasks across {len(created_files)} files"
+        )
         print(f"\n📋 Created import files:")
         for dt_key, import_file, task_count in created_files:
             print(f"   • {dt_key}: {import_file} ({task_count} tasks)")
 
         print(f"\n📋 Next steps:")
-        print(f"   1. Start Label Studio: docker compose -f docker-compose.dev.yml up label-studio")
+        print(
+            f"   1. Start Label Studio: docker compose -f docker-compose.dev.yml up label-studio"
+        )
         print(f"   2. Open http://localhost:8080")
         print(f"   3. Import each file separately in Label Studio UI")
         print()

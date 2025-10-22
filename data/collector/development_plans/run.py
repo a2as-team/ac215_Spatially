@@ -3,10 +3,10 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path to allow imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
-from collector.development_plans import DevelopmentPlansCollector
+from development_plans import DevelopmentPlansCollector
 
 if __name__ == "__main__":
     schema = {

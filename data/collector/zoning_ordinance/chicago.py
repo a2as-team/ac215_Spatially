@@ -16,7 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from collector.zoning_ordinance.base import ZoningOrdinanceBaseCollector
+from .base import ZoningOrdinanceBaseCollector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,20 +62,24 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             elapsed = int(time.time() - start_time)
 
             # Check for .crdownload files in both locations
-            crdownload_files = (
-                list(self.download_dir.glob("*.crdownload")) +
-                list(default_downloads.glob("chicago*.crdownload"))
+            crdownload_files = list(self.download_dir.glob("*.crdownload")) + list(
+                default_downloads.glob("chicago*.crdownload")
             )
 
             # Check for downloaded files in target directory (exclude debug screenshots)
             downloaded_files = [
-                f for f in self.download_dir.iterdir()
-                if f.is_file() and not f.name.startswith(".") and not f.name.endswith(".crdownload") and not f.name.endswith(".png")
+                f
+                for f in self.download_dir.iterdir()
+                if f.is_file()
+                and not f.name.startswith(".")
+                and not f.name.endswith(".crdownload")
+                and not f.name.endswith(".png")
             ]
 
             # Also check for Chicago files in default Downloads folder
             chicago_files_in_downloads = [
-                f for f in default_downloads.glob("chicago*.pdf")
+                f
+                for f in default_downloads.glob("chicago*.pdf")
                 if f.stat().st_mtime > start_time  # Only files created after we started
             ]
 
@@ -83,14 +87,18 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
 
             # Log progress every 5 seconds or when count changes
             if elapsed % 5 == 0 or current_count != last_count:
-                logger.info(f"Waiting for download... ({elapsed}s elapsed, {len(crdownload_files)} in progress, {current_count} completed)")
+                logger.info(
+                    f"Waiting for download... ({elapsed}s elapsed, {len(crdownload_files)} in progress, {current_count} completed)"
+                )
                 last_count = current_count
 
             # If we found a file in default Downloads, move it to our directory
             if chicago_files_in_downloads and not crdownload_files:
                 for file in chicago_files_in_downloads:
                     dest = self.download_dir / file.name
-                    logger.info(f"Moving {file.name} from Downloads to {self.download_dir}")
+                    logger.info(
+                        f"Moving {file.name} from Downloads to {self.download_dir}"
+                    )
                     file.rename(dest)
                     logger.info(f"Download complete: {dest.name}")
                 return True
@@ -116,11 +124,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 'errors': list of error messages
             }
         """
-        results = {
-            "success": False,
-            "files_downloaded": [],
-            "errors": []
-        }
+        results = {"success": False, "files_downloaded": [], "errors": []}
 
         try:
             self._setup_driver()
@@ -143,7 +147,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 'button[aria-label="Download"]',
                 'button[aria-label="download"]',
                 'button:has-text("Download")',
-                'button.download-button',
+                "button.download-button",
                 '//button[contains(text(), "Download")]',
             ]
 
@@ -152,7 +156,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                     logger.info(f"Trying selector: {selector}")
                     # Use shorter wait for each attempt
                     wait = WebDriverWait(self.driver, 5)
-                    if selector.startswith('//'):
+                    if selector.startswith("//"):
                         download_button = wait.until(
                             EC.element_to_be_clickable((By.XPATH, selector))
                         )
@@ -170,8 +174,12 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 # Save page source for debugging
                 with open(self.download_dir / "page_source_debug.html", "w") as f:
                     f.write(self.driver.page_source)
-                logger.error("Saved page source to page_source_debug.html for inspection")
-                raise Exception("Could not find download button with any known selector")
+                logger.error(
+                    "Saved page source to page_source_debug.html for inspection"
+                )
+                raise Exception(
+                    "Could not find download button with any known selector"
+                )
 
             logger.info("Clicking download button...")
             download_button.click()
@@ -191,8 +199,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             # Wait for checkboxes to be present
             time.sleep(1)
             checkboxes = self.driver.find_elements(
-                By.CSS_SELECTOR,
-                '.modal-content input[type="checkbox"]'
+                By.CSS_SELECTOR, '.modal-content input[type="checkbox"]'
             )
 
             target_checkbox = None
@@ -228,13 +235,15 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             modal_download_button = None
             try:
                 # Get all buttons in modal footer
-                modal_buttons = self.driver.find_elements(By.CSS_SELECTOR, '.modal-footer button')
+                modal_buttons = self.driver.find_elements(
+                    By.CSS_SELECTOR, ".modal-footer button"
+                )
                 logger.info(f"Found {len(modal_buttons)} buttons in modal footer")
 
                 for button in modal_buttons:
                     button_text = button.text.strip()
                     logger.info(f"Button text: '{button_text}'")
-                    if 'download' in button_text.lower():
+                    if "download" in button_text.lower():
                         modal_download_button = button
                         logger.info(f"Selected download button: '{button_text}'")
                         break
@@ -246,7 +255,12 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 logger.info("Trying XPath to find Download button...")
                 try:
                     modal_download_button = wait.until(
-                        EC.element_to_be_clickable((By.XPATH, '//div[@class="modal-footer"]//button[contains(translate(text(), "DOWNLOAD", "download"), "download")]'))
+                        EC.element_to_be_clickable(
+                            (
+                                By.XPATH,
+                                '//div[@class="modal-footer"]//button[contains(translate(text(), "DOWNLOAD", "download"), "download")]',
+                            )
+                        )
                     )
                     logger.info("Found Download button via XPath")
                 except Exception as e:
@@ -263,7 +277,9 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 modal_download_button.click()
             except Exception as e:
                 logger.warning(f"Regular click failed: {e}, trying JavaScript click")
-                self.driver.execute_script("arguments[0].click();", modal_download_button)
+                self.driver.execute_script(
+                    "arguments[0].click();", modal_download_button
+                )
 
             # Give the download time to start
             time.sleep(3)
@@ -274,14 +290,16 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
 
             # Find and click "Save PDF" button
             logger.info("Looking for 'Save PDF' button...")
-            format_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button.export-button')
+            format_buttons = self.driver.find_elements(
+                By.CSS_SELECTOR, "button.export-button"
+            )
             logger.info(f"Found {len(format_buttons)} format buttons")
 
             pdf_button = None
             for button in format_buttons:
                 button_text = button.text.strip()
                 logger.info(f"Format button text: '{button_text}'")
-                if 'PDF' in button_text:
+                if "PDF" in button_text:
                     pdf_button = button
                     logger.info(f"Selected PDF button: '{button_text}'")
                     break
@@ -307,7 +325,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             try:
                 # Wait for the OPEN button to be clickable
                 open_button = wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, 'a.request__open'))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a.request__open"))
                 )
                 logger.info("File preparation complete - OPEN button is available")
             except Exception as e:
@@ -330,14 +348,19 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             if self._wait_for_download_complete():
                 # Get the downloaded file (exclude debug screenshots)
                 downloaded_files = [
-                    f for f in self.download_dir.iterdir()
-                    if f.is_file() and not f.name.startswith(".") and not f.name.endswith(".png")
+                    f
+                    for f in self.download_dir.iterdir()
+                    if f.is_file()
+                    and not f.name.startswith(".")
+                    and not f.name.endswith(".png")
                 ]
 
                 if downloaded_files:
                     results["success"] = True
                     results["files_downloaded"] = [str(f) for f in downloaded_files]
-                    logger.info(f"Successfully downloaded {len(downloaded_files)} file(s)")
+                    logger.info(
+                        f"Successfully downloaded {len(downloaded_files)} file(s)"
+                    )
                 else:
                     results["errors"].append("No files found in download directory")
             else:
@@ -379,7 +402,9 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             # Check file size
             file_size = Path(file_path).stat().st_size
             if file_size < 1000:  # Less than 1KB is suspicious
-                logger.error(f"Downloaded file seems too small: {file_path} ({file_size} bytes)")
+                logger.error(
+                    f"Downloaded file seems too small: {file_path} ({file_size} bytes)"
+                )
                 return False
 
         logger.info("Validation passed")

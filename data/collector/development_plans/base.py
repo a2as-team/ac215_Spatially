@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from collector.base import BaseCollector
+from template import BaseCollector
 
 
 class BaseDevelopmentPlansCollector(BaseCollector, ABC):

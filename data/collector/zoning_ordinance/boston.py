@@ -12,7 +12,8 @@ import sys
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from collector.zoning_ordinance.base import ZoningOrdinanceBaseCollector
+
+from zoning_ordinance.base import ZoningOrdinanceBaseCollector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
         # Be conservative; avoid closing our export modal by mistake
         popup_selectors = [
             ".hopscotch-bubble-close",  # Hopscotch tour close button
-            ".hopscotch-cta button",     # Hopscotch CTA button
+            ".hopscotch-cta button",  # Hopscotch CTA button
         ]
 
         for selector in popup_selectors:
@@ -142,7 +143,9 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
 
         for li_elem in toc_items:
             try:
-                heading_elem = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]")
+                heading_elem = li_elem.find_element(
+                    By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]"
+                )
                 raw_name = heading_elem.text
                 section_name = self._normalize_heading(raw_name)
 
@@ -155,11 +158,15 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                 button = None
                 has_select_all = False
                 try:
-                    button = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                    button = li_elem.find_element(
+                        By.CSS_SELECTOR, "button.expToc-select-all"
+                    )
                     has_select_all = True
                 except NoSuchElementException:
                     # Fall back to checkbox selector
-                    button = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
+                    button = li_elem.find_element(
+                        By.CSS_SELECTOR, "button.expToc-selector"
+                    )
 
                 sections.append((section_name, button, has_select_all, li_elem))
             except NoSuchElementException:
@@ -192,7 +199,9 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
 
         for item in toc_items:
             try:
-                span = item.find_element(By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]")
+                span = item.find_element(
+                    By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]"
+                )
                 current = self._normalize_heading(span.text)
                 if current == normalized_target:
                     li_elem = item
@@ -205,7 +214,9 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             prefix = normalized_target[:24]
             for item in toc_items:
                 try:
-                    span = item.find_element(By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]")
+                    span = item.find_element(
+                        By.CSS_SELECTOR, "button.expToc-selector span[data-ng-bind]"
+                    )
                     current = self._normalize_heading(span.text)
                     if current.startswith(prefix):
                         li_elem = item
@@ -234,9 +245,12 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
         Returns:
             WebElement: The export button once enabled
         """
+
         def _find_enabled_export(driver):
             try:
-                btn = driver.find_element(By.XPATH, "//button[contains(@ng-click, 'doSaveAsExcel')]")
+                btn = driver.find_element(
+                    By.XPATH, "//button[contains(@ng-click, 'doSaveAsExcel')]"
+                )
                 if btn.get_attribute("aria-disabled") != "true":
                     return btn
             except Exception:
@@ -259,12 +273,14 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             # Check if there are any .crdownload files (Chrome partial download)
             downloading = False
             for filename in os.listdir(self.download_dir):
-                if filename.endswith('.crdownload') or filename.endswith('.tmp'):
+                if filename.endswith(".crdownload") or filename.endswith(".tmp"):
                     downloading = True
                     break
 
             current_files = set(os.listdir(self.download_dir))
-            new_files = [f for f in current_files - pre_existing_files if f.endswith('.xlsx')]
+            new_files = [
+                f for f in current_files - pre_existing_files if f.endswith(".xlsx")
+            ]
 
             if not downloading and new_files:
                 time.sleep(1)  # Wait a bit more to ensure file is complete
@@ -284,18 +300,23 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             section_name: Name of the section being downloaded
         """
         # Get the most recent .xlsx file
-        files = [f for f in os.listdir(self.download_dir) if f.endswith('.xlsx')]
+        files = [f for f in os.listdir(self.download_dir) if f.endswith(".xlsx")]
         if not files:
             logger.warning("No .xlsx file found after download")
             return
 
         # Sort by modification time
-        files.sort(key=lambda x: os.path.getmtime(os.path.join(self.download_dir, x)), reverse=True)
+        files.sort(
+            key=lambda x: os.path.getmtime(os.path.join(self.download_dir, x)),
+            reverse=True,
+        )
         latest_file = files[0]
 
         # Create sanitized filename
-        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in section_name)
-        safe_name = safe_name.strip().replace(' ', '_')
+        safe_name = "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in section_name
+        )
+        safe_name = safe_name.strip().replace(" ", "_")
         new_filename = f"{safe_name}.xlsx"
 
         old_path = os.path.join(self.download_dir, latest_file)
@@ -324,9 +345,11 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             dict: Results of retry attempts
         """
         # Create lookup for failed sections
-        failed_lookup = {name: (btn, has_select_all, li_elem)
-                        for name, btn, has_select_all, li_elem in all_sections
-                        if name in failed_section_names}
+        failed_lookup = {
+            name: (btn, has_select_all, li_elem)
+            for name, btn, has_select_all, li_elem in all_sections
+            if name in failed_section_names
+        }
 
         downloaded = 0
         still_failed = []
@@ -336,33 +359,47 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
 
             for attempt in range(max_retries):
                 try:
-                    logger.info(f"Retry {attempt + 1}/{max_retries} for: {section_name}")
+                    logger.info(
+                        f"Retry {attempt + 1}/{max_retries} for: {section_name}"
+                    )
 
                     if section_name not in failed_lookup:
                         logger.warning(f"Section not found in lookup: {section_name}")
                         still_failed.append(section_name)
                         break
 
-                    select_all_btn, has_select_all, li_elem = failed_lookup[section_name]
+                    select_all_btn, has_select_all, li_elem = failed_lookup[
+                        section_name
+                    ]
 
                     # Dismiss any popups
                     self._dismiss_popups()
                     time.sleep(0.5)  # Reduced from 1s
 
                     # Scroll into view
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", select_all_btn)
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView(true);", select_all_btn
+                    )
                     time.sleep(0.5)  # Reduced from 1s
 
                     # Use JavaScript click to bypass popup interception
                     try:
-                        self.driver.execute_script("arguments[0].click();", select_all_btn)
+                        self.driver.execute_script(
+                            "arguments[0].click();", select_all_btn
+                        )
                     except Exception:
                         # Re-find within li if stale
                         if has_select_all:
-                            select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                            select_all_btn = li_elem.find_element(
+                                By.CSS_SELECTOR, "button.expToc-select-all"
+                            )
                         else:
-                            select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
-                        self.driver.execute_script("arguments[0].click();", select_all_btn)
+                            select_all_btn = li_elem.find_element(
+                                By.CSS_SELECTOR, "button.expToc-selector"
+                            )
+                        self.driver.execute_script(
+                            "arguments[0].click();", select_all_btn
+                        )
 
                     time.sleep(0.5)  # Reduced from 1s
 
@@ -379,36 +416,45 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                         self._rename_downloaded_file(section_name)
                         downloaded += 1
                         success = True
-                        logger.info(f"✓ Successfully downloaded on retry: {section_name}")
+                        logger.info(
+                            f"✓ Successfully downloaded on retry: {section_name}"
+                        )
 
                         # Deselect
                         time.sleep(0.5)  # Reduced from 1s
                         try:
-                            self.driver.execute_script("arguments[0].click();", select_all_btn)
+                            self.driver.execute_script(
+                                "arguments[0].click();", select_all_btn
+                            )
                         except Exception:
                             # Re-find if needed
                             if has_select_all:
-                                select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                                select_all_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-select-all"
+                                )
                             else:
-                                select_all_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
-                            self.driver.execute_script("arguments[0].click();", select_all_btn)
+                                select_all_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-selector"
+                                )
+                            self.driver.execute_script(
+                                "arguments[0].click();", select_all_btn
+                            )
                         time.sleep(0.3)  # Reduced from 0.5s
                         break
                     else:
                         logger.warning(f"Download timeout on retry {attempt + 1}")
 
                 except Exception as e:
-                    logger.error(f"Retry {attempt + 1} failed for '{section_name}': {e}")
+                    logger.error(
+                        f"Retry {attempt + 1} failed for '{section_name}': {e}"
+                    )
                     time.sleep(1)  # Reduced from 2s - Wait before next retry
 
             if not success:
                 still_failed.append(section_name)
                 logger.error(f"✗ All retries failed for: {section_name}")
 
-        return {
-            "downloaded": downloaded,
-            "failed_sections": still_failed
-        }
+        return {"downloaded": downloaded, "failed_sections": still_failed}
 
     def collect(self):
         """
@@ -452,7 +498,9 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                     logger.info(f"Processing section: {section_name}")
 
                     # Scroll element into view (center it inside the modal)
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", clickable_btn)
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});", clickable_btn
+                    )
                     time.sleep(0.3)  # Reduced from 0.6s
 
                     # Click selection button with stale element recovery
@@ -461,15 +509,25 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                     except Exception as e:
                         # Try JS click first
                         try:
-                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                            self.driver.execute_script(
+                                "arguments[0].click();", clickable_btn
+                            )
                         except Exception:
                             # If stale, re-find button quickly within the same li element
-                            logger.warning(f"Stale element, re-finding button for: {section_name}")
+                            logger.warning(
+                                f"Stale element, re-finding button for: {section_name}"
+                            )
                             if has_select_all:
-                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                                clickable_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-select-all"
+                                )
                             else:
-                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
-                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                                clickable_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-selector"
+                                )
+                            self.driver.execute_script(
+                                "arguments[0].click();", clickable_btn
+                            )
 
                     time.sleep(0.3)  # Reduced from 0.6s
 
@@ -481,7 +539,9 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                         self.driver.execute_script("arguments[0].click();", export_btn)
 
                     # Wait for download to complete
-                    if self._wait_for_download(pre_existing_files=set(os.listdir(self.download_dir))):
+                    if self._wait_for_download(
+                        pre_existing_files=set(os.listdir(self.download_dir))
+                    ):
                         self._rename_downloaded_file(section_name)
                         downloaded_count += 1
                     else:
@@ -494,14 +554,22 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                         clickable_btn.click()
                     except Exception:
                         try:
-                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                            self.driver.execute_script(
+                                "arguments[0].click();", clickable_btn
+                            )
                         except Exception:
                             # Re-find if needed
                             if has_select_all:
-                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-select-all")
+                                clickable_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-select-all"
+                                )
                             else:
-                                clickable_btn = li_elem.find_element(By.CSS_SELECTOR, "button.expToc-selector")
-                            self.driver.execute_script("arguments[0].click();", clickable_btn)
+                                clickable_btn = li_elem.find_element(
+                                    By.CSS_SELECTOR, "button.expToc-selector"
+                                )
+                            self.driver.execute_script(
+                                "arguments[0].click();", clickable_btn
+                            )
                     time.sleep(0.2)  # Reduced from 0.5s
 
                 except Exception as e:
@@ -520,10 +588,12 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
                 "downloaded": downloaded_count,
                 "failed": len(failed_sections),
                 "failed_sections": failed_sections,
-                "download_directory": self.download_dir
+                "download_directory": self.download_dir,
             }
 
-            logger.info(f"Collection complete: {downloaded_count}/{len(sections)} sections downloaded")
+            logger.info(
+                f"Collection complete: {downloaded_count}/{len(sections)} sections downloaded"
+            )
             return results
 
         except Exception as e:

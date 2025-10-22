@@ -142,7 +142,11 @@ class LeeAndAssociatesCollector(BaseReportCollector):
         # Use presence of posts/cards to decide when to stop (no hard reliance on "Next »" text)
         page = 1
         while True:
-            url = self.START_URL if page == 1 else f"{self.START_URL.rstrip('/')}/page/{page}/"
+            url = (
+                self.START_URL
+                if page == 1
+                else f"{self.START_URL.rstrip('/')}/page/{page}/"
+            )
             html = self._fetch(url)
             soup = BeautifulSoup(html, "html.parser")
             posts = soup.select("article, .post, .entry, .grid .card, .et_pb_post")
@@ -192,8 +196,17 @@ class LeeAndAssociatesCollector(BaseReportCollector):
             year = int(m2.group("year"))
             q = m2.group("q")
             name = m2.group("name").replace("-", " ")
-            rtype = "Economic Report" if "Economic" in name else "North America Market Report"
-            return {"year": year, "quarter": q, "report_type": rtype, "location": "North America"}
+            rtype = (
+                "Economic Report"
+                if "Economic" in name
+                else "North America Market Report"
+            )
+            return {
+                "year": year,
+                "quarter": q,
+                "report_type": rtype,
+                "location": "North America",
+            }
 
         # Fallback
         out = {"year": None, "quarter": None, "report_type": None, "location": None}
@@ -229,7 +242,7 @@ class LeeAndAssociatesCollector(BaseReportCollector):
         year = str(e.get("year") or "").strip()
         q = (e.get("quarter") or "").strip()
         loc = (e.get("location") or "").replace("/", "-")
-        rtyp = (e.get("report_type") or "report")
+        rtyp = e.get("report_type") or "report"
         parts = [p for p in [year, q, loc, rtyp] if p]
         stem = "-".join(_slug(p) for p in parts) or "report"
         return f"{stem}.pdf"

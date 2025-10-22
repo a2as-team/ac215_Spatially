@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import List, Optional
 
 from .lee_and_associates import LeeAndAssociatesCollector
@@ -20,4 +18,6 @@ class ReportsCollector:
         return self.caller_map[source].list_urls_for(**filters)
 
     def download(self, source: str, dest_root: str, **filters) -> List[str]:
-        return self.caller_map[source].download_for_options(dest_root=dest_root, **filters)
+        return self.caller_map[source].download_for_options(
+            dest_root=dest_root, **filters
+        )

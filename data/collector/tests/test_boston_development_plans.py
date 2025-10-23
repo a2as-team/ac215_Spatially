@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 
 # Add parent directory to path to import collector modules
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from collector.development_plans.boston import BostonDevelopmentPlansCollector
+from development_plans.boston import BostonDevelopmentPlansCollector
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC

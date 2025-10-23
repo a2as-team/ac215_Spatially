@@ -1,35 +1,44 @@
-# Data Collector/Parser
+# Data 
 
-This directory contains the code for collecting and parsing data from various sources.
+### Quick Start
+If you want to run the entire pipeline, you can run the following command
+```bash
+docker compose -f docker-compose.dev.yml up
+```
 
-There are main two directories:
+### Collector 
 
-- `collector`: contains the code for collecting data from various sources.
-- `parser`: contains the code for parsing data from various sources.
+If you want to run only the collector
 
-The `collector` directory contains the code for collecting data from various sources.
-The `parser` directory contains the code for parsing data from various sources.
+```bash
+docker compose -f docker-compose.dev.yml run --rm collector
+```
 
-## Collector
+You will be activated into the uv virtual environment and you can run the collector with the following command
 
-We will collect data from various sources. Each source has its own collector. Currently, we have the following collectors:
+Census Collector:
+```bash
+python census/run.py
+```
 
-- `census`: collects census data from the US Census Bureau.
-- `development_plans`: collects development plans from various sources.
-- `zba`: collects zoning board approval data from various sources.
-- `image`: collects images from various sources. (TBD)
-- `reports`: collects reports from various sources.
-- `paper`: collects journal articles from various sources.
+Development Plans Collector:
+```bash
+python development_plans/run.py
+```
 
-## Parser
+Paper Collector:
+```bash
+python paper/run.py
+```
 
-Except for census data, all other data needs to be parsed as they are mostly pdfs or csvs.
+Zoning Ordinance Collector:
+```bash
+python zoning_ordinance/run.py
+```
 
-Currently, we have the following parsers:
+If you have made modifications to the collector, you need to rebuild the container
 
-- `development_plans`: parses development plans from various sources.
-
-
-## Tests
-
-We have a test suite for the collector and parser. The test suite is located in the `tests` directory.
+```bash
+docker compose -f docker-compose.dev.yml build collector
+docker image prune -f
+```

@@ -7,10 +7,11 @@ from selenium.webdriver.support import expected_conditions as EC
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from collector.paper.base import BasePaperCollector
+
+from .base import BasePaperCollector
 
 BASE = "https://www.mdpi.com"
+
 
 class MDPICollector(BasePaperCollector):
     """
@@ -46,12 +47,14 @@ class MDPICollector(BasePaperCollector):
         driver, wait = self._driver, self._wait
         assert driver and wait
 
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "a.title-link[href]")))
+        wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a.title-link[href]"))
+        )
 
         links = set()
         for a in driver.find_elements(
             By.CSS_SELECTOR,
-            "div.generic-item.article-item a.title-link[href], a.title-link[href]"
+            "div.generic-item.article-item a.title-link[href], a.title-link[href]",
         ):
             href = (a.get_attribute("href") or "").split("#")[0]
             if not href:
@@ -75,7 +78,9 @@ class MDPICollector(BasePaperCollector):
         # Primary: MDPI uses an anchor with class 'UD_ArticlePDF'
         try:
             anchor = wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a.UD_ArticlePDF[href]"))
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "a.UD_ArticlePDF[href]")
+                )
             )
             href = (anchor.get_attribute("href") or "").split("#")[0]
             return urljoin(BASE, href) if href else None

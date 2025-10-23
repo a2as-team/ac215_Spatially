@@ -1,5 +1,5 @@
 import logging
-from collector.utils.selenium import SeleniumUtil
+from utils.selenium import SeleniumUtil
 import pandas as pd
 import os
 import time

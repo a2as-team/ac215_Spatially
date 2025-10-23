@@ -15,11 +15,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 try:
     from webdriver_manager.chrome import ChromeDriverManager
     from selenium.webdriver.chrome.service import Service
+
     HAS_WDM = True
 except Exception:
     HAS_WDM = False
 
-from collector.paper.base import BasePaperCollector
+from .base import BasePaperCollector
 
 BASE = "https://www.tandfonline.com"
 
@@ -44,8 +45,8 @@ class TaylorFrancisCollector(BasePaperCollector):
         journal_code: str = "rupt20",
         from_year: int = 2013,
         to_year: int = 2025,
-        debugger_address: Optional[str] = None,   # e.g., "127.0.0.1:9222"
-        headless: bool = False,                   # used when not attaching
+        debugger_address: Optional[str] = None,  # e.g., "127.0.0.1:9222"
+        headless: bool = False,  # used when not attaching
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -87,7 +88,9 @@ class TaylorFrancisCollector(BasePaperCollector):
         try:
             for year in range(self.from_year, self.to_year + 1):
                 vol = (year - 2013) + 1
-                vol_url = f"{BASE}/loi/{self.journal_code}?treeId=v{self.journal_code}-{vol}"
+                vol_url = (
+                    f"{BASE}/loi/{self.journal_code}?treeId=v{self.journal_code}-{vol}"
+                )
                 print(f"\n=== Year {year} | Volume {vol} ===")
                 print("[*] volume:", vol_url)
                 driver.get(vol_url)
@@ -129,7 +132,9 @@ class TaylorFrancisCollector(BasePaperCollector):
                             print("    -> cannot derive pdf url; skip")
                             continue
 
-                        out_path = self._requests_download(pdf_url, driver, str(dl_dir), referer=aurl)
+                        out_path = self._requests_download(
+                            pdf_url, driver, str(dl_dir), referer=aurl
+                        )
                         if out_path:
                             saved_files.append(os.fspath(out_path))
                             sleep(self.polite_sleep_s)
@@ -142,7 +147,9 @@ class TaylorFrancisCollector(BasePaperCollector):
         return [self.out_dir / os.path.basename(p) for p in saved_files]
 
     # ----------------------------- driver management -----------------------------
-    def _ensure_tfo_driver(self, *, download_dir: str) -> tuple[webdriver.Chrome, WebDriverWait]:
+    def _ensure_tfo_driver(
+        self, *, download_dir: str
+    ) -> tuple[webdriver.Chrome, WebDriverWait]:
         # If a driver already exists (from Base), reuse it
         if self._driver is not None and self._wait is not None:
             return self._driver, self._wait
@@ -150,26 +157,33 @@ class TaylorFrancisCollector(BasePaperCollector):
         if self.debugger_address:
             opts = Options()
             opts.debugger_address = self.debugger_address
-            opts.add_experimental_option("prefs", {
-                "download.default_directory": download_dir,
-                "download.prompt_for_download": False,
-                "plugins.always_open_pdf_externally": True,
-            })
+            opts.add_experimental_option(
+                "prefs",
+                {
+                    "download.default_directory": download_dir,
+                    "download.prompt_for_download": False,
+                    "plugins.always_open_pdf_externally": True,
+                },
+            )
             driver = webdriver.Chrome(options=opts)
         else:
             # Start a fresh driver (may hit Cloudflare if heavy crawling)
             from selenium.webdriver.chrome.options import Options as StdOptions
+
             opts = StdOptions()
             if self._headless:
                 opts.add_argument("--headless=new")
             opts.add_argument("--no-sandbox")
             opts.add_argument("--disable-dev-shm-usage")
             opts.add_argument("--disable-gpu")
-            opts.add_experimental_option("prefs", {
-                "download.default_directory": download_dir,
-                "download.prompt_for_download": False,
-                "plugins.always_open_pdf_externally": True,
-            })
+            opts.add_experimental_option(
+                "prefs",
+                {
+                    "download.default_directory": download_dir,
+                    "download.prompt_for_download": False,
+                    "plugins.always_open_pdf_externally": True,
+                },
+            )
             if HAS_WDM:
                 service = Service(ChromeDriverManager().install())
                 driver = webdriver.Chrome(service=service, options=opts)
@@ -187,9 +201,12 @@ class TaylorFrancisCollector(BasePaperCollector):
         if not html:
             return False
         needles = [
-            "/cdn-cgi/challenge-platform", "cf-turnstile",
-            "正在验证您是否是真人", "Checking your browser before accessing",
-            "Please stand by, while we are checking your browser", "Ray ID:"
+            "/cdn-cgi/challenge-platform",
+            "cf-turnstile",
+            "正在验证您是否是真人",
+            "Checking your browser before accessing",
+            "Please stand by, while we are checking your browser",
+            "Ray ID:",
         ]
         return any(n in html for n in needles)
 
@@ -203,7 +220,9 @@ class TaylorFrancisCollector(BasePaperCollector):
         return False
 
     def _collect_issue_links(self, driver: webdriver.Chrome) -> List[str]:
-        anchors = driver.find_elements(By.CSS_SELECTOR, f"a[href*='/toc/{self.journal_code}']")
+        anchors = driver.find_elements(
+            By.CSS_SELECTOR, f"a[href*='/toc/{self.journal_code}']"
+        )
         links = []
         for a in anchors:
             href = (a.get_attribute("href") or "").split("#")[0]
@@ -213,7 +232,8 @@ class TaylorFrancisCollector(BasePaperCollector):
         seen, out = set(), []
         for u in links:
             if u not in seen:
-                seen.add(u); out.append(u)
+                seen.add(u)
+                out.append(u)
         return out
 
     @staticmethod
@@ -249,7 +269,17 @@ class TaylorFrancisCollector(BasePaperCollector):
                 continue
             if "/doi/pdf/" in href:
                 continue
-            if any(x in href for x in ("/figure", "/suppl", "/tables", "/metrics", "/book", "/authors")):
+            if any(
+                x in href
+                for x in (
+                    "/figure",
+                    "/suppl",
+                    "/tables",
+                    "/metrics",
+                    "/book",
+                    "/authors",
+                )
+            ):
                 continue
             if "/doi/" in href:
                 links.append(href)
@@ -257,7 +287,8 @@ class TaylorFrancisCollector(BasePaperCollector):
         seen, uniq = set(), []
         for u in links:
             if u not in seen:
-                seen.add(u); uniq.append(u)
+                seen.add(u)
+                uniq.append(u)
         return uniq
 
     @staticmethod
@@ -295,7 +326,9 @@ class TaylorFrancisCollector(BasePaperCollector):
         return None
 
     @staticmethod
-    def _requests_download(pdf_url: str, driver: webdriver.Chrome, out_dir: str, *, referer: str = "") -> Optional[str]:
+    def _requests_download(
+        pdf_url: str, driver: webdriver.Chrome, out_dir: str, *, referer: str = ""
+    ) -> Optional[str]:
         try:
             sess = requests.Session()
             for c in driver.get_cookies():
@@ -309,7 +342,9 @@ class TaylorFrancisCollector(BasePaperCollector):
                 headers["Referer"] = referer
             with sess.get(pdf_url, headers=headers, stream=True, timeout=60) as r:
                 r.raise_for_status()
-                doi_part = pdf_url.split("/doi/pdf/")[-1].split("?")[0].replace("/", "_")
+                doi_part = (
+                    pdf_url.split("/doi/pdf/")[-1].split("?")[0].replace("/", "_")
+                )
                 fname = f"{doi_part}.pdf"
                 out_path = os.path.join(out_dir, fname)
                 with open(out_path, "wb") as f:

@@ -1,7 +1,7 @@
 # Use the official Debian-hosted Python image
 FROM python:3.12-slim-bookworm
 
-ARG DEBIAN_PACKAGES="build-essential"
+ARG DEBIAN_PACKAGES="build-essential gdal-bin libgdal-dev libproj-dev libgeos-dev"
 
 # Prevent apt from showing prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -38,7 +38,11 @@ WORKDIR /app
 # Copy the source code
 COPY --chown=app:app . ./
 
-# Make scripts executable
-RUN chmod +x scripts/*.sh
 
 RUN uv sync
+
+# Set up entrypoint to activate virtual environment
+# Entry point
+ENTRYPOINT ["/bin/bash"]
+# Get into the uv virtual environment shell
+CMD ["-c", "source /home/app/.venv/bin/activate && exec bash"]

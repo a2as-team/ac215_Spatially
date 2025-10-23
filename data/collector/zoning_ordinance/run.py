@@ -4,11 +4,10 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path to allow imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
-from collector.zoning_ordinance.boston import ZoningCodeCollector as BostonCollector
-from collector.zoning_ordinance.chicago import ChicagoZoningCollector
+from zoning_ordinance import BostonCollector, ChicagoZoningCollector
 
 if __name__ == "__main__":
     schema = {
@@ -44,8 +43,7 @@ if __name__ == "__main__":
         print("=" * 60)
 
         collector = BostonCollector(
-            headless=args["headless"],
-            download_dir=args["download_dir"]
+            headless=args["headless"], download_dir=args["download_dir"]
         )
 
         try:
@@ -57,9 +55,9 @@ if __name__ == "__main__":
             print(f"Successfully downloaded: {results['downloaded']}")
             print(f"Failed: {results['failed']}")
 
-            if results['failed_sections']:
+            if results["failed_sections"]:
                 print("\nFailed sections:")
-                for section in results['failed_sections']:
+                for section in results["failed_sections"]:
                     print(f"  - {section}")
 
             print(f"\nFiles saved to: {results['download_directory']}")
@@ -74,8 +72,7 @@ if __name__ == "__main__":
         print("=" * 60)
 
         collector = ChicagoZoningCollector(
-            headless=args["headless"],
-            download_dir=args["download_dir"]
+            headless=args["headless"], download_dir=args["download_dir"]
         )
 
         try:

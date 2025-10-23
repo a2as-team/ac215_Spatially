@@ -1,26 +1,73 @@
 # data/collector/paper/run.py
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
-from collector.paper import PaperCollector
+from paper import PaperCollector
 
 if __name__ == "__main__":
     schema = {
         # Shared-ish args (MDPI original)
-        "query": SmartArgItem(flags=["--query"], prompt="Search keyword (type 'none' for latest papers)", arg_type=str, required=False),
-        "pages": SmartArgItem(flags=["--pages"], prompt="Number of pages to scrape", arg_type=int, required=False),
-        "journal": SmartArgItem(flags=["--journal"], prompt="MDPI journal slug (e.g., land, sensors, electronics)", arg_type=str, required=False),
-        "provider": SmartArgItem(flags=["--provider"], prompt="Paper provider (mdpi or tfo)", arg_type=str, required=True),
-
+        "query": SmartArgItem(
+            flags=["--query"],
+            prompt="Search keyword (type 'none' for latest papers)",
+            arg_type=str,
+            required=False,
+        ),
+        "pages": SmartArgItem(
+            flags=["--pages"],
+            prompt="Number of pages to scrape",
+            arg_type=int,
+            required=False,
+        ),
+        "journal": SmartArgItem(
+            flags=["--journal"],
+            prompt="MDPI journal slug (e.g., land, sensors, electronics)",
+            arg_type=str,
+            required=False,
+        ),
+        "provider": SmartArgItem(
+            flags=["--provider"],
+            prompt="Paper provider (mdpi or tfo)",
+            arg_type=str,
+            required=True,
+        ),
         # TFO-specific
-        "journal_code": SmartArgItem(flags=["--journal_code"], prompt="TFO journal code (e.g., rupt20)", arg_type=str, required=False),
-        "from_year": SmartArgItem(flags=["--from_year"], prompt="From year (e.g., 2013)", arg_type=int, required=False),
-        "to_year": SmartArgItem(flags=["--to_year"], prompt="To year (e.g., 2025)", arg_type=int, required=False),
-        "debugger": SmartArgItem(flags=["--debugger"], prompt="Attach Chrome like 127.0.0.1:9222 (optional)", arg_type=str, required=False),
-        "out_dir": SmartArgItem(flags=["--out_dir"], prompt="Output directory", arg_type=str, required=False),
-        "headless": SmartArgItem(flags=["--headless"], prompt="Headless? (true/false)", arg_type=str, required=False),
+        "journal_code": SmartArgItem(
+            flags=["--journal_code"],
+            prompt="TFO journal code (e.g., rupt20)",
+            arg_type=str,
+            required=False,
+        ),
+        "from_year": SmartArgItem(
+            flags=["--from_year"],
+            prompt="From year (e.g., 2013)",
+            arg_type=int,
+            required=False,
+        ),
+        "to_year": SmartArgItem(
+            flags=["--to_year"],
+            prompt="To year (e.g., 2025)",
+            arg_type=int,
+            required=False,
+        ),
+        "debugger": SmartArgItem(
+            flags=["--debugger"],
+            prompt="Attach Chrome like 127.0.0.1:9222 (optional)",
+            arg_type=str,
+            required=False,
+        ),
+        "out_dir": SmartArgItem(
+            flags=["--out_dir"], prompt="Output directory", arg_type=str, required=False
+        ),
+        "headless": SmartArgItem(
+            flags=["--headless"],
+            prompt="Headless? (true/false)",
+            arg_type=str,
+            required=False,
+        ),
     }
 
     parser = SmartArgParser(schema)

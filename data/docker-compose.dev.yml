@@ -15,13 +15,12 @@ version: '3.8'
 
 x-environment: &default-env
   CITY: boston
-  MODEL: llama3.2
   CENSUS_TYPE: acs5
   LEVEL: tract
 
 x-collector-env: &collector-env
   <<: *default-env
-  COLLECTOR_NAME: development_plans
+
 
 # x-parser-env: &parser-env
 #   <<: *default-env
@@ -29,32 +28,20 @@ x-collector-env: &collector-env
 #   OLLAMA_HOST: http://ollama:11434
 
 services:
-  census-collector:
+  collector:
     build:
-      context: .
+      context: ./collector
       dockerfile: Dockerfile
-    container_name: census_collector
-    environment:
-      <<: *default-env
-      COLLECTOR_NAME: census
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/spatially-crawler-data-access-key.json
-    volumes:
-      - ./downloads:/app/downloads
-      - ../secrets:/secrets:ro
-    command: /app/scripts/run-collector.sh
-
-  dev-plans-collector:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: dev_plans_collector
+    container_name: spatially_collector
+    stdin_open: true  # Keep stdin open (docker run -i)
+    tty: true         # Allocate a pseudo-TTY (docker run -t)
     environment:
       <<: *collector-env
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/spatially-crawler-data-access-key.json
     volumes:
-      - ./downloads:/app/downloads
+      - ./downloads:/app/data/downloads
       - ../secrets:/secrets:ro
-    command: /app/scripts/run-collector.sh
+      - ./collector:/app
 
   # this will automatically start label studio
   label-studio:
@@ -62,6 +49,8 @@ services:
     container_name: label_studio
     ports:
       - "8080:8080"
+      # To the label-studio frontend the host for accessing the label studio backend will be
+      # http://label-studio-ml-backend:9090
     env_file:
       - ../secrets/spatially-aws-postgres-db.env
       - ../secrets/spatially-labelstudio-db.env
@@ -79,8 +68,62 @@ services:
       - ./downloads/development_plans:/label-studio/files:ro
       - label_studio_data:/label-studio/data
       - ../secrets:/secrets:ro
+    networks:
+      - label-studio-network
     command: label-studio --host 0.0.0.0
+  
+  label-studio-ml-backend:
+    container_name: label-studio-ml-backend
+    build:
+      context: ./label_studio/label_studio_development_plans_backend
+      dockerfile: Dockerfile
+    init: true
+    # build:
+    #   context: ./label_studio/label-studio-ml-backend/label_studio_ml/examples/huggingface_ner
+    #   args:
+    #     TEST_ENV: ${TEST_ENV}
+    environment:
+      # If you are using this model for training, you have to connect it to Label Studio
+      - LABEL_STUDIO_HOST=http://label-studio:8080
+      - LABEL_STUDIO_API_KEY=your-api-key
+      # Use any model for [AutoModelForSequenceClassification](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html#automodelforsequenceclassification)
+      - BASELINE_MODEL_NAME=nlpaueb/legal-bert-base-uncased
+      # change it to this model if you want to run training
+      # - BASELINE_MODEL_NAME=distilbert/distilbert-base-uncased
+      # The model directory for the fine-tuned checkpoints (relative to $MODEL_DIR)
+      - FINETUNED_MODEL_NAME=ner_model_for_development_plans
+      # The number of labeled tasks to download from Label Studio before starting training
+      - START_TRAINING_EACH_N_UPDATES=1
+      # Learning rate
+      - LEARNING_RATE=2e-5
+      # Number of epochs
+      - NUM_TRAIN_EPOCHS=3
+      # Weight decay
+      - WEIGHT_DECAY=0.01
+      # specify these parameters if you want to use basic auth for the model server
+      - BASIC_AUTH_USER=
+      - BASIC_AUTH_PASS=
+      # set the log level for the model server
+      - LOG_LEVEL=DEBUG
+      # any other parameters that you want to pass to the model server
+      - ANY=PARAMETER
+      # specify the number of workers and threads for the model server
+      - WORKERS=1
+      - THREADS=8
+      # specify the model directory (likely you don't need to change this)
+      - MODEL_DIR=/data/models
+    ports:
+      - "9090:9090"
+    volumes:
+      - "./tmp/label-studio-ml-backend/server:/data"
+      - "./tmp/label-studio-ml-backend/.cache:/root/.cache"
+    networks:
+      - label-studio-network
 
 volumes:
   label_studio_data:
     driver: local
+
+networks:
+  label-studio-network:
+    driver: bridge

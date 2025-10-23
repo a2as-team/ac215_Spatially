@@ -49,6 +49,8 @@ services:
     container_name: label_studio
     ports:
       - "8080:8080"
+      # To the label-studio frontend the host for accessing the label studio backend will be
+      # http://label-studio-ml-backend:9090
     env_file:
       - ../secrets/spatially-aws-postgres-db.env
       - ../secrets/spatially-labelstudio-db.env
@@ -71,8 +73,10 @@ services:
     command: label-studio --host 0.0.0.0
   
   label-studio-ml-backend:
-    container_name: huggingface_ner
-    image: heartexlabs/label-studio-ml-backend:huggingfacener-master
+    container_name: label-studio-ml-backend
+    build:
+      context: ./label_studio/label_studio_development_plans_backend
+      dockerfile: Dockerfile
     init: true
     # build:
     #   context: ./label_studio/label-studio-ml-backend/label_studio_ml/examples/huggingface_ner

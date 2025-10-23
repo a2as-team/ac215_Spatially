@@ -1,6 +1,14 @@
-# Data Collector/Parser
+# Data 
 
-If you want to run the collector
+### Quick Start
+If you want to run the entire pipeline, you can run the following command
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+### Collector 
+
+If you want to run only the collector
 
 ```bash
 docker compose -f docker-compose.dev.yml run --rm collector

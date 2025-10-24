@@ -4,3 +4,8 @@ __pycache__
 tmp
 downloads
 secrets
+.venv-*
+secrets/*
+!secrets/.gitkeep
+.DS_Store
+.pytest_cache

@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  census-collector:
+    build:
+      context: ./data
+      dockerfile: Dockerfile
+    container_name: spatially_census_collector
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./data/downloads:/app/downloads
+      - ./secrets:/secrets:ro
+    command: uv run python collector/census/run.py --type acs5 --level tract
+    profiles:
+      - data-collection
+      - full-pipeline
+
+  dev-plans-collector:
+    build:
+      context: ./data
+      dockerfile: Dockerfile
+    container_name: spatially_dev_plans_collector
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      - ./data/downloads:/app/downloads
+      - ./secrets:/secrets:ro
+    command: uv run python collector/development_plans/run.py
+    profiles:
+      - data-collection
+      - full-pipeline
+
+  ner-trainer:
+    build:
+      context: ./llm/development_plans/NER
+      dockerfile: Dockerfile
+    container_name: spatially_ner_trainer
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+    volumes:
+      # Mount training data and model outputs
+      - ./llm/development_plans/NER/tmp:/app/tmp
+      # Mount config for labels
+      - ./llm/development_plans/NER/config:/app/config:ro
+      # Persist models to shared location for backend access
+      - ./llm/models:/app/models
+      # Mount secrets for GCS access (if needed)
+      - ./secrets:/secrets:ro
+    profiles:
+      - model-training
+      - full-pipeline
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spatially_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-spatially}
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./backend/app:/app/app
+      - ./data/downloads:/app/data
+      - ./llm/models:/app/models
+    ports:
+      - "8000:8000"
+    profiles:
+      - app
+      - full-pipeline
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spatially_frontend
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+    ports:
+      - "5173:5173"
+    profiles:
+      - app
+      - full-pipeline
+
+volumes:
+  postgres_data:
+    driver: local
+
+# Profile Usage Examples:
+#
+# Development (just the app):
+#   docker compose --profile app up
+#
+# Data pipeline only:
+#   docker compose --profile data-collection up
+#   docker compose --profile data-processing up
+#
+# Training only:
+#   docker compose --profile model-training up
+#
+# Full MLOps pipeline:
+#   docker compose --profile full-pipeline up
+#
+# Individual services (no profiles needed):
+#   docker compose up postgres backend frontend

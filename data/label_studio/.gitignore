@@ -1,0 +1,11 @@
+# Label Studio data files
+exports/*
+!exports/.gitkeep
+!exports/*/
+!exports/*/.gitkeep
+!config.xml
+
+# Backups
+*.tar.gz
+*.zip
+

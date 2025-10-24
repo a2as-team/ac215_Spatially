@@ -79,12 +79,6 @@ class BostonDevelopmentPlansLabelStudioProcessor(DevelopmentPlansLabelStudioBase
                 "file_name": pdf_blob.name,
                 "file_path": file_url,
             },
-            "predictions": [
-                {
-                    "model_version": "pre-annotation",
-                    "result": [],
-                }
-            ],
             "meta": {
                 "source": file_url,
                 "project": metadata.get("project_name"),

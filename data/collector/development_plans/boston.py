@@ -95,6 +95,28 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         else:
             self.logger.warning(f"Row {row} has less than 3 cells")
             return None, None, None, None, None, None
+    
+    def create_safe_project_name(self, project_name: str) -> str:
+        """
+        Creates a safe project name for the project.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
+        ).strip().replace(" ", "_")
+    
+    def create_safe_document_type(self, document_type: str) -> str:
+        """
+        Creates a safe document type for the document.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
+        ).strip().replace(" ", "_")
+    
+    def create_project_id(self, project_name: str, document_type: str) -> str:
+        """Create a project id for the project using sanitized names."""
+        safe_name = self.create_safe_project_name(project_name)
+        safe_type = self.create_safe_document_type(document_type)
+        return f"{safe_name}_{safe_type}"
 
     def collect_metadata_from_current_page(self, ALLOWED_DOCUMENT_KEYWORDS):
         """
@@ -110,17 +132,20 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 document_link,
                 date,
             ) = self.parse_row(row)
+            project_id = self.create_project_id(project_name, document_type)
             if not project_name:
                 continue
             # Only append if document_type contains one of the allowed keywords
             if any(keyword in document_type for keyword in ALLOWED_DOCUMENT_KEYWORDS):
                 self.all_results.append(
                     {
+                        "project_id": project_id,
                         "project_name": project_name,
                         "project_link": project_link,
                         "neighborhood": neighborhood,
                         "document_type": document_type,
                         "document_link": document_link,
+                        # let us assign project id to the result
                         "date": date,
                     }
                 )
@@ -246,6 +271,18 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         for col in new_columns:
             if col not in df.columns:
                 df[col] = None
+
+        # Generate project_id if it doesn't exist
+        if "project_id" not in df.columns:
+            self.logger.info("Generating project_id for existing rows...")
+            df["project_id"] = df.apply(
+                lambda row: self.create_project_id(row["project_name"], row["document_type"]),
+                axis=1
+            )
+            # Reorder columns to put project_id first
+            cols = ["project_id"] + [col for col in df.columns if col != "project_id"]
+            df = df[cols]
+            self.result_df = df
 
         driver = self.selenium_util.driver
 
@@ -414,22 +451,6 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         self.result_df = df
         df.to_csv(self.csv_file(), index=False)
         self.logger.info(f"Saved metadata to {self.csv_file()}")
-    
-    def create_safe_project_name(self, project_name: str) -> str:
-        """
-        Creates a safe project name for the project.
-        """
-        return "".join(
-            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
-        ).strip().replace(" ", "_")
-    
-    def create_safe_document_type(self, document_type: str) -> str:
-        """
-        Creates a safe document type for the document.
-        """
-        return "".join(
-            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
-        ).strip().replace(" ", "_")
 
     def collect_pdf_from_document_link(self, test_mode: bool = False):
         """

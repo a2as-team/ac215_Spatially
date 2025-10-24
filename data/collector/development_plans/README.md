@@ -10,6 +10,17 @@ Currently, the following cities are supported:
 
 ## Quick Start
 
+Using Docker:
+```bash
+docker compose run --rm collector
+```
+
+If you changed the code, you need to rebuild the container:
+```bash
+docker compose build collector && docker image prune -f && docker compose run --rm collector
+```
+
+Then you can run the collector:
 ```bash
 cd data/collector
 source .venv/bin/activate

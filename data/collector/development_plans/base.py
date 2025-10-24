@@ -33,6 +33,8 @@ class BaseDevelopmentPlansCollector(BaseCollector, ABC):
             raise ValueError("City is required")
         if not self.resource_url():
             raise ValueError("Resource URL is required")
+        
+
     
     @abstractmethod
     def upload_to_gcs(self):

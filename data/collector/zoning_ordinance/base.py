@@ -9,7 +9,7 @@ from selenium.webdriver.chrome.options import Options
 import sys
 
 
-from template import BaseCollector
+from collector import BaseCollector
 
 logger = logging.getLogger(__name__)
 

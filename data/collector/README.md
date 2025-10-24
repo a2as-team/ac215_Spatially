@@ -2,6 +2,14 @@
 
 This directory contains various data collectors for the Spatially project. Each collector gathers specific types of urban planning and development data.
 
+## Local Development
+
+```bash
+cd data/collector
+source .venv/bin/activate
+uv sync
+```
+
 ## Quick Start 
 
 You should already be in data directory

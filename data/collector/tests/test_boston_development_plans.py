@@ -88,7 +88,7 @@ class TestBostonConnection(unittest.TestCase):
         )
 
         # Collect data from first page
-        self.collector.collect_data_from_current_page(
+        self.collector.collect_metadata_from_current_page(
             self.collector.ALLOWED_DOCUMENT_KEYWORDS()
         )
 

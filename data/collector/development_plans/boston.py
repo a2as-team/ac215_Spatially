@@ -9,6 +9,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
+from geopy.geocoders import Nominatim
+from utils.geo_locater import GeoLocater
+
 
 # Set up the logger for this module at the module level
 logger = logging.getLogger(__name__)
@@ -30,17 +33,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         return "https://apps.bostonplans.org/recordslibrary/"
 
     @classmethod
-    def download_directory(cls) -> str:
-        # Return absolute path of download directory
-        return "downloads/development_plans/boston"
-
-    @classmethod
     def pdf_base_directory(cls) -> str:
-        return f"{cls.download_directory()}/pdfs"
+        return f"{cls.download_directory()}"
 
     @classmethod
     def csv_file(cls) -> str:
-        return f"{cls.download_directory()}/data.csv"
+        return f"{cls.download_directory()}/metadata.csv"
 
     @classmethod
     def ALLOWED_DOCUMENT_KEYWORDS(cls):
@@ -96,7 +94,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             self.logger.warning(f"Row {row} has less than 3 cells")
             return None, None, None, None, None, None
 
-    def collect_data_from_current_page(self, ALLOWED_DOCUMENT_KEYWORDS):
+    def collect_metadata_from_current_page(self, ALLOWED_DOCUMENT_KEYWORDS):
         """
         Collects data from the current page and appends allowed results to self.all_results.
         """
@@ -166,7 +164,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             first_row = tbody.find_element(By.TAG_NAME, "tr")
             current_first_row_text = first_row.text
 
-            self.collect_data_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS)
+            self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS)
 
             # Try to find 'Next page' button and check if enabled
             try:
@@ -355,6 +353,10 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
                                 if header_text == "Address":
                                     project_metadata["address"] = detail_text
+                                    latitude, longitude = GeoLocater().geocode(detail_text)
+                                    # This is a necessary step for the label studio
+                                    project_metadata["latitude"] = latitude
+                                    project_metadata["longitude"] = longitude
                                 elif header_text == "Land Sq. Feet":
                                     project_metadata["land_sq_feet"] = detail_text
                                 elif header_text == "Gross Floor Area":
@@ -568,8 +570,11 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             if not os.path.exists(self.download_directory()):
                 os.makedirs(self.download_directory())
             if not os.path.exists(self.csv_file()):
+                logger.info("Collecting document links")
                 self.collect_document_links()
+            logger.info("Collecting metadata from CSV")
             self.collect_metadata_from_csv()
+            logger.info("Collecting PDFs from document links. This will take a while...")
             self.collect_pdf_from_document_link()
         except Exception as e:
             raise Exception(f"Error during collection: {e}")

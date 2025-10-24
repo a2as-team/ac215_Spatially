@@ -15,24 +15,28 @@ services:
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      PYTHONPATH: /app
     volumes:
-      - ./data/downloads:/app/data/downloads # This will mount our ./data/downloads as /app/data/downloads in the container
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
-      - ./data/collector:/app # This will mount our ./data/collector as /app in the container
+      - ./data:/app # This will mount our ./data as /app in the container (provides access to collector, processor, utils)
   
   processor:
+    platform: linux/amd64
     build:
       context: ./data/processor
       dockerfile: Dockerfile
     container_name: spatially_processor
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/spatially-gcp-bucket.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
+      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      PYTHONPATH: /app
     volumes:
-      - ./data/downloads:/app/data/downloads # This will mount our ./data/downloads as /app/data/downloads in the container
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
-      - ./data/processor:/app # This will mount our ./data/processor as /app in the container
+      - ./data:/app # This will mount our ./data as /app in the container (provides access to collector, processor, utils)
 
   label-studio:
     image: heartexlabs/label-studio:latest

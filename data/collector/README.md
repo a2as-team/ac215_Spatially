@@ -19,7 +19,7 @@ You should already be in the `data` directory.
 To quickly run the collector (if you have not changed dependencies or the Dockerfile), you can simply launch the container:
 
 ```bash
-docker compose -f docker-compose.dev.yml run --rm collector
+docker compose run --rm collector
 ```
 
 Your code directory will be mounted into the container, so most code changes are immediately available without needing to rebuild the image.
@@ -29,7 +29,7 @@ Your code directory will be mounted into the container, so most code changes are
 If you've updated the Dockerfile or installed new dependencies and need to rebuild, you can do everything in one line:
 
 ```bash
-docker compose -f docker-compose.dev.yml build collector && docker image prune -f && docker compose -f docker-compose.dev.yml run --rm collector
+docker compose build collector && docker image prune -f && docker compose run --rm collector
 ```
 
 - This command rebuilds the collector image, cleans up any dangling images, and starts the collector container fresh.
@@ -44,3 +44,9 @@ Most of the time, rebuilding is only necessary after a dependency or Dockerfile 
 - **zoning_ordinance**: Collect zoning ordinance documents
 - **reports**: Collect planning reports
 - **paper**: Collect academic papers and research
+
+### Running a Collector
+
+```bash
+python collector/development_plans/run.py --city boston
+```

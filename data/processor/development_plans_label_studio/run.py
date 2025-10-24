@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -5,17 +6,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
-from development_plans import DevelopmentPlansCollector
+from development_plans_label_studio import DevelopmentPlansLabelStudio
 
 if __name__ == "__main__":
     schema = {
         "city": SmartArgItem(
             flags=["--city"],
-            prompt="The city of data to collect",
+            prompt="The city of data to process",
             arg_type=str,
             required=True,
         ),
-        "test": SmartArgItem(
+         "test": SmartArgItem(
             flags=["--test"],
             prompt="Run in test mode (only process first few pages)",
             arg_type=bool,
@@ -26,5 +27,5 @@ if __name__ == "__main__":
     }
     parser = SmartArgParser(schema)
     args = parser.parse()
-    collector = DevelopmentPlansCollector()
-    collector.collect(args["city"], test_mode=args["test"])
+    processor = DevelopmentPlansLabelStudio()
+    processor.process(city=args["city"], test_mode=args["test"])

@@ -3,6 +3,7 @@ from utils.selenium import SeleniumUtil
 import pandas as pd
 import os
 import time
+import json
 from .base import BaseDevelopmentPlansCollector
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -40,6 +41,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
     @classmethod
     def csv_file(cls) -> str:
+        """Return the CSV file path for overview of all projects."""
         return f"{cls.download_directory()}/metadata.csv"
 
     @classmethod
@@ -55,8 +57,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
     def __init__(self):
         super().__init__()
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
-        self.all_results = []
-        self.result_df = None
+        self.projects = {}  # Dictionary keyed by project_id
         self.logger = logger  # Use the module-level logger
 
     def is_next_page_button_enabled(self):
@@ -117,10 +118,141 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         safe_name = self.create_safe_project_name(project_name)
         safe_type = self.create_safe_document_type(document_type)
         return f"{safe_name}_{safe_type}"
+    
+    def get_project_metadata_path(self, project_name: str) -> str:
+        """Get the path to the metadata.json file for a project."""
+        safe_project_name = self.create_safe_project_name(project_name)
+        project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
+        return f"{project_folder}/metadata.json"
+    
+    def save_project_metadata(self, project_name: str, metadata: dict):
+        """Save metadata for a single project to its metadata.json file."""
+        safe_project_name = self.create_safe_project_name(project_name)
+        project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
+        
+        # Create project folder if it doesn't exist
+        if not os.path.exists(project_folder):
+            os.makedirs(project_folder)
+        
+        metadata_path = self.get_project_metadata_path(project_name)
+        
+        # Load existing metadata if it exists
+        existing_metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                existing_metadata = json.load(f)
+        
+        # Merge with new metadata (new data takes precedence)
+        existing_metadata.update(metadata)
+        
+        # Save updated metadata
+        with open(metadata_path, 'w') as f:
+            json.dump(existing_metadata, f, indent=2)
+    
+    def load_project_metadata(self, project_name: str) -> dict:
+        """Load metadata for a single project from its metadata.json file."""
+        metadata_path = self.get_project_metadata_path(project_name)
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+        return {}
+    
+    def get_all_projects(self) -> list:
+        """Get list of all project folders (project names) in the download directory."""
+        base_dir = self.pdf_base_directory()
+        if not os.path.exists(base_dir):
+            return []
+        
+        projects = []
+        for item in os.listdir(base_dir):
+            item_path = os.path.join(base_dir, item)
+            # Only include directories (project folders)
+            if os.path.isdir(item_path):
+                projects.append(item)
+        return projects
+    
+    def generate_csv_from_json(self):
+        """
+        Generate metadata.csv from all individual JSON files for easy overview.
+        Each document type becomes a row in the CSV.
+        """
+        project_folders = self.get_all_projects()
+        all_rows = []
+        
+        for safe_project_name in project_folders:
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            # Get project-level fields
+            project_fields = {
+                'project_id': metadata.get('project_id'),
+                'project_name': metadata.get('project_name'),
+                'project_link': metadata.get('project_link'),
+                'neighborhood': metadata.get('neighborhood'),
+                'project_status': metadata.get('project_status'),
+                'project_type': metadata.get('project_type'),
+                'board_approval_date': metadata.get('board_approval_date'),
+                'address': metadata.get('address'),
+                'land_sq_feet': metadata.get('land_sq_feet'),
+                'gross_floor_area': metadata.get('gross_floor_area'),
+                'contact': metadata.get('contact'),
+                'project_description': metadata.get('project_description'),
+                'latitude': metadata.get('latitude'),
+                'longitude': metadata.get('longitude'),
+            }
+            
+            # Create a row for each document
+            documents = metadata.get('documents', [])
+            if documents:
+                for doc in documents:
+                    row = project_fields.copy()
+                    row['document_type'] = doc.get('document_type')
+                    row['document_link'] = doc.get('document_link')
+                    row['date'] = doc.get('date')
+                    # Add GCS path for the metadata.json
+                    gcs_parent_dir = self.gcp_storage_parent_directory()
+                    row['gcs_metadata_path'] = f"gs://{os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                    all_rows.append(row)
+            else:
+                # No documents, but still add the project
+                row = project_fields.copy()
+                row['document_type'] = None
+                row['document_link'] = None
+                row['date'] = None
+                gcs_parent_dir = self.gcp_storage_parent_directory()
+                row['gcs_metadata_path'] = f"gs://{os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                all_rows.append(row)
+        
+        # Create DataFrame and save to CSV
+        df = pd.DataFrame(all_rows)
+        
+        # Reorder columns to put important ones first
+        preferred_order = [
+            'project_id', 'project_name', 'neighborhood', 'document_type',
+            'project_status', 'project_type', 'address', 'document_link',
+            'gcs_metadata_path', 'project_link', 'board_approval_date',
+            'land_sq_feet', 'gross_floor_area', 'contact', 'date',
+            'latitude', 'longitude', 'project_description'
+        ]
+        
+        # Only include columns that exist
+        columns = [col for col in preferred_order if col in df.columns]
+        # Add any remaining columns not in preferred_order
+        columns.extend([col for col in df.columns if col not in columns])
+        df = df[columns]
+        
+        df.to_csv(self.csv_file(), index=False)
+        self.logger.info(f"Generated CSV with {len(df)} rows from {len(project_folders)} projects: {self.csv_file()}")
+        
+        return df
 
     def collect_metadata_from_current_page(self, ALLOWED_DOCUMENT_KEYWORDS):
         """
-        Collects data from the current page and appends allowed results to self.all_results.
+        Collects data from the current page and saves to individual project metadata files.
         """
         rows = self.find_rows()
         for row in rows:
@@ -135,20 +267,45 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             project_id = self.create_project_id(project_name, document_type)
             if not project_name:
                 continue
-            # Only append if document_type contains one of the allowed keywords
+            # Only process if document_type contains one of the allowed keywords
             if any(keyword in document_type for keyword in ALLOWED_DOCUMENT_KEYWORDS):
-                self.all_results.append(
-                    {
-                        "project_id": project_id,
-                        "project_name": project_name,
-                        "project_link": project_link,
-                        "neighborhood": neighborhood,
+                # Load existing metadata for this project
+                metadata = self.load_project_metadata(project_name)
+                
+                # Add document info to the documents list
+                if "documents" not in metadata:
+                    metadata["documents"] = []
+                
+                # Check if this document already exists (by document_type)
+                doc_exists = False
+                for doc in metadata["documents"]:
+                    if doc.get("document_type") == document_type:
+                        # Update existing document
+                        doc.update({
+                            "document_link": document_link,
+                            "date": date,
+                        })
+                        doc_exists = True
+                        break
+                
+                if not doc_exists:
+                    # Add new document
+                    metadata["documents"].append({
                         "document_type": document_type,
                         "document_link": document_link,
-                        # let us assign project id to the result
                         "date": date,
-                    }
-                )
+                    })
+                
+                # Update project-level metadata
+                metadata.update({
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "project_link": project_link,
+                    "neighborhood": neighborhood,
+                })
+                
+                # Save metadata to JSON file
+                self.save_project_metadata(project_name, metadata)
 
     def collect_document_links(self, test_mode: bool = False):
         """
@@ -240,66 +397,42 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 ).text.lower()
             )
 
-        # Save results to CSV
-        self.result_df = pd.DataFrame(self.all_results)
-        if not os.path.exists(self.download_directory()):
-            os.makedirs(self.download_directory())
-        self.result_df.to_csv(self.csv_file(), index=False)
+        self.logger.info(f"Document links collection completed. Metadata saved to individual JSON files.")
+        
+        # Generate CSV from JSON files for easy overview
+        self.generate_csv_from_json()
 
-    def collect_metadata_from_csv(self):
+    def collect_metadata_from_projects(self):
         """
-        Collects project metadata from unique project names in the CSV file.
+        Collects project metadata from unique project names found in JSON files.
         First searches for the project using project_link to find project status/type,
         then navigates to detailed project page to extract metadata.
         """
-        if self.result_df is None:
-            self.result_df = pd.read_csv(self.csv_file())
-
-        df = self.result_df
-
-        # Initialize new columns if they don't exist
-        new_columns = [
-            "project_status",
-            "project_type",
-            "board_approval_date",
-            "address",
-            "land_sq_feet",
-            "gross_floor_area",
-            "contact",
-            "project_description",
-        ]
-        for col in new_columns:
-            if col not in df.columns:
-                df[col] = None
-
-        # Generate project_id if it doesn't exist
-        if "project_id" not in df.columns:
-            self.logger.info("Generating project_id for existing rows...")
-            df["project_id"] = df.apply(
-                lambda row: self.create_project_id(row["project_name"], row["document_type"]),
-                axis=1
-            )
-            # Reorder columns to put project_id first
-            cols = ["project_id"] + [col for col in df.columns if col != "project_id"]
-            df = df[cols]
-            self.result_df = df
-
         driver = self.selenium_util.driver
 
-        # Get unique project names and their first occurrence link
-        unique_projects = df.groupby("project_name").first()["project_link"].to_dict()
-        total_unique = len(unique_projects)
+        # Get all project folders
+        project_folders = self.get_all_projects()
+        total_unique = len(project_folders)
 
-        self.logger.info(
-            f"Found {total_unique} unique projects out of {len(df)} total rows"
-        )
+        self.logger.info(f"Found {total_unique} unique projects")
 
-        # Create a dictionary to store metadata for each unique project
-        metadata_cache = {}
-
-        for count, (project_name, project_link) in enumerate(
-            unique_projects.items(), 1
-        ):
+        for count, safe_project_name in enumerate(project_folders, 1):
+            # Load existing metadata
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                self.logger.warning(f"No metadata.json found for {safe_project_name}, skipping")
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            project_name = metadata.get("project_name")
+            project_link = metadata.get("project_link")
+            
+            if not project_name or not project_link:
+                self.logger.warning(f"Missing project_name or project_link in {safe_project_name}, skipping")
+                continue
+            
             self.logger.info(f"Processing {count}/{total_unique}: {project_name}")
             self.logger.info(f"Link: {project_link}")
 
@@ -431,31 +564,23 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                                             detail_text
                                         )
 
-                # Cache the metadata for this project
-                metadata_cache[project_name] = project_metadata
-                self.logger.info(f"Successfully collected metadata for {project_name}")
+                # Save the metadata back to the project's JSON file
+                self.save_project_metadata(project_name, project_metadata)
+                self.logger.info(f"Successfully collected and saved metadata for {project_name}")
 
             except Exception as e:
                 self.logger.error(f"Error collecting metadata for {project_name}: {e}")
                 continue
 
-        # Apply cached metadata to all matching rows in the dataframe
-        self.logger.info("Applying metadata to all rows...")
-        for idx, row in df.iterrows():
-            project_name = row["project_name"]
-            if project_name in metadata_cache:
-                for key, value in metadata_cache[project_name].items():
-                    df.at[idx, key] = value
-
-        # Save updated dataframe
-        self.result_df = df
-        df.to_csv(self.csv_file(), index=False)
-        self.logger.info(f"Saved metadata to {self.csv_file()}")
+        self.logger.info(f"Metadata collection completed for {total_unique} projects")
+        
+        # Regenerate CSV from updated JSON files
+        self.generate_csv_from_json()
 
     def collect_pdf_from_document_link(self, test_mode: bool = False):
         """
         Downloads PDFs from document links (Box shared links).
-        Creates folder structure: downloads/development_plans/Boston/pdfs/[project_name]/[document_type].pdf
+        Creates folder structure: downloads/development_plans/Boston/[project_name]/[document_type].pdf
         Each project gets its own folder, and files are named by document type.
 
         Args:
@@ -464,35 +589,53 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         import requests
         import shutil
 
-        if self.result_df is None:
-            self.result_df = pd.read_csv(self.csv_file())
-
-        df = self.result_df
-
         # Create base PDF directory
         if not os.path.exists(self.pdf_base_directory()):
             os.makedirs(self.pdf_base_directory())
 
         driver = self.selenium_util.driver
 
-        # Get unique document links to avoid downloading duplicates (with project_name and document_type)
-        unique_docs = df[df["document_link"].notna()][
-            ["project_name", "document_type", "document_link"]
-        ].drop_duplicates(subset=["document_link"])
+        # Get all project folders and collect documents
+        project_folders = self.get_all_projects()
+        documents_to_download = []
+
+        for safe_project_name in project_folders:
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            project_name = metadata.get("project_name")
+            if not project_name:
+                continue
+            
+            # Get all documents for this project
+            documents = metadata.get("documents", [])
+            for doc in documents:
+                document_type = doc.get("document_type")
+                document_link = doc.get("document_link")
+                
+                if document_link:
+                    documents_to_download.append({
+                        "project_name": project_name,
+                        "document_type": document_type,
+                        "document_link": document_link
+                    })
 
         # Limit to 5 documents in test mode
         if test_mode:
-            unique_docs = unique_docs.head(5)
+            documents_to_download = documents_to_download[:5]
             self.logger.info(f"TEST MODE: Limiting to 5 documents")
 
-        total_docs = len(unique_docs)
+        total_docs = len(documents_to_download)
+        self.logger.info(f"Found {total_docs} documents to download")
 
-        self.logger.info(f"Found {total_docs} unique documents to download")
-
-        for count, (idx, row) in enumerate(unique_docs.iterrows(), 1):
-            project_name = row["project_name"]
-            document_type = row["document_type"]
-            document_link = row["document_link"]
+        for count, doc_info in enumerate(documents_to_download, 1):
+            project_name = doc_info["project_name"]
+            document_type = doc_info["document_type"]
+            document_link = doc_info["document_link"]
 
             # Sanitize project name for folder name
             safe_project_name = self.create_safe_project_name(project_name)
@@ -638,7 +781,8 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
     def collect(self, test_mode: bool = False):
         """
         Collects all allowed development plan documents from Boston's BPDA records library,
-        handling pagination, and saves the results as a CSV.
+        handling pagination, and saves the results as individual JSON files per project.
+        Also generates a CSV file for easy overview of all projects.
 
         Args:
             test_mode: If True, only process first 2-3 pages to test GCP upload functionality.
@@ -647,13 +791,24 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         try:
             if not os.path.exists(self.download_directory()):
                 os.makedirs(self.download_directory())
-            if not os.path.exists(self.csv_file()):
+            
+            # Step 1: Collect document links from the website
                 logger.info("Collecting document links" + (" (TEST MODE - limited pages)" if test_mode else ""))
                 self.collect_document_links(test_mode=test_mode)
-            logger.info("Collecting metadata from CSV")
-            self.collect_metadata_from_csv()
+            
+            # Step 2: Collect detailed metadata for each project
+            logger.info("Collecting metadata from projects")
+            self.collect_metadata_from_projects()
+            
+            # Step 3: Download PDFs
             logger.info("Collecting PDFs from document links. This will take a while...")
             self.collect_pdf_from_document_link(test_mode=test_mode)
+            
+            # Step 4: Generate CSV from all JSON files
+            logger.info("Generating final CSV from all JSON files...")
+            self.generate_csv_from_json()
+            
+            # Step 5: Upload to GCS
             self.upload_to_gcs()
         except Exception as e:
             raise Exception(f"Error during collection: {e}")

@@ -1,16 +1,34 @@
 from abc import ABC, abstractmethod
+import logging
 import os
 import shutil
-from template.label_studio_base import LabelStudioBaseProcessor
+from processor import BaseProceesor
 
+class DevelopmentPlansLabelStudioBaseProcessor(BaseProceesor, ABC):
+    def __init__(self):
+        super().__init__()
 
-class DevelopmentPlansLabelStudioBaseProcessor(LabelStudioBaseProcessor, ABC):
+        # Set up logger
+        self.logger = logging.getLogger(f"{self.__class__.__name__}")
+        if not self.logger.hasHandlers():
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
+
+        # Validate required class properties
+        if not self.city():
+            raise ValueError("City is required")
+        if not self.original_pdf_gcs_storage_path():
+            raise ValueError("Original PDF GCS storage path is required")
+
     @classmethod
     @abstractmethod
     def city(cls) -> str:
         """Return the city name for this processor."""
         pass
-    
+
     @classmethod
     def original_pdf_gcs_storage_path(cls) -> str:
         """
@@ -18,15 +36,3 @@ class DevelopmentPlansLabelStudioBaseProcessor(LabelStudioBaseProcessor, ABC):
         You should get this from the collector.
         """
         return None
-
-    def __init__(self):
-        # Access class-level properties
-        if not self.city():
-            raise ValueError("City is required")
-        if not self.original_pdf_gcs_storage_path():
-            raise ValueError("Original PDF GCS storage path is required")
-        
-    @abstractmethod
-    def upload_to_gcs(self):
-        """Upload the data to GCS."""
-        pass

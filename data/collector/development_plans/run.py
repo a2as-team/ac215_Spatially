@@ -16,8 +16,16 @@ if __name__ == "__main__":
             arg_type=str,
             required=True,
         ),
+        "test": SmartArgItem(
+            flags=["--test"],
+            prompt="Run in test mode (only process first few pages)",
+            arg_type=bool,
+            required=False,
+            default=False,
+            action="store_true",
+        ),
     }
     parser = SmartArgParser(schema)
     args = parser.parse()
     collector = DevelopmentPlansCollector()
-    collector.collect(args["city"])
+    collector.collect(args["city"], test_mode=args["test"])

@@ -13,13 +13,7 @@ version: '3.8'
 #
 # Configuration: Edit environment variables below
 
-x-environment: &default-env
-  CITY: boston
-  CENSUS_TYPE: acs5
-  LEVEL: tract
 
-x-collector-env: &collector-env
-  <<: *default-env
 
 
 # x-parser-env: &parser-env
@@ -36,11 +30,12 @@ services:
     container_name: spatially_collector
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ../secrets/spatially-gcp-bucket.env
     environment:
-      <<: *collector-env
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
+      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
     volumes:
-      - ./downloads:/app/data/downloads
       - ../secrets:/secrets:ro
       - ./collector:/app
     

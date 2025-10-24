@@ -125,9 +125,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                     }
                 )
 
-    def collect_document_links(self):
+    def collect_document_links(self, test_mode: bool = False):
         """
         Collects the document links from the current page.
+
+        Args:
+            test_mode: If True, only collect first 2-3 pages for testing.
         """
         driver = self.selenium_util.driver
         self.selenium_util.driver.get(self.resource_url())
@@ -160,6 +163,8 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
         last_seen_first_row_text = None
         page_number = 1
+        max_test_pages = 1  # In test mode, only process 1 page
+
         while True:
             # Get the text of the first row before scraping, for later comparison
             tbody = driver.find_element(By.XPATH, "//table[@role='grid']/tbody")
@@ -167,6 +172,11 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             current_first_row_text = first_row.text
 
             self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS())
+
+            # In test mode, stop after a few pages
+            if test_mode and page_number >= max_test_pages:
+                self.logger.info(f"TEST MODE: Stopping after {max_test_pages} pages")
+                break
 
             # Try to find 'Next page' button and check if enabled
             try:
@@ -421,11 +431,14 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
         ).strip().replace(" ", "_")
 
-    def collect_pdf_from_document_link(self):
+    def collect_pdf_from_document_link(self, test_mode: bool = False):
         """
         Downloads PDFs from document links (Box shared links).
         Creates folder structure: downloads/development_plans/Boston/pdfs/[project_name]/[document_type].pdf
         Each project gets its own folder, and files are named by document type.
+
+        Args:
+            test_mode: If True, only download first 5 documents for testing.
         """
         import requests
         import shutil
@@ -445,6 +458,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         unique_docs = df[df["document_link"].notna()][
             ["project_name", "document_type", "document_link"]
         ].drop_duplicates(subset=["document_link"])
+
+        # Limit to 5 documents in test mode
+        if test_mode:
+            unique_docs = unique_docs.head(5)
+            self.logger.info(f"TEST MODE: Limiting to 5 documents")
+
         total_docs = len(unique_docs)
 
         self.logger.info(f"Found {total_docs} unique documents to download")
@@ -595,22 +614,25 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
         self.logger.info(f"PDF download process completed")
 
-    def collect(self):
+    def collect(self, test_mode: bool = False):
         """
         Collects all allowed development plan documents from Boston's BPDA records library,
         handling pagination, and saves the results as a CSV.
+
+        Args:
+            test_mode: If True, only process first 2-3 pages to test GCP upload functionality.
         """
 
         try:
             if not os.path.exists(self.download_directory()):
                 os.makedirs(self.download_directory())
             if not os.path.exists(self.csv_file()):
-                logger.info("Collecting document links")
-                self.collect_document_links()
+                logger.info("Collecting document links" + (" (TEST MODE - limited pages)" if test_mode else ""))
+                self.collect_document_links(test_mode=test_mode)
             logger.info("Collecting metadata from CSV")
             self.collect_metadata_from_csv()
             logger.info("Collecting PDFs from document links. This will take a while...")
-            self.collect_pdf_from_document_link()
+            self.collect_pdf_from_document_link(test_mode=test_mode)
             self.upload_to_gcs()
         except Exception as e:
             raise Exception(f"Error during collection: {e}")

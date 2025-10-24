@@ -10,8 +10,11 @@ services:
     container_name: spatially_collector
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/spatially-gcp-bucket.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
+      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
     volumes:
       - ./data/downloads:/app/data/downloads # This will mount our ./data/downloads as /app/data/downloads in the container
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container

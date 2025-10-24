@@ -20,7 +20,7 @@ class BaseDevelopmentPlansCollector(BaseCollector, ABC):
     @classmethod
     def download_directory(cls) -> str:
         """Return the download directory path for this collector."""
-        return f"tmp/development_plans/{cls.city()}"
+        return os.path.abspath(f"tmp/development_plans/{cls.city()}")
     
     @classmethod
     def gcp_storage_parent_directory(cls) -> str:

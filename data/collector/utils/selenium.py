@@ -3,6 +3,7 @@ import logging
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 class SeleniumUtil:
@@ -62,6 +63,22 @@ class SeleniumUtil:
         # ChromeDriver is installed via base image (infologistix/docker-selenium-python)
         self._driver = webdriver.Chrome(options=chrome_options)
         self.logger.info(f"Chrome WebDriver initialized (headless={self.headless})")
+
+        # Enable downloads in headless mode
+        if self.headless and self.download_dir:
+            try:
+                self._driver.execute_cdp_cmd(
+                    "Browser.setDownloadBehavior",
+                    {
+                        "behavior": "allow",
+                        "downloadPath": self.download_dir,
+                    }
+                )
+                self.logger.info(f"Enabled downloads to: {self.download_dir}")
+            except Exception as e:
+                self.logger.warning(f"Could not enable downloads: {e}")
+
+        # Anti-detection: hide webdriver property
         try:
             self._driver.execute_cdp_cmd(
                 "Page.addScriptToEvaluateOnNewDocument",

@@ -1,121 +1,102 @@
 version: '3.8'
 
+
 services:
-  census-collector:
+  collector:
     build:
-      context: ./data
+      context: ./data/collector
       dockerfile: Dockerfile
-    container_name: spatially_census_collector
+    container_name: spatially_collector
+    stdin_open: true  # Keep stdin open (docker run -i)
+    tty: true         # Allocate a pseudo-TTY (docker run -t)
     environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
     volumes:
-      - ./data/downloads:/app/downloads
-      - ./secrets:/secrets:ro
-    command: uv run python collector/census/run.py --type acs5 --level tract
-    profiles:
-      - data-collection
-      - full-pipeline
+      - ./data/downloads:/app/data/downloads # This will mount our ./data/downloads as /app/data/downloads in the container
+      - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./data/collector:/app # This will mount our ./data/collector as /app in the container
 
-  dev-plans-collector:
-    build:
-      context: ./data
-      dockerfile: Dockerfile
-    container_name: spatially_dev_plans_collector
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
-    volumes:
-      - ./data/downloads:/app/downloads
-      - ./secrets:/secrets:ro
-    command: uv run python collector/development_plans/run.py
-    profiles:
-      - data-collection
-      - full-pipeline
-
-  ner-trainer:
-    build:
-      context: ./llm/development_plans/NER
-      dockerfile: Dockerfile
-    container_name: spatially_ner_trainer
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
-    volumes:
-      # Mount training data and model outputs
-      - ./llm/development_plans/NER/tmp:/app/tmp
-      # Mount config for labels
-      - ./llm/development_plans/NER/config:/app/config:ro
-      # Persist models to shared location for backend access
-      - ./llm/models:/app/models
-      # Mount secrets for GCS access (if needed)
-      - ./secrets:/secrets:ro
-    profiles:
-      - model-training
-      - full-pipeline
-    # Uncomment for GPU support (NVIDIA)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: spatially_backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-spatially}
-      - OLLAMA_HOST=http://ollama:11434
-    volumes:
-      - ./backend/app:/app/app
-      - ./data/downloads:/app/data
-      - ./llm/models:/app/models
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: label_studio_development_plans 
     ports:
-      - "8000:8000"
-    profiles:
-      - app
-      - full-pipeline
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: spatially_frontend
-    depends_on:
-      - backend
+      - "8080:8080"
+      # To the label-studio frontend the host for accessing the label studio backend will be
+      # http://label-studio-ml-backend:9090
+    env_file:
+      - ./secrets/spatially-aws-postgres-db.env
+      - ./secrets/spatially-labelstudio-db.env
+      - ./secrets/spatially-gcp-bucket.env
     environment:
-      - VITE_API_URL=http://localhost:8000
+      # PostgreSQL Database Configuration
+      - DJANGO_DB=default
+      # Local file serving for PDFs (for fallback, not used with GCS)
+      # - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      # - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
+      # Google Cloud Storage Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-data-accessor-keys.json
     volumes:
-      - ./frontend/src:/app/src
+      - ./data/downloads/development_plans:/label-studio/files:ro
+      - development_plans_label_studio_data:/label-studio/data
+      - ./secrets:/secrets:ro
+    networks:
+      - development_plans_label_studio_network
+    command: label-studio --host 0.0.0.0
+  
+
+  label-studio-ml-backend:
+    container_name: label-studio-ml-backend
+    build:
+      context: ./label_studio/label_studio_development_plans_backend
+      dockerfile: Dockerfile
+    init: true
+    # build:
+    #   context: ./label_studio/label-studio-ml-backend/label_studio_ml/examples/huggingface_ner
+    #   args:
+    #     TEST_ENV: ${TEST_ENV}
+    environment:
+      # If you are using this model for training, you have to connect it to Label Studio
+      - LABEL_STUDIO_HOST=http://label-studio:8080
+      - LABEL_STUDIO_API_KEY=your-api-key
+      # Use any model for [AutoModelForSequenceClassification](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html#automodelforsequenceclassification)
+      - BASELINE_MODEL_NAME=nlpaueb/legal-bert-base-uncased
+      # change it to this model if you want to run training
+      # - BASELINE_MODEL_NAME=distilbert/distilbert-base-uncased
+      # The model directory for the fine-tuned checkpoints (relative to $MODEL_DIR)
+      - FINETUNED_MODEL_NAME=ner_model_for_development_plans
+      # The number of labeled tasks to download from Label Studio before starting training
+      - START_TRAINING_EACH_N_UPDATES=1
+      # Learning rate
+      - LEARNING_RATE=2e-5
+      # Number of epochs
+      - NUM_TRAIN_EPOCHS=3
+      # Weight decay
+      - WEIGHT_DECAY=0.01
+      # specify these parameters if you want to use basic auth for the model server
+      - BASIC_AUTH_USER=
+      - BASIC_AUTH_PASS=
+      # set the log level for the model server
+      - LOG_LEVEL=DEBUG
+      # any other parameters that you want to pass to the model server
+      - ANY=PARAMETER
+      # specify the number of workers and threads for the model server
+      - WORKERS=1
+      - THREADS=8
+      # specify the model directory (likely you don't need to change this)
+      - MODEL_DIR=/data/models
     ports:
-      - "5173:5173"
-    profiles:
-      - app
-      - full-pipeline
+      - "9090:9090"
+    volumes:
+      - "./label_studio/tmp/label_studio_development_plans_backend/server:/data"
+      - "./label_studio/tmp/label_studio_development_plans_backend/.cache:/root/.cache"
+    networks:
+      - development_plans_label_studio_network
 
 volumes:
-  postgres_data:
+  # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)
+  development_plans_label_studio_data:
     driver: local
 
-# Profile Usage Examples:
-#
-# Development (just the app):
-#   docker compose --profile app up
-#
-# Data pipeline only:
-#   docker compose --profile data-collection up
-#   docker compose --profile data-processing up
-#
-# Training only:
-#   docker compose --profile model-training up
-#
-# Full MLOps pipeline:
-#   docker compose --profile full-pipeline up
-#
-# Individual services (no profiles needed):
-#   docker compose up postgres backend frontend
+networks:
+  development_plans_label_studio_network:
+    driver: bridge

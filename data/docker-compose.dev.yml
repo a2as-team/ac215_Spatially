@@ -37,7 +37,7 @@ services:
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     environment:
       <<: *collector-env
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/spatially-crawler-data-access-key.json
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
     volumes:
       - ./downloads:/app/data/downloads
       - ../secrets:/secrets:ro
@@ -62,7 +62,7 @@ services:
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
       - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
       # Google Cloud Storage Configuration
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/spatially-crawler-data-access-key.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-data-accessor-keys.json
     volumes:
       - ./label_studio:/label-studio/config
       - ./downloads/development_plans:/label-studio/files:ro
@@ -115,8 +115,8 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - "./tmp/label-studio-ml-backend/server:/data"
-      - "./tmp/label-studio-ml-backend/.cache:/root/.cache"
+      - "/label_studio/tmp/label-studio-ml-backend/server:/data"
+      - "/label_studio/tmp/label-studio-ml-backend/.cache:/root/.cache"
     networks:
       - label-studio-network
 

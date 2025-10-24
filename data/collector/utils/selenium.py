@@ -11,9 +11,10 @@ class SeleniumUtil:
     Use the 'driver' property to access the current WebDriver from anywhere this util is used.
     """
 
-    def __init__(self, headless: bool = True, logger: logging.Logger = None):
+    def __init__(self, headless: bool = True, logger: logging.Logger = None, download_dir: str = None):
         self.headless = headless
         self.logger = logger or logging.getLogger(__name__)
+        self.download_dir = download_dir
         self._driver = None
 
     @property
@@ -45,6 +46,20 @@ class SeleniumUtil:
             "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
+        # Configure download directory if specified
+        if self.download_dir:
+            import os
+            os.makedirs(self.download_dir, exist_ok=True)
+            prefs = {
+                "download.default_directory": self.download_dir,
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True,
+                "plugins.always_open_pdf_externally": True,  # Disable Chrome's PDF viewer
+                "safebrowsing.enabled": True
+            }
+            chrome_options.add_experimental_option("prefs", prefs)
+
+        # ChromeDriver is installed via base image (infologistix/docker-selenium-python)
         self._driver = webdriver.Chrome(options=chrome_options)
         self.logger.info(f"Chrome WebDriver initialized (headless={self.headless})")
         try:

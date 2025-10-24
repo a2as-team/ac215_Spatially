@@ -1,33 +1,33 @@
 """Boston-specific Label Studio service for development plans NER annotation."""
 
-from .base import BaseDevelopmentPlansLabelStudio
+from .base import DevelopmentPlansLabelStudioBaseProcessor
+from collector.development_plans.boston import BostonDevelopmentPlansCollector
 
-
-class BostonDevelopmentPlansLabelStudio(BaseDevelopmentPlansLabelStudio):
-    """Label Studio service for Boston development plans."""
+class BostonDevelopmentPlansLabelStudioProcessor(DevelopmentPlansLabelStudioBaseProcessor):
+    """Processor for Boston development plans Label Studio."""
 
     @classmethod
     def city(cls) -> str:
         """Return city name."""
-        return "boston"
-
-    @classmethod
-    def download_directory(cls) -> str:
-        """Return download directory path."""
-        return "downloads/development_plans/boston"
+        return BostonDevelopmentPlansCollector.city()
 
     @classmethod
     def get_document_types(cls) -> dict:
         """
-        Return Boston-specific document types.
-
-        The document type names are automatically used as patterns for matching filenames.
+        For ease of managing label studio, we will use document types 
         """
         return {
-            "all": "All document types",
             "spra": "Small Project Review Application",
             "loi": "Letter of Intent",
             "bpda": "BPDA Board",
             "pda": "Planned Development Area",
             "imp": "Institutional Master Plan",
         }
+
+    def upload_ner_labeling_ready_json(self):
+        """Upload the NER labeling ready JSON file to GCS."""
+        pass
+    
+    def process(self):
+        """Process the data."""
+        pass

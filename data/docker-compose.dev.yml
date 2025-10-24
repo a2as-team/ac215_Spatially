@@ -29,6 +29,7 @@ x-collector-env: &collector-env
 
 services:
   collector:
+    platform: linux/amd64 # This is necessary to run the collector using selenium
     build:
       context: ./collector
       dockerfile: Dockerfile
@@ -42,6 +43,20 @@ services:
       - ./downloads:/app/data/downloads
       - ../secrets:/secrets:ro
       - ./collector:/app
+    
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    container_name: spatially_processor
+    stdin_open: true  # Keep stdin open (docker run -i)
+    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
+    volumes:
+      # It should have access to collector
+      - ../secrets:/secrets:ro
+      - ../collector:/app/collector
 
   # this will automatically start label studio
   label-studio:

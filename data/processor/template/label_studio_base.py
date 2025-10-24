@@ -11,9 +11,10 @@ import logging
 
 import fitz  # pymupdf
 import pandas as pd
+from .base import BaseProceesor
 
 
-class BaseDataProcessorService(ABC):
+class LabelStudioBaseProcessor(BaseProceesor, ABC):
     """
     Base service class for data processor.
 
@@ -73,3 +74,12 @@ class BaseDataProcessorService(ABC):
         except Exception as e:
             self.logger.error(f"Error extracting text from {pdf_path}: {e}")
             return ""
+    
+    @abstractmethod
+    def load_metadata_from_csv(self):
+        """Load metadata from CSV file."""
+        pass
+    
+    @abstractmethod
+    def process(self):
+        pass

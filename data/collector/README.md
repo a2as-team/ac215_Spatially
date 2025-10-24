@@ -12,22 +12,30 @@ uv sync
 
 ## Quick Start 
 
-You should already be in data directory
+You should already be in the `data` directory.
+
+### Quick Start
+
+To quickly run the collector (if you have not changed dependencies or the Dockerfile), you can simply launch the container:
 
 ```bash
 docker compose -f docker-compose.dev.yml run --rm collector
-
 ```
-The folder is mounted into the container so you don't need to rebuild the container everytime you make a change.
 
-However you would need to rebuild the container if you make changes to the Dockerfile or installed new dependencies.
+Your code directory will be mounted into the container, so most code changes are immediately available without needing to rebuild the image.
+
+### Rebuilding After Dependency or Dockerfile Changes
+
+If you've updated the Dockerfile or installed new dependencies and need to rebuild, you can do everything in one line:
 
 ```bash
-docker compose -f docker-compose.dev.yml build collector && docker image prune -f
-
+docker compose -f docker-compose.dev.yml build collector && docker image prune -f && docker compose -f docker-compose.dev.yml run --rm collector
 ```
 
-You would need to prune it if you want to free up space.
+- This command rebuilds the collector image, cleans up any dangling images, and starts the collector container fresh.
+- Use `docker image prune -f` in the chain if you want to free up disk space and remove unused images.
+
+Most of the time, rebuilding is only necessary after a dependency or Dockerfile change; for pure code changes you can just rerun the "Quick Start" command above.
 
 ## Available Collectors
 

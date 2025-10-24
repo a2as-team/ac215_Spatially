@@ -11,6 +11,8 @@ from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from geopy.geocoders import Nominatim
 from utils.geo_locater import GeoLocater
+from utils.gcp_storage import GCPStorage
+from utils.file_hash_checker import FileHashChecker
 
 
 # Set up the logger for this module at the module level
@@ -52,7 +54,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
     def __init__(self):
         super().__init__()
-        self.selenium_util = SeleniumUtil(headless=True)
+        self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
         self.all_results = []
         self.result_df = None
         self.logger = logger  # Use the module-level logger
@@ -164,7 +166,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             first_row = tbody.find_element(By.TAG_NAME, "tr")
             current_first_row_text = first_row.text
 
-            self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS)
+            self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS())
 
             # Try to find 'Next page' button and check if enabled
             try:
@@ -353,7 +355,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
                                 if header_text == "Address":
                                     project_metadata["address"] = detail_text
-                                    latitude, longitude = GeoLocater().geocode(detail_text)
+                                    latitude, longitude = GeoLocater().geocode(detail_text \
+                                        + ", " \
+                                        + self.city() \
+                                        + ", " \
+                                        + "MA"
+                                    )
                                     # This is a necessary step for the label studio
                                     project_metadata["latitude"] = latitude
                                     project_metadata["longitude"] = longitude
@@ -397,6 +404,22 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         self.result_df = df
         df.to_csv(self.csv_file(), index=False)
         self.logger.info(f"Saved metadata to {self.csv_file()}")
+    
+    def create_safe_project_name(self, project_name: str) -> str:
+        """
+        Creates a safe project name for the project.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
+        ).strip().replace(" ", "_")
+    
+    def create_safe_document_type(self, document_type: str) -> str:
+        """
+        Creates a safe document type for the document.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
+        ).strip().replace(" ", "_")
 
     def collect_pdf_from_document_link(self):
         """
@@ -406,7 +429,6 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         """
         import requests
         import shutil
-        import glob
 
         if self.result_df is None:
             self.result_df = pd.read_csv(self.csv_file())
@@ -433,16 +455,10 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             document_link = row["document_link"]
 
             # Sanitize project name for folder name
-            safe_project_name = "".join(
-                c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
-            )
-            safe_project_name = safe_project_name.strip().replace(" ", "_")
+            safe_project_name = self.create_safe_project_name(project_name)
 
             # Sanitize document type for filename
-            safe_doc_type = "".join(
-                c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
-            )
-            safe_doc_type = safe_doc_type.strip().replace(" ", "_")
+            safe_document_type = self.create_safe_document_type(document_type)
 
             # Create project-specific folder
             project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
@@ -450,7 +466,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 os.makedirs(project_folder)
 
             # Create full path with document type as filename
-            pdf_path = f"{project_folder}/{safe_doc_type}.pdf"
+            pdf_path = f"{project_folder}/{safe_document_type}.pdf"
 
             # Skip if already downloaded
             if os.path.exists(pdf_path):
@@ -519,34 +535,53 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                         continue
 
                 if download_button:
+                    # Get list of files in download directory before clicking download
+                    download_dir = self.download_directory()
+                    existing_files = set()
+                    for root, _dirs, files in os.walk(download_dir):
+                        for f in files:
+                            existing_files.add(os.path.join(root, f))
+
                     download_button.click()
                     self.logger.info(
                         f"Clicked download button for {project_name} - {document_type}"
                     )
 
-                    # Wait for download to appear in downloads folder
+                    # Wait for download to complete
                     import time
+                    max_wait = 60  # Increased timeout for larger files
+                    download_complete = False
 
-                    time.sleep(3)
-
-                    # Check default Downloads folder for the file
-                    downloads_folder = os.path.expanduser("~/Downloads")
-
-                    # Wait for download to complete (look for .pdf files, not .crdownload)
-                    max_wait = 30
-                    for _ in range(max_wait):
-                        pdf_files = glob.glob(f"{downloads_folder}/*.pdf")
-                        if pdf_files:
-                            # Get the most recent PDF
-                            latest_pdf = max(pdf_files, key=os.path.getctime)
-                            # Check if it was created in the last 10 seconds
-                            if os.path.getctime(latest_pdf) > (time.time() - 10):
-                                shutil.move(latest_pdf, pdf_path)
-                                self.logger.info(
-                                    f"Successfully moved downloaded PDF to {pdf_path}"
-                                )
-                                break
+                    for i in range(max_wait):
                         time.sleep(1)
+                        current_files = set()
+                        for root, _dirs, files in os.walk(download_dir):
+                            for f in files:
+                                current_files.add(os.path.join(root, f))
+
+                        new_files = current_files - existing_files
+
+                        # Check for new PDF files (and ensure no .crdownload or .tmp files)
+                        pdf_files = [f for f in new_files if f.endswith('.pdf')]
+                        temp_files = [f for f in new_files if f.endswith(('.crdownload', '.tmp', '.part'))]
+
+                        if pdf_files and not temp_files:
+                            # Found a completed PDF download
+                            downloaded_file = pdf_files[0]
+                            shutil.move(downloaded_file, pdf_path)
+                            self.logger.info(
+                                f"Successfully downloaded and moved PDF to {pdf_path}"
+                            )
+                            download_complete = True
+                            break
+
+                        if i % 10 == 0 and i > 0:
+                            self.logger.info(f"Waiting for download to complete... ({i}s)")
+
+                    if not download_complete:
+                        self.logger.warning(
+                            f"Download timeout for {project_name} - {document_type}"
+                        )
                 else:
                     self.logger.warning(
                         f"Could not find download button for {project_name} - {document_type}"
@@ -576,5 +611,71 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             self.collect_metadata_from_csv()
             logger.info("Collecting PDFs from document links. This will take a while...")
             self.collect_pdf_from_document_link()
+            self.upload_to_gcs()
         except Exception as e:
             raise Exception(f"Error during collection: {e}")
+
+    def upload_to_gcs(self):
+        """
+        Upload the data to GCS, avoiding duplicate uploads by comparing file hashes.
+
+        Files are uploaded to: {gcp_storage_parent_directory}/{safe_project_name}/{filename}
+        For example: development_plans/boston/Project_Name/Document_Type.pdf
+        """
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        if not bucket_name:
+            raise ValueError("GCS_BUCKET_NAME environment variable not set")
+
+        gcp_project = os.environ.get("GCP_PROJECT")
+        if not gcp_project:
+            raise ValueError("GCP_PROJECT environment variable not set")
+
+        download_dir = self.download_directory()
+        gcs_parent_dir = self.gcp_storage_parent_directory()
+
+        # Initialize GCPStorage utility
+        gcp_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+
+        uploaded_count = 0
+        skipped_count = 0
+
+        # List local files to upload (pdf, csv, etc.)
+        for root, _dirs, files in os.walk(download_dir):
+            for filename in files:
+                local_path = os.path.join(root, filename)
+                # Create GCS path relative to download directory
+                rel_path = os.path.relpath(local_path, start=download_dir)
+                # Normalize path separators for GCS (use forward slashes)
+                rel_path = rel_path.replace(os.sep, '/')
+
+                # Prepend the GCS parent directory
+                gcs_blob_path = f"{gcs_parent_dir}/{rel_path}"
+
+                try:
+                    # Check if blob exists in GCS
+                    blob = gcp_storage.bucket.blob(gcs_blob_path)
+                    if blob.exists():
+                        # Reload blob metadata to get the MD5 hash
+                        blob.reload()
+                        gcs_md5 = blob.md5_hash  # base64-encoded
+
+                        # Compare hashes using FileHashChecker utility
+                        if FileHashChecker.compare_file_with_gcs_hash(local_path, gcs_md5):
+                            self.logger.info(
+                                f"Skipping upload for {gcs_blob_path} (already uploaded, hash matches)"
+                            )
+                            skipped_count += 1
+                            continue  # skip upload
+
+                    # Upload file using GCPStorage utility
+                    gcp_storage.upload_file(local_path, gcs_blob_path)
+                    self.logger.info(f"Uploaded {gcs_blob_path} to GCS bucket {bucket_name}")
+                    uploaded_count += 1
+
+                except Exception as e:
+                    self.logger.error(f"Error uploading {gcs_blob_path}: {e}")
+                    continue
+
+        self.logger.info(
+            f"Upload complete: {uploaded_count} files uploaded, {skipped_count} files skipped (duplicates)."
+        )

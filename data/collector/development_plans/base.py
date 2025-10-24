@@ -21,6 +21,11 @@ class BaseDevelopmentPlansCollector(BaseCollector, ABC):
     def download_directory(cls) -> str:
         """Return the download directory path for this collector."""
         return f"tmp/development_plans/{cls.city()}"
+    
+    @classmethod
+    def gcp_storage_parent_directory(cls) -> str:
+        """Return the GCS storage path for this collector."""
+        return f"development_plans/{cls.city()}"
 
     def __init__(self):
         # Access class-level properties
@@ -28,6 +33,11 @@ class BaseDevelopmentPlansCollector(BaseCollector, ABC):
             raise ValueError("City is required")
         if not self.resource_url():
             raise ValueError("Resource URL is required")
+    
+    @abstractmethod
+    def upload_to_gcs(self):
+        """Upload the data to GCS."""
+        pass
 
     # def __del__(self):
     #     # when the object is deleted, we should delete the download directory

@@ -11,7 +11,7 @@ services:
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     env_file:
-      - ./secrets/spatially-gcp-bucket.env
+      - ./secrets/ac215-spatially-project.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
@@ -29,7 +29,7 @@ services:
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     env_file:
-      - ./secrets/spatially-gcp-bucket.env
+      - ./secrets/ac215-spatially-project.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
@@ -46,9 +46,8 @@ services:
       # To the label-studio frontend the host for accessing the label studio backend will be
       # http://label-studio-ml-backend:9090
     env_file:
-      - ./secrets/spatially-aws-postgres-db.env
-      - ./secrets/spatially-labelstudio-db.env
-      - ./secrets/spatially-gcp-bucket.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
+      - ./secrets/ac215-spatially-labelstudio-db.env
     environment:
       # PostgreSQL Database Configuration
       - DJANGO_DB=default
@@ -113,6 +112,25 @@ services:
       - "./label_studio/tmp/label_studio_development_plans_backend/.cache:/root/.cache"
     networks:
       - development_plans_label_studio_network
+
+  workflow:
+    build:
+      context: ./workflow
+      dockerfile: Dockerfile
+    container_name: spatially_workflow
+    stdin_open: true
+    tty: true
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-registry-accessor-keys.json
+    volumes:
+      - ./secrets:/secrets:ro
+      - ./workflow:/app
+      # - ./data:/app/data
+      - ./data:/app/data
+      # Mount Docker socket to allow publishing images from within container
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)

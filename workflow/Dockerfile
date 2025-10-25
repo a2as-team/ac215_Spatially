@@ -58,5 +58,8 @@ RUN uv sync --frozen
 # Copy the rest of the source code
 COPY --chown=app:app . ./
 
+# Make entrypoint executable
+RUN chmod +x docker-entrypoint.sh
+
 # Entry point
-ENTRYPOINT ["/bin/bash","docker-entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "docker-entrypoint.sh"]

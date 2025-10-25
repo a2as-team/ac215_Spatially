@@ -22,6 +22,21 @@ To quickly run the collector (if you have not changed dependencies or the Docker
 docker compose run --rm collector
 ```
 
+### Quick Start without docker compose
+
+This will be necessary since we will use vertex ai to run the collector. Vertex ai does not have any idea of how the docker compose file is structured.
+
+```bash
+cd data/collector
+docker build --platform linux/amd64 -t data-collector -f Dockerfile . && docker builder prune -f
+docker run --platform linux/amd64 -it --rm \
+  -v $(pwd):/app \
+  -v $(pwd)/../../secrets:/secrets:ro \
+  --env-file ../../secrets/ac215-spatially-project.env \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-storage-accessor-keys.json \
+  data-collector
+```
+
 Your code directory will be mounted into the container, so most code changes are immediately available without needing to rebuild the image.
 
 ### Rebuilding After Dependency or Dockerfile Changes
@@ -29,11 +44,11 @@ Your code directory will be mounted into the container, so most code changes are
 If you've updated the Dockerfile or installed new dependencies and need to rebuild, you can do everything in one line:
 
 ```bash
-docker compose build collector && docker image prune -f && docker compose run --rm collector
+docker compose build collector && docker builder prune -f && docker compose run --rm collector
 ```
 
-- This command rebuilds the collector image, cleans up any dangling images, and starts the collector container fresh.
-- Use `docker image prune -f` in the chain if you want to free up disk space and remove unused images.
+- This command rebuilds the collector image, cleans up build cache to free up disk space, and starts the collector container fresh.
+- `docker builder prune -f` removes old build cache (much more effective than `docker image prune`)
 
 Most of the time, rebuilding is only necessary after a dependency or Dockerfile change; for pure code changes you can just rerun the "Quick Start" command above.
 
@@ -48,5 +63,5 @@ Most of the time, rebuilding is only necessary after a dependency or Dockerfile 
 ### Running a Collector
 
 ```bash
-python collector/development_plans/run.py --city boston
+python development_plans/run.py --city boston
 ```

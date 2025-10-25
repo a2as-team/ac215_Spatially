@@ -2,7 +2,6 @@
 import json
 import os
 from .base import DevelopmentPlansLabelStudioBaseProcessor
-from collector.development_plans.boston import BostonDevelopmentPlansCollector
 from utils.gcp_storage import GCPStorage
 import pandas as pd
 from utils.pdf_parser import PDFParser
@@ -37,15 +36,15 @@ class BostonDevelopmentPlansLabelStudioProcessor(DevelopmentPlansLabelStudioBase
     @classmethod
     def city(cls) -> str:
         """Return city name."""
-        return BostonDevelopmentPlansCollector.city()
-    
+        return "boston"
+
     @classmethod
     def original_pdf_gcs_storage_path(cls) -> str:
         """
         Return the original PDF GCS storage path.
         Remember that we have stored the development plan pdf per project in the GCS.
         """
-        return BostonDevelopmentPlansCollector.gcp_storage_parent_directory()
+        return "development_plans/boston"
 
     
     def prepare_annotation_data(self, doc_type: str):

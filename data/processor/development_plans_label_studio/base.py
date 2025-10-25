@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import logging
 import os
 import shutil
-from processor import BaseProceesor
+from template import BaseProceesor
 
 class DevelopmentPlansLabelStudioBaseProcessor(BaseProceesor, ABC):
     def __init__(self):

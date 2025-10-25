@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import os
 import shutil
-from collector import BaseCollector
+from template import BaseCollector
 
 
 class BaseDevelopmentPlansCollector(BaseCollector, ABC):

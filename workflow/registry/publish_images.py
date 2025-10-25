@@ -11,6 +11,7 @@ def build_and_push_to_gcp(
     gcp_project: str,
     gcp_region: str,
     repository_name: str,
+    platform: str = "linux/amd64",
     tag: str = "latest",
 ):
     """Build and push a Docker image to GCP Artifact Registry."""
@@ -22,14 +23,16 @@ def build_and_push_to_gcp(
     print(f"Building and pushing: {image_name}")
     print(f"Context: {context_path}")
     print(f"Dockerfile: {dockerfile_path}")
+    print(f"Platform: {platform}")
     print(f"Destination: {image_uri}")
     print(f"{'='*80}\n")
 
     try:
-        # Build the image
+        # Build the image for specified platform
         print(f"Building image: {image_name}...")
         build_cmd = [
             "docker", "build",
+            "--platform", platform,
             "-t", image_uri,
             "-f", str(dockerfile_path),
             str(context_path)
@@ -78,7 +81,7 @@ def publish_local_docker_images(
 
         # Get configuration from RegistryConfig
         repository_name = RegistryConfig.repository_name()
-        all_configs = RegistryConfig.images()
+        all_configs = RegistryConfig.images(gcp_region, gcp_project)
 
         # Filter to specific images if requested
         if images:
@@ -98,6 +101,7 @@ def publish_local_docker_images(
                 gcp_project=gcp_project,
                 gcp_region=gcp_region,
                 repository_name=repository_name,
+                platform=config["platform"],
                 tag=tag,
             )
             results.append((config["name"], success))

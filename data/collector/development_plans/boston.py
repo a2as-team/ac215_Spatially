@@ -129,7 +129,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
         ).strip().replace(" ", "_")
     
-    def create_project_id(self, project_name: str, document_type: str) -> str:
+    def create_project_id(self, project_name: str) -> str:
         """Create a project id for the project using sanitized names."""
         safe_name = self.create_safe_project_name(project_name)
         return f"{safe_name}"

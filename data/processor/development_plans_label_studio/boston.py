@@ -77,7 +77,7 @@ class BostonDevelopmentPlansLabelStudioProcessor(DevelopmentPlansLabelStudioBase
                 "project_id": metadata.get("project_id"),
                 "file_name": os.path.basename(pdf_blob.name),
                 "file_loc": pdf_blob.name,
-                "source_path": file_url,
+                "document_link": file_url,
             },
             "meta": {
                 "source": file_url,

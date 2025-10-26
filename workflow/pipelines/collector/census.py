@@ -18,11 +18,15 @@ class CensusCollectorComponent(BaseComponent):
 
         @dsl.container_component
         def census_collector_component():
+            cmd = (
+                f"export GCS_BUCKET_NAME={self.GCS_BUCKET_NAME} && "
+                f"export GCP_PROJECT={gcp_project} && "
+                f"/home/app/.venv/bin/python /app/census/run.py "
+                f"--city '{city}' --type population --level tract --year 2020"
+            )
             container_spec = dsl.ContainerSpec(
                 image=RegistryConfig.data_collector_image(gcp_region, gcp_project)["image_uri"],
-                command=["python", "/app/census/run.py"],
-                # TODO: Make these arguments configurable
-                args=["--city", city, "--type", "population", "--level", "tract", "--year", "2020", "--state", "IL", "--county", "", "--tract", ""],
+                command=["sh", "-c", cmd],
             )
             return container_spec
 

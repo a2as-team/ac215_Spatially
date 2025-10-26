@@ -35,23 +35,23 @@ class AllPipeline(BasePipeline):
             dev_plans_collector_task = (
                 dev_plans_collector()
                 .set_display_name(f"collector-development-plans-{city}")
-                .set_cpu_limit("500m")
-                .set_memory_limit("2G")
+                .set_cpu_limit("2000m")  # Selenium web scraping needs more resources
+                .set_memory_limit("8G")
             )
 
             census_collector_task = (
                 census_collector()
                 .set_display_name(f"collector-census-{city}")
-                .set_cpu_limit("500m")
-                .set_memory_limit("2G")
+                .set_cpu_limit("1000m")  # API calls, moderate resources
+                .set_memory_limit("4G")
             )
             
             # Processor runs after development plans collector completes
             dev_plans_processor_task = (
                 dev_plans_label_studio_processor()
                 .set_display_name(f"processor-development-plans-label-studio-{city}")
-                .set_cpu_limit("500m")
-                .set_memory_limit("2G")
+                .set_cpu_limit("1000m")  # Data processing, moderate resources
+                .set_memory_limit("4G")
                 .after(dev_plans_collector_task)  # Wait for collector to finish
             )
 
@@ -79,6 +79,8 @@ class AllPipeline(BasePipeline):
             enable_caching=False,
         )
 
-        job.run(service_account=self.GCS_SERVICE_ACCOUNT)
+        job.submit(service_account=self.GCS_SERVICE_ACCOUNT)
+
+        print(f"Pipeline job submitted: {job.resource_name}")
 
         return job

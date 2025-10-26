@@ -9,9 +9,11 @@ class DevelopmentPlansLabelStudioBaseProcessor(BaseProceesor, ABC):
         super().__init__()
 
         # Set up logger
+        import sys
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
         if not self.logger.hasHandlers():
-            handler = logging.StreamHandler()
+            # Use stdout instead of stderr for Vertex AI logging
+            handler = logging.StreamHandler(sys.stdout)
             formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)

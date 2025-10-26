@@ -17,10 +17,12 @@ from utils.file_hash_checker import FileHashChecker
 
 
 # Set up the logger for this module at the module level
+import sys
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.hasHandlers():
-    handler = logging.StreamHandler()
+    # Use stdout instead of stderr for Vertex AI logging
+    handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -793,8 +795,8 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 os.makedirs(self.download_directory())
             
             # Step 1: Collect document links from the website
-                logger.info("Collecting document links" + (" (TEST MODE - limited pages)" if test_mode else ""))
-                self.collect_document_links(test_mode=test_mode)
+            logger.info("Collecting document links" + (" (TEST MODE - limited pages)" if test_mode else ""))
+            self.collect_document_links(test_mode=test_mode)
             
             # Step 2: Collect detailed metadata for each project
             logger.info("Collecting metadata from projects")

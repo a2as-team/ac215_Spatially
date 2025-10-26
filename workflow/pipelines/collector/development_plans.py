@@ -18,10 +18,14 @@ class DevelopmentPlansCollectorComponent(BaseComponent):
 
         @dsl.container_component
         def development_plans_collector_component():
+            cmd = (
+                f"export GCS_BUCKET_NAME={self.GCS_BUCKET_NAME} && "
+                f"export GCP_PROJECT={gcp_project} && "
+                f"/home/app/.venv/bin/python /app/development_plans/run.py --city '{city}'"
+            )
             container_spec = dsl.ContainerSpec(
                 image=RegistryConfig.data_collector_image(gcp_region, gcp_project)["image_uri"],
-                command=["python", "/app/development_plans/run.py"],
-                args=["--city", city],
+                command=["sh", "-c", cmd],
             )
             return container_spec
 

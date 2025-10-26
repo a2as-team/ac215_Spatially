@@ -11,58 +11,45 @@ deploymentSpec:
   executors:
     exec-census-collector-component:
       container:
-        args:
-        - --city
-        - boston
-        - --type
-        - population
-        - --level
-        - tract
-        - --year
-        - '2020'
-        - --state
-        - IL
-        - --county
-        - ''
-        - --tract
-        - ''
         command:
-        - python
-        - data/collector/census/run.py
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && /home/app/.venv/bin/python /app/census/run.py --city 'boston' --type
+          population --level tract --year 2020
         image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/data-collector:latest
         resources:
-          cpuLimit: 0.5
-          memoryLimit: 2.0
-          resourceCpuLimit: 500m
-          resourceMemoryLimit: 2G
+          cpuLimit: 1.0
+          memoryLimit: 4.0
+          resourceCpuLimit: 1000m
+          resourceMemoryLimit: 4G
     exec-development-plans-collector-component:
       container:
-        args:
-        - --city
-        - boston
         command:
-        - python
-        - data/collector/development_plans/run.py
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && /home/app/.venv/bin/python /app/development_plans/run.py --city 'boston'
         image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/data-collector:latest
         resources:
-          cpuLimit: 0.5
-          memoryLimit: 2.0
-          resourceCpuLimit: 500m
-          resourceMemoryLimit: 2G
+          cpuLimit: 2.0
+          memoryLimit: 8.0
+          resourceCpuLimit: 2000m
+          resourceMemoryLimit: 8G
     exec-development-plans-label-studio-processor-component:
       container:
-        args:
-        - --city
-        - boston
         command:
-        - python
-        - data/processor/development_plans_label_studio/run.py
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && /home/app/.venv/bin/python /app/development_plans_label_studio/run.py
+          --city 'boston'
         image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/data-processor:latest
         resources:
-          cpuLimit: 0.5
-          memoryLimit: 2.0
-          resourceCpuLimit: 500m
-          resourceMemoryLimit: 2G
+          cpuLimit: 1.0
+          memoryLimit: 4.0
+          resourceCpuLimit: 1000m
+          resourceMemoryLimit: 4G
 pipelineInfo:
   name: all-pipeline-boston
 root:

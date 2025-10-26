@@ -20,5 +20,8 @@ if __name__ == "__main__":
     }
     parser = SmartArgParser(schema)
     args = parser.parse()
+    # The 'test' value will be True if --test is provided on the command line,
+    # otherwise it will be False, because action="store_true" with default=False.
+    # This matches typical argparse behavior.
     collector = DevelopmentPlansCollector()
     collector.collect(args["city"], test_mode=args["test"])

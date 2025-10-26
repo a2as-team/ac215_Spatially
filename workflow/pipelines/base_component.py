@@ -44,8 +44,8 @@ class BaseComponent(ABC):
             task = (
                 component()
                 .set_display_name(f"{component_name}-{city}")
-                .set_cpu_limit("500m")
-                .set_memory_limit("2G")
+                .set_cpu_limit("2000m")
+                .set_memory_limit("8G")
             )
 
         return single_component_pipeline
@@ -73,6 +73,8 @@ class BaseComponent(ABC):
             enable_caching=False,
         )
 
-        job.run(service_account=self.GCS_SERVICE_ACCOUNT)
+        job.submit(service_account=self.GCS_SERVICE_ACCOUNT)
+
+        print(f"Pipeline job submitted: {job.resource_name}")
 
         return job

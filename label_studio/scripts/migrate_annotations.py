@@ -1,52 +1,55 @@
 #!/usr/bin/env python3
 """
 Script to migrate annotations from one Label Studio project to another.
-Matches tasks based on data.project_name and data.file_name.
+Matches tasks based on data.project_name.
 
-To get your API key from localhost Label Studio:
-1. Open Label Studio in browser (http://localhost:8080)
-2. Click on your account icon (top right)
-3. Click "Account & Settings"
-4. Look for "Access Token" section
-5. Copy the token
+Usage:
+    source secrets/ac215-spatially-project.env
+    python migrate_annotations.py \\
+        --source-project 1 \\
+        --target-project 2 \\
+        --dry-run
+
+The script uses legacy token authentication.
 """
 
-import requests
 import argparse
 from typing import List, Dict
 import logging
 import os
+import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 class LabelStudioAnnotationMigrator:
-    def __init__(self, base_url: str, api_key: str):
+    def __init__(self, base_url: str, legacy_token: str):
         """
-        Initialize the migrator.
+        Initialize the migrator with legacy token authentication.
 
         Args:
             base_url: Label Studio base URL (e.g., http://localhost:8080)
-            api_key: Label Studio API key
+            legacy_token: Legacy authentication token
         """
         self.base_url = base_url.rstrip('/')
-        self.headers = {
-            'Authorization': f'Token {api_key}',
-            'Content-Type': 'application/json'
-        }
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': f'Token {legacy_token}'
+        })
+        logger.info("Using legacy token authentication")
 
     def get_annotations(self, project_id: int) -> List[Dict]:
         """Get all annotations from a project."""
         url = f"{self.base_url}/api/projects/{project_id}/export?exportType=JSON"
-        response = requests.get(url, headers=self.headers)
+        response = self.session.get(url)
         response.raise_for_status()
         return response.json()
 
     def get_tasks(self, project_id: int) -> List[Dict]:
         """Get all tasks from a project."""
-        url = f"{self.base_url}/api/projects/{project_id}/tasks"
-        response = requests.get(url, headers=self.headers)
+        url = f"{self.base_url}/api/projects/{project_id}/tasks?page_size=10000"
+        response = self.session.get(url)
         response.raise_for_status()
         return response.json()
 
@@ -61,31 +64,29 @@ class LabelStudioAnnotationMigrator:
             "ground_truth": annotation_data.get("ground_truth", False),
         }
 
-        response = requests.post(url, headers=self.headers, json=payload)
+        response = self.session.post(url, json=payload)
         response.raise_for_status()
         return response.json()
 
-    def build_task_index(self, tasks: List[Dict]) -> Dict[tuple, Dict]:
+    def build_task_index(self, tasks: List[Dict]) -> Dict[str, Dict]:
         """
-        Build an index of tasks by (project_name, file_name) for fast lookup.
+        Build an index of tasks by project_name for fast lookup.
 
         Args:
             tasks: List of tasks from Label Studio
 
         Returns:
-            Dict mapping (project_name, file_name) to task
+            Dict mapping project_name to task
         """
         index = {}
         for task in tasks:
             data = task.get('data', {})
             project_name = data.get('project_name')
-            file_name = data.get('file_name')
 
-            if project_name and file_name:
-                key = (project_name, file_name)
-                index[key] = task
+            if project_name:
+                index[project_name] = task
             else:
-                logger.warning(f"Task {task.get('id')} missing project_name or file_name")
+                logger.warning(f"Task {task.get('id')} missing project_name")
 
         return index
 
@@ -139,46 +140,44 @@ class LabelStudioAnnotationMigrator:
             # Extract task data
             task_data = source_item.get('data', {})
             project_name = task_data.get('project_name')
-            file_name = task_data.get('file_name')
 
-            if not project_name or not file_name:
-                logger.warning(f"Source task missing project_name or file_name, skipping")
+            if not project_name:
+                logger.warning(f"Source task missing project_name, skipping")
                 stats['skipped'] += 1
                 continue
 
             # Find matching target task
-            key = (project_name, file_name)
-            target_task = target_task_index.get(key)
+            target_task = target_task_index.get(project_name)
 
             if not target_task:
-                logger.warning(f"No matching task found for {project_name} / {file_name}")
+                logger.warning(f"No matching task found for {project_name}")
                 stats['not_matched'] += 1
-                not_matched_list.append((project_name, file_name))
+                not_matched_list.append(project_name)
                 continue
 
             stats['matched'] += 1
 
             # Check if task already has annotations
             if target_task.get('is_labeled', False):
-                logger.info(f"Task {target_task['id']} ({project_name} / {file_name}) already labeled, skipping")
+                logger.info(f"Task {target_task['id']} ({project_name}) already labeled, skipping")
                 stats['skipped'] += 1
                 continue
 
             # Get annotations from source
             annotations = source_item.get('annotations', [])
             if not annotations:
-                logger.info(f"No annotations to migrate for {project_name} / {file_name}")
+                logger.info(f"No annotations to migrate for {project_name}")
                 stats['skipped'] += 1
                 continue
 
             # Migrate each annotation
             for annotation in annotations:
                 if dry_run:
-                    logger.info(f"[DRY RUN] Would migrate annotation for task {target_task['id']} ({project_name} / {file_name})")
+                    logger.info(f"[DRY RUN] Would migrate annotation for task {target_task['id']} ({project_name})")
                     stats['migrated'] += 1
                 else:
                     try:
-                        logger.info(f"Migrating annotation for task {target_task['id']} ({project_name} / {file_name})")
+                        logger.info(f"Migrating annotation for task {target_task['id']} ({project_name})")
                         self.create_annotation(target_task['id'], annotation)
                         stats['migrated'] += 1
                     except Exception as e:
@@ -197,8 +196,8 @@ class LabelStudioAnnotationMigrator:
 
         if not_matched_list:
             logger.info(f"\nNot matched tasks ({len(not_matched_list)}):")
-            for project_name, file_name in not_matched_list[:10]:
-                logger.info(f"  - {project_name} / {file_name}")
+            for project_name in not_matched_list[:10]:
+                logger.info(f"  - {project_name}")
             if len(not_matched_list) > 10:
                 logger.info(f"  ... and {len(not_matched_list) - 10} more")
 
@@ -210,34 +209,26 @@ def main():
         description='Migrate annotations between Label Studio projects',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-To get your API key from localhost Label Studio:
-1. Open Label Studio in browser (http://localhost:8080)
-2. Click on your account icon (top right)
-3. Click "Account & Settings"
-4. Look for "Access Token" section
-5. Copy the token
-
-You can also set the LABEL_STUDIO_API_KEY environment variable.
+Usage:
+    source secrets/ac215-spatially-project.env
+    python migrate_annotations.py --source-project 1 --target-project 2 --dry-run
         """
     )
     parser.add_argument('--base-url', default='http://localhost:8080', help='Label Studio base URL (default: http://localhost:8080)')
-    parser.add_argument('--api-key', help='Label Studio API key (or set LABEL_STUDIO_API_KEY env var)')
+    parser.add_argument('--legacy-token', help='Legacy authentication token (or set LABEL_STUDIO_LEGACY_TOKEN env var)')
     parser.add_argument('--source-project', type=int, required=True, help='Source project ID')
     parser.add_argument('--target-project', type=int, required=True, help='Target project ID')
     parser.add_argument('--dry-run', action='store_true', help='Dry run - show what would be migrated without actually doing it')
 
     args = parser.parse_args()
 
-    # Get API key from args or environment variable
-    api_key = args.api_key or os.environ.get('LABEL_STUDIO_API_KEY')
-    if not api_key:
-        parser.error("API key required. Provide via --api-key or set LABEL_STUDIO_API_KEY environment variable.\n\n"
-                    "To get your API key:\n"
-                    "1. Open Label Studio (http://localhost:8080)\n"
-                    "2. Click Account icon → Account & Settings\n"
-                    "3. Copy the Access Token")
+    # Get legacy token from args or environment variable
+    legacy_token = args.legacy_token or os.environ.get('LABEL_STUDIO_LEGACY_TOKEN')
 
-    migrator = LabelStudioAnnotationMigrator(args.base_url, api_key)
+    if not legacy_token:
+        parser.error("Legacy token required. Set LABEL_STUDIO_LEGACY_TOKEN environment variable or use --legacy-token.")
+
+    migrator = LabelStudioAnnotationMigrator(args.base_url, legacy_token)
 
     migrator.migrate_annotations(
         source_project_id=args.source_project,
@@ -253,3 +244,12 @@ You can also set the LABEL_STUDIO_API_KEY environment variable.
 
 if __name__ == '__main__':
     main()
+
+"""
+source secrets/ac215-spatially-project.env
+python label_studio/scripts/migrate_annotations.py \
+    --legacy-token $LABEL_STUDIO_LEGACY_TOKEN \
+    --source-project 2 \
+    --target-project 18 \
+    --dry-run
+"""

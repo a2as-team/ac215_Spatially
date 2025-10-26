@@ -62,6 +62,20 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         self.projects = {}  # Dictionary keyed by project_id
         self.logger = logger  # Use the module-level logger
 
+        # Initialize GCP Storage connection (optional - gracefully handle if credentials missing)
+        self.gcp_storage = None
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        gcp_project = os.environ.get("GCP_PROJECT")
+
+        if bucket_name and gcp_project:
+            try:
+                self.gcp_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+                self.logger.info("GCS connection established")
+            except Exception as e:
+                self.logger.warning(f"Could not connect to GCS: {e}. Will operate without GCS features.")
+        else:
+            self.logger.warning("GCS credentials not found (GCS_BUCKET_NAME or GCP_PROJECT). Will operate without GCS features.")
+
     def is_next_page_button_enabled(self):
         next_page_button = self.selenium_util.driver.find_element(
             By.XPATH, "//button[@title='Next page']"
@@ -118,8 +132,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
     def create_project_id(self, project_name: str, document_type: str) -> str:
         """Create a project id for the project using sanitized names."""
         safe_name = self.create_safe_project_name(project_name)
-        safe_type = self.create_safe_document_type(document_type)
-        return f"{safe_name}_{safe_type}"
+        return f"{safe_name}"
     
     def get_project_metadata_path(self, project_name: str) -> str:
         """Get the path to the metadata.json file for a project."""
@@ -158,7 +171,55 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             with open(metadata_path, 'r') as f:
                 return json.load(f)
         return {}
-    
+
+    def should_skip_download_from_gcs(self, project_name: str, document_link: str) -> bool:
+        """
+        Check if we should skip downloading by checking if the document_link already exists in GCS.
+        Returns True if the metadata.json in GCS contains any document with the same document_link.
+
+        Args:
+            project_name: Name of the project
+            document_link: Document link to check
+
+        Returns:
+            bool: True if download should be skipped (link already in GCS), False otherwise
+        """
+        # If GCS is not available, cannot skip
+        if not self.gcp_storage:
+            return False
+
+        try:
+            safe_project_name = self.create_safe_project_name(project_name)
+            gcs_parent_dir = self.gcp_storage_parent_directory()
+
+            # Check if metadata.json exists in GCS
+            metadata_gcs_path = f"{gcs_parent_dir}/{safe_project_name}/metadata.json"
+            metadata_blob = self.gcp_storage.bucket.blob(metadata_gcs_path)
+
+            if not metadata_blob.exists():
+                # Metadata doesn't exist in GCS, need to download
+                return False
+
+            # Download and parse metadata from GCS
+            metadata_content = metadata_blob.download_as_text()
+            gcs_metadata = json.loads(metadata_content)
+
+            # Check if any document has the same document_link
+            gcs_documents = gcs_metadata.get("documents", [])
+            for doc in gcs_documents:
+                gcs_doc_link = doc.get("document_link")
+                if gcs_doc_link == document_link:
+                    # Found matching document link, skip download
+                    return True
+
+            # Document link not found in GCS metadata, need to download
+            return False
+
+        except Exception as e:
+            self.logger.warning(f"Error checking GCS for {project_name}: {e}")
+            # On error, proceed with download to be safe
+            return False
+
     def get_all_projects(self) -> list:
         """Get list of all project folders (project names) in the download directory."""
         base_dir = self.pdf_base_directory()
@@ -266,7 +327,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 document_link,
                 date,
             ) = self.parse_row(row)
-            project_id = self.create_project_id(project_name, document_type)
+            project_id = self.create_project_id(project_name)
             if not project_name:
                 continue
             # Only process if document_type contains one of the allowed keywords
@@ -653,10 +714,10 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             # Create full path with document type as filename
             pdf_path = f"{project_folder}/{safe_document_type}.pdf"
 
-            # Skip if already downloaded
-            if os.path.exists(pdf_path):
+            # Skip if document link already exists in GCS
+            if self.should_skip_download_from_gcs(project_name, document_link):
                 self.logger.info(
-                    f"Skipping {count}/{total_docs}: {project_name} - {document_type} (already downloaded)"
+                    f"Skipping {count}/{total_docs}: {project_name} - {document_type} (already in GCS with same link)"
                 )
                 continue
 
@@ -822,19 +883,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         Files are uploaded to: {gcp_storage_parent_directory}/{safe_project_name}/{filename}
         For example: development_plans/boston/Project_Name/Document_Type.pdf
         """
-        bucket_name = os.environ.get("GCS_BUCKET_NAME")
-        if not bucket_name:
-            raise ValueError("GCS_BUCKET_NAME environment variable not set")
-
-        gcp_project = os.environ.get("GCP_PROJECT")
-        if not gcp_project:
-            raise ValueError("GCP_PROJECT environment variable not set")
+        if not self.gcp_storage:
+            raise ValueError("GCS connection not available. Ensure GCS_BUCKET_NAME and GCP_PROJECT environment variables are set.")
 
         download_dir = self.download_directory()
         gcs_parent_dir = self.gcp_storage_parent_directory()
-
-        # Initialize GCPStorage utility
-        gcp_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
 
         uploaded_count = 0
         skipped_count = 0
@@ -853,7 +907,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
                 try:
                     # Check if blob exists in GCS
-                    blob = gcp_storage.bucket.blob(gcs_blob_path)
+                    blob = self.gcp_storage.bucket.blob(gcs_blob_path)
                     if blob.exists():
                         # Reload blob metadata to get the MD5 hash
                         blob.reload()
@@ -868,7 +922,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                             continue  # skip upload
 
                     # Upload file using GCPStorage utility
-                    gcp_storage.upload_file(local_path, gcs_blob_path)
+                    self.gcp_storage.upload_file(local_path, gcs_blob_path)
                     self.logger.info(f"Uploaded {gcs_blob_path} to GCS bucket {bucket_name}")
                     uploaded_count += 1
 

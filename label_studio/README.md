@@ -2,11 +2,5 @@
 
 # Quick Start
 ```bash
-docker compose -f docker-compose.dev.yml up label-studio-ml-backend
-```
-
-# Steps
-```bash
-cd label-studio-ml-backend
-pip install -e .
+docker compose up label-studio
 ```

@@ -132,6 +132,20 @@ services:
       # Mount Docker socket to allow publishing images from within container
       - /var/run/docker.sock:/var/run/docker.sock
 
+  llm_development_plans_trainer:
+    build:
+      context: ./llm/development_plans/NER
+      dockerfile: Dockerfile
+    container_name: development_plans_ner_trainer
+    stdin_open: true
+    tty: true
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+    volumes:
+      - ./llm/development_plans/NER:/app
+
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)
   development_plans_label_studio_data:

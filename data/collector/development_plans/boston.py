@@ -174,15 +174,20 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
     def should_skip_download_from_gcs(self, project_name: str, document_link: str) -> bool:
         """
-        Check if we should skip downloading by checking if the document_link already exists in GCS.
-        Returns True if the metadata.json in GCS contains any document with the same document_link.
+        Check if we should skip downloading by verifying if the PDF file actually exists in GCS.
+        Returns True only if:
+        1. The metadata.json in GCS contains a document with the same document_link, AND
+        2. The actual PDF file exists in GCS at the gcs_pdf_path location
+
+        This ensures we only skip downloads when the file is truly uploaded, not just when
+        metadata exists.
 
         Args:
             project_name: Name of the project
             document_link: Document link to check
 
         Returns:
-            bool: True if download should be skipped (link already in GCS), False otherwise
+            bool: True if download should be skipped (PDF file exists in GCS), False otherwise
         """
         # If GCS is not available, cannot skip
         if not self.gcp_storage:
@@ -204,13 +209,32 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
             metadata_content = metadata_blob.download_as_text()
             gcs_metadata = json.loads(metadata_content)
 
-            # Check if any document has the same document_link
+            # Check if any document has the same document_link AND the PDF file exists
             gcs_documents = gcs_metadata.get("documents", [])
             for doc in gcs_documents:
                 gcs_doc_link = doc.get("document_link")
                 if gcs_doc_link == document_link:
-                    # Found matching document link, skip download
-                    return True
+                    # Found matching document link, now check if PDF actually exists
+                    gcs_pdf_path = doc.get("gcs_pdf_path")
+                    
+                    if gcs_pdf_path:
+                        # Extract blob path from gs:// URL
+                        # Format: gs://bucket-name/path/to/file.pdf
+                        # We need just: path/to/file.pdf
+                        blob_path = gcs_pdf_path.replace(f"gs://{self.gcp_storage.bucket.name}/", "")
+                        pdf_blob = self.gcp_storage.bucket.blob(blob_path)
+                        
+                        if pdf_blob.exists():
+                            # Both metadata and PDF exist, skip download
+                            return True
+                        else:
+                            # Metadata exists but PDF doesn't, need to download
+                            self.logger.info(f"Metadata exists but PDF missing in GCS for {project_name}, will download")
+                            return False
+                    else:
+                        # No gcs_pdf_path in metadata, need to download
+                        self.logger.info(f"No gcs_pdf_path in metadata for {project_name}, will download")
+                        return False
 
             # Document link not found in GCS metadata, need to download
             return False
@@ -276,9 +300,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                     row['document_type'] = doc.get('document_type')
                     row['document_link'] = doc.get('document_link')
                     row['date'] = doc.get('date')
-                    # Add GCS path for the metadata.json
+                    # Add GCS paths
                     gcs_parent_dir = self.gcp_storage_parent_directory()
-                    row['gcs_metadata_path'] = f"gs://{os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')
+                    row['gcs_metadata_path'] = f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                    # Add GCS path for the PDF document
+                    row['gcs_pdf_path'] = doc.get('gcs_pdf_path', f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/{self.create_safe_document_type(doc.get('document_type', ''))}.pdf")
                     all_rows.append(row)
             else:
                 # No documents, but still add the project
@@ -297,7 +324,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         preferred_order = [
             'project_id', 'project_name', 'neighborhood', 'document_type',
             'project_status', 'project_type', 'address', 'document_link',
-            'gcs_metadata_path', 'project_link', 'board_approval_date',
+            'gcs_pdf_path', 'gcs_metadata_path', 'project_link', 'board_approval_date',
             'land_sq_feet', 'gross_floor_area', 'contact', 'date',
             'latitude', 'longitude', 'project_description'
         ]
@@ -352,11 +379,18 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                         break
                 
                 if not doc_exists:
-                    # Add new document
+                    # Add new document with GCS path
+                    safe_doc_type = self.create_safe_document_type(document_type)
+                    safe_project_name = self.create_safe_project_name(project_name)
+                    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')
+                    gcs_parent_dir = self.gcp_storage_parent_directory()
+                    gcs_pdf_path = f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/{safe_doc_type}.pdf"
+                    
                     metadata["documents"].append({
                         "document_type": document_type,
                         "document_link": document_link,
                         "date": date,
+                        "gcs_pdf_path": gcs_pdf_path,
                     })
                 
                 # Update project-level metadata
@@ -876,6 +910,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         except Exception as e:
             raise Exception(f"Error during collection: {e}")
 
+    
     def upload_to_gcs(self):
         """
         Upload the data to GCS, avoiding duplicate uploads by comparing file hashes.
@@ -933,3 +968,33 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         self.logger.info(
             f"Upload complete: {uploaded_count} files uploaded, {skipped_count} files skipped (duplicates)."
         )
+    
+    def populate_gcs_from_existing_data(self):
+        """
+        Convenience function to populate GCS from existing local data.
+        This will:
+        1. Add GCS paths to all existing metadata.json files
+        2. Regenerate the CSV with GCS paths
+        3. Upload all local files to GCS
+        
+        Use this to sync your already-downloaded local data to the cloud.
+        """
+        self.logger.info("=" * 80)
+        self.logger.info("Populating GCS from existing local data...")
+        self.logger.info("=" * 80)
+        
+        # Step 1: Add GCS paths to metadata files
+        self.logger.info("\nStep 1: Adding GCS paths to metadata files...")
+        self.add_gcs_paths_to_metadata()
+        
+        # Step 2: Regenerate CSV with updated metadata
+        self.logger.info("\nStep 2: Regenerating CSV with GCS paths...")
+        self.generate_csv_from_json()
+        
+        # Step 3: Upload everything to GCS
+        self.logger.info("\nStep 3: Uploading files to GCS...")
+        self.upload_to_gcs()
+        
+        self.logger.info("\n" + "=" * 80)
+        self.logger.info("✅ GCS population complete!")
+        self.logger.info("=" * 80)

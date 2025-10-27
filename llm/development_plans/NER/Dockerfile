@@ -34,13 +34,13 @@ COPY pyproject.toml ./
 # Install Python dependencies using uv
 RUN uv pip install --system -r pyproject.toml
 
-# Copy the rest of the application
-COPY config/ ./config/
-COPY train.py ./
-COPY tmp/ ./tmp/
+# Copy the source code
+COPY --chown=app:app . ./
 
 # Create directory for model outputs
-RUN mkdir -p /app/models /app/outputs
+RUN mkdir -p /app/tmp /app/models /app/outputs
 
-# Default command to run the trainer
-CMD ["python", "-c", "from train import Trainer; trainer = Trainer(); trainer.train()"]
+# Default command to run the trainer with GCS data
+ENTRYPOINT ["/bin/bash"]
+# Get into the uv virtual environment shell
+CMD ["-c", "exec bash"]

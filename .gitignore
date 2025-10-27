@@ -13,3 +13,4 @@ secrets/*
 data/processor/collector
 # This is because we will mount the collector and utils directories into the processor container
 workflow/data
+wandb

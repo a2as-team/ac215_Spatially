@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Dict
+from utils.gcp_storage import GCPStorage
+import os
 from transformers import (
     AutoTokenizer,
     AutoModelForTokenClassification,
@@ -12,6 +14,8 @@ import torch
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from tqdm.auto import tqdm
+import wandb
+from datetime import datetime
 
 
 class Trainer:
@@ -44,17 +48,74 @@ class Trainer:
             print("Using CPU device")
             self.device = torch.device("cpu")
         self.model.to(self.device)
-
-    def import_label_studio_data(
+        self.gcp_project = os.environ.get("GCP_PROJECT")
+        if not self.gcp_project:
+            raise ValueError("GCP_PROJECT environment variable not set")
+        self.bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        if not self.bucket_name:
+            raise ValueError("GCS_BUCKET_NAME environment variable not set")
+        self.gcp_storage = GCPStorage(gcp_project=self.gcp_project, bucket_name=self.bucket_name)
+        # Validate WANDB_API_KEY is set (wandb.init() will use it automatically)
+        if not os.environ.get("WANDB_API_KEY"):
+            raise ValueError("WANDB_API_KEY environment variable not set")
+    
+    @classmethod
+    def label_studio_annotation_gcs_storage_path(cls) -> str:
+        """
+        Return the label studio annotation GCS storage path.
+        """
+        return "development_plans/ner_training_data"
+    
+    def import_gcs_annotation_data(self) -> Dataset:
+        """
+        Import the annotation data from GCS and combine all JSON files into a single dataset.
+        Returns a Hugging Face Dataset with tokens and labels.
+        """
+        print("📥 Downloading annotation files from GCS...")
+        files = self.gcp_storage.list_files(self.label_studio_annotation_gcs_storage_path())
+        
+        if not files:
+            raise ValueError(f"No files found in GCS path: {self.label_studio_annotation_gcs_storage_path()}")
+        
+        print(f"Found {len(files)} JSON files in GCS")
+        
+        all_json_data = []
+        for file in files:
+            print(f"  - Downloading {file}")
+            json_blob = self.gcp_storage.get_blob(file)
+            json_data = json.loads(json_blob.download_as_text())
+            # Label Studio exports can be either a list or a single dict
+            if isinstance(json_data, list):
+                all_json_data.extend(json_data)
+            else:
+                all_json_data.append(json_data)
+        
+        print(f"✅ Downloaded {len(all_json_data)} annotation entries from {len(files)} files")
+        
+        # Process all the combined data
+        return self.import_label_studio_data_from_json_data(all_json_data)
+    
+            
+    def import_label_studio_data_from_single_json(
         self, json_path: Path = Path("tmp/sample-bpda-data.json")
     ) -> Dataset:
-        """Load a Label Studio JSON file and convert it to a Hugging Face Dataset."""
+        """Load a Label Studio JSON file from local path and convert it to a Hugging Face Dataset."""
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-
+        
+        return self.import_label_studio_data_from_json_data(data)
+    
+    def import_label_studio_data_from_json_data(self, data: list) -> Dataset:
+        """
+        Convert Label Studio JSON data to a Hugging Face Dataset.
+        Args:
+            data: List of Label Studio annotation entries
+        Returns:
+            Dataset with tokens and labels
+        """
         # Step 1. Smart chunking (handles long or short texts)
         # this will handle long texts by smartly chunking them into smaller segments
-        chunked_dataset = self.preprocess_label_studio_data_for_long_text(json_path)
+        chunked_dataset = self.preprocess_label_studio_data_for_long_text(json_data=data)
 
         # Step 2. Convert each chunk to tokens + labels
         examples = [
@@ -68,15 +129,24 @@ class Trainer:
         return Dataset.from_list(examples)
 
     def preprocess_label_studio_data_for_long_text(
-        self, json_path: Path = Path("tmp/sample-bpda-data.json")
+        self, json_path: Path = None, json_data: list = None
     ) -> Dataset:
         """
-        Load a Label Studio JSON file and convert it to a Hugging Face Dataset.
+        Load a Label Studio JSON file or data and convert it to a Hugging Face Dataset.
         Handles long documents by smartly chunking them into multiple smaller segments
         that respect entity boundaries and token limits.
+        
+        Args:
+            json_path: Optional path to a local JSON file
+            json_data: Optional JSON data already loaded (list of Label Studio entries)
         """
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        if json_data is not None:
+            data = json_data
+        elif json_path is not None:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            raise ValueError("Either json_path or json_data must be provided")
 
         processed_examples = []
 
@@ -271,18 +341,29 @@ class Trainer:
         return tokenized
 
     def prepare_model_input_data(
-        self, json_path: Path = Path("tmp/sample-bpda-data.json")
+        self, json_path: Path = None, use_gcs: bool = False
     ) -> Dataset:
         """
         Full preprocessing pipeline:
-        1. Load and chunk long Label Studio JSONs (import_label_studio_data)
-        2. Tokenize and align BIO labels (tokenize_and_align)
+        1. Load and chunk long Label Studio JSONs (from GCS or local file)
+        2. Tokenize and align BIO labels
         Returns a model-ready Hugging Face Dataset with input_ids, attention_mask, and labels.
+        
+        Args:
+            json_path: Optional path to a local JSON file (used if use_gcs=False)
+            use_gcs: If True, load data from GCS storage; if False, use json_path
         """
         print("🧩 Preparing model input data...")
 
         # Step 1. Load & preprocess (handles long or short docs automatically)
-        dataset = self.import_label_studio_data(json_path)
+        if use_gcs:
+            print("📦 Loading data from GCS...")
+            dataset = self.import_gcs_annotation_data()
+        else:
+            if json_path is None:
+                json_path = Path("tmp/sample-bpda-data.json")
+            print(f"📂 Loading data from local file: {json_path}")
+            dataset = self.import_label_studio_data_from_single_json(json_path)
 
         # Step 2. Tokenize and align labels
         tokenized_dataset = dataset.map(self.add_labels_in_model_format, batched=True)
@@ -290,9 +371,21 @@ class Trainer:
         print(f"✅ Prepared {len(tokenized_dataset)} examples ready for training.")
         return tokenized_dataset
 
-    def train(self, batch_size=8, epochs=3, learning_rate=2e-5):
+    def train(self, batch_size=8, epochs=3, learning_rate=2e-5, use_gcs=False, json_path=None, gradient_accumulation_steps=1):
+        """
+        Train the NER model with automatic Weights & Biases tracking.
+        
+        Args:
+            batch_size: Training batch size per device
+            epochs: Number of training epochs
+            learning_rate: Learning rate for optimizer
+            use_gcs: If True, load training data from GCS; if False, use local file
+            json_path: Optional path to local JSON file (used if use_gcs=False)
+            gradient_accumulation_steps: Number of steps to accumulate gradients before updating weights
+                                        Effective batch size = batch_size * gradient_accumulation_steps
+        """
         # Split the dataset into training and validation sets
-        dataset = self.prepare_model_input_data()
+        dataset = self.prepare_model_input_data(json_path=json_path, use_gcs=use_gcs)
         dataset = dataset.remove_columns(
             [
                 col
@@ -304,6 +397,44 @@ class Trainer:
 
         train_dataset = split["train"]
         val_dataset = split["test"]
+
+        # ✅ Initialize wandb run with auto-generated name
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        model_short_name = self.model_name.split("/")[-1]  # e.g., "legal-bert-base-uncased"
+        effective_batch_size = batch_size * gradient_accumulation_steps
+        run_name = f"{model_short_name}-e{epochs}-bs{effective_batch_size}-{timestamp}"
+        
+        wandb.init(
+            project="spatially-development-plans-ner",
+            name=run_name,
+            config={
+                "model_name": self.model_name,
+                "batch_size": batch_size,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "effective_batch_size": effective_batch_size,
+                "epochs": epochs,
+                "learning_rate": learning_rate,
+                "train_size": len(train_dataset),
+                "val_size": len(val_dataset),
+                "num_labels": len(self.label_to_id),
+                "labels": list(self.label_to_id.keys()),
+                "device": str(self.device),
+                "data_source": "gcs" if use_gcs else "local",
+            },
+            tags=["ner", "development-plans", "token-classification", "spatially"]
+        )
+        
+        print(f"📊 Training configuration:")
+        print(f"  - Batch size per step: {batch_size}")
+        print(f"  - Gradient accumulation steps: {gradient_accumulation_steps}")
+        print(f"  - Effective batch size: {effective_batch_size}")
+        
+        # Log dataset info
+        wandb.log({
+            "dataset/total_examples": len(dataset),
+            "dataset/train_examples": len(train_dataset),
+            "dataset/val_examples": len(val_dataset),
+        })
 
         # data loaders
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -325,13 +456,17 @@ class Trainer:
 
         device = self.device
 
+        # Track global step for detailed logging
+        global_step = 0
+
         # train the model
         for epoch in range(epochs):
             print(f"Epoch {epoch+1}/{epochs}")
             self.model.train()
             total_loss = 0
+            epoch_steps = 0
 
-            for batch in tqdm(train_loader, desc="Training"):
+            for batch_idx, batch in enumerate(tqdm(train_loader, desc="Training")):
                 batch = {
                     k: v.to(device)
                     for k, v in batch.items()
@@ -339,20 +474,61 @@ class Trainer:
                 }
                 outputs = self.model(**batch)
                 loss = outputs.loss
-                total_loss += loss.item()
-
+                
+                # Normalize loss for gradient accumulation
+                loss = loss / gradient_accumulation_steps
+                total_loss += loss.item() * gradient_accumulation_steps
+                
                 loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+                
+                # Only update weights every gradient_accumulation_steps
+                if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    global_step += 1
+                
+                epoch_steps += 1
+                
+                # Log batch loss every 10 optimizer steps
+                if global_step > 0 and global_step % 10 == 0:
+                    wandb.log({
+                        "train/batch_loss": loss.item() * gradient_accumulation_steps,
+                        "train/global_step": global_step,
+                    }, step=global_step)
 
-            avg_loss = total_loss / len(train_loader)
-            print(f"Average loss: {avg_loss:.4f}")
+            avg_train_loss = total_loss / len(train_loader)
+            print(f"Average training loss: {avg_train_loss:.4f}")
 
             # evaluate the model
-            self.evaluate(val_loader, device)
+            avg_val_loss = self.evaluate(val_loader, device)
+            print(f"Average validation loss: {avg_val_loss:.4f}")
 
-        self.model.save_pretrained("tmp/ner_model")
-        self.tokenizer.save_pretrained("tmp/ner_tokenizer")
+            # Log epoch metrics
+            wandb.log({
+                "train/epoch_loss": avg_train_loss,
+                "val/epoch_loss": avg_val_loss,
+                "epoch": epoch + 1,
+            }, step=global_step)
+
+        # Save model
+        model_path = "tmp/ner_model"
+        tokenizer_path = "tmp/ner_tokenizer"
+        self.model.save_pretrained(model_path)
+        self.tokenizer.save_pretrained(tokenizer_path)
+        
+        # Log model as artifact (optional but recommended)
+        model_artifact = wandb.Artifact(
+            name="ner-model",
+            type="model",
+            description=f"NER model trained on {len(train_dataset)} examples"
+        )
+        model_artifact.add_dir(model_path)
+        wandb.log_artifact(model_artifact)
+        
+        # Finish the wandb run
+        wandb.finish()
+        
+        print("✅ Training completed and logged to Weights & Biases")
 
     def evaluate(self, loader: DataLoader, device: torch.device) -> float:
         # the eval() would set the model to evaluation mode, making it not trainable

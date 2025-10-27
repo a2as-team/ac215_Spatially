@@ -14,13 +14,57 @@ The script uses legacy token authentication.
 """
 
 import argparse
-from typing import List, Dict
+from typing import List, Dict, Optional
 import logging
 import os
 import requests
+import re
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def normalize_project_name(name: str) -> str:
+    """
+    Normalize project name for fuzzy matching.
+    - Converts to lowercase
+    - Replaces underscores with spaces
+    - Removes/normalizes parentheses and other punctuation
+    - Normalizes whitespace (multiple spaces -> single space)
+    - Strips leading/trailing whitespace
+    
+    Examples:
+        "150-160 Morrissey Blvd  BC High Cadigan Wellness complex"
+        -> "150-160 morrissey blvd bc high cadigan wellness complex"
+        
+        "150-160 Morrissey Blvd (BC High Cadigan Wellness complex)"
+        -> "150-160 morrissey blvd bc high cadigan wellness complex"
+        
+        "Boston_Children_s_Hospital_IMP_2023-2025"
+        -> "boston children s hospital imp 2023-2025"
+        
+        "Boston Children s Hospital IMP 2023-2025"
+        -> "boston children s hospital imp 2023-2025"
+    """
+    if not name:
+        return ""
+    
+    # Convert to lowercase
+    normalized = name.lower()
+    
+    # Replace underscores with spaces
+    normalized = normalized.replace('_', ' ')
+    
+    # Remove parentheses (but keep the content)
+    normalized = normalized.replace('(', '').replace(')', '')
+    
+    # Normalize whitespace: replace multiple spaces/tabs with single space
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    # Strip leading/trailing whitespace
+    normalized = normalized.strip()
+    
+    return normalized
 
 
 class LabelStudioAnnotationMigrator:
@@ -68,15 +112,15 @@ class LabelStudioAnnotationMigrator:
         response.raise_for_status()
         return response.json()
 
-    def build_task_index(self, tasks: List[Dict]) -> Dict[str, Dict]:
+    def build_task_index(self, tasks: List[Dict]) -> Dict[str, tuple]:
         """
-        Build an index of tasks by project_name for fast lookup.
+        Build an index of tasks by normalized project_name for fuzzy matching.
 
         Args:
             tasks: List of tasks from Label Studio
 
         Returns:
-            Dict mapping project_name to task
+            Dict mapping normalized_project_name to (original_name, task)
         """
         index = {}
         for task in tasks:
@@ -84,7 +128,13 @@ class LabelStudioAnnotationMigrator:
             project_name = data.get('project_name')
 
             if project_name:
-                index[project_name] = task
+                normalized_name = normalize_project_name(project_name)
+                if normalized_name in index:
+                    logger.warning(
+                        f"Duplicate normalized name '{normalized_name}' "
+                        f"for projects '{project_name}' and '{index[normalized_name][0]}'"
+                    )
+                index[normalized_name] = (project_name, task)
             else:
                 logger.warning(f"Task {task.get('id')} missing project_name")
 
@@ -146,42 +196,52 @@ class LabelStudioAnnotationMigrator:
                 stats['skipped'] += 1
                 continue
 
-            # Find matching target task
-            target_task = target_task_index.get(project_name)
+            # Find matching target task using normalized name
+            normalized_source_name = normalize_project_name(project_name)
+            target_match = target_task_index.get(normalized_source_name)
 
-            if not target_task:
-                logger.warning(f"No matching task found for {project_name}")
+            if not target_match:
+                logger.warning(f"No matching task found for '{project_name}' (normalized: '{normalized_source_name}')")
                 stats['not_matched'] += 1
                 not_matched_list.append(project_name)
                 continue
 
+            # Unpack the tuple: (original_name, task)
+            target_original_name, target_task = target_match
+            
+            # Log if names are different (fuzzy match)
+            if project_name != target_original_name:
+                logger.info(
+                    f"Fuzzy match: source '{project_name}' -> target '{target_original_name}'"
+                )
+            
             stats['matched'] += 1
 
             # Check if task already has annotations
             if target_task.get('is_labeled', False):
-                logger.info(f"Task {target_task['id']} ({project_name}) already labeled, skipping")
+                logger.info(f"Task {target_task['id']} ('{target_original_name}') already labeled, skipping")
                 stats['skipped'] += 1
                 continue
 
             # Get annotations from source
             annotations = source_item.get('annotations', [])
             if not annotations:
-                logger.info(f"No annotations to migrate for {project_name}")
+                logger.info(f"No annotations to migrate for '{project_name}' -> '{target_original_name}'")
                 stats['skipped'] += 1
                 continue
 
             # Migrate each annotation
             for annotation in annotations:
                 if dry_run:
-                    logger.info(f"[DRY RUN] Would migrate annotation for task {target_task['id']} ({project_name})")
+                    logger.info(f"[DRY RUN] Would migrate annotation for task {target_task['id']} ('{target_original_name}')")
                     stats['migrated'] += 1
                 else:
                     try:
-                        logger.info(f"Migrating annotation for task {target_task['id']} ({project_name})")
+                        logger.info(f"Migrating annotation for task {target_task['id']} ('{target_original_name}')")
                         self.create_annotation(target_task['id'], annotation)
                         stats['migrated'] += 1
                     except Exception as e:
-                        logger.error(f"Error migrating annotation for task {target_task['id']}: {e}")
+                        logger.error(f"Error migrating annotation for task {target_task['id']} ('{target_original_name}'): {e}")
                         stats['errors'] += 1
 
         # Print summary
@@ -249,7 +309,7 @@ if __name__ == '__main__':
 source secrets/ac215-spatially-project.env
 python label_studio/scripts/migrate_annotations.py \
     --legacy-token $LABEL_STUDIO_LEGACY_TOKEN \
-    --source-project 2 \
-    --target-project 18 \
+    --source-project 9 \
+    --target-project 22 \
     --dry-run
 """

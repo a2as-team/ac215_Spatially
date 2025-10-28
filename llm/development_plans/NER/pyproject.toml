@@ -10,4 +10,6 @@ dependencies = [
     "ipykernel>=7.0.1",
     "seqeval>=1.2.2",
     "transformers>=4.57.1",
+    "google-cloud-storage>=2.19.0",
+    "wandb>=0.19.1",
 ]

@@ -3,30 +3,51 @@ version: '3.8'
 
 services:
   collector:
+    platform: linux/amd64
     build:
       context: ./data/collector
       dockerfile: Dockerfile
     container_name: spatially_collector
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/ac215-spatially-project.env
     environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-data-accessor-keys.json
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      PYTHONPATH: /app
     volumes:
-      - ./data/downloads:/app/data/downloads # This will mount our ./data/downloads as /app/data/downloads in the container
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
       - ./data/collector:/app # This will mount our ./data/collector as /app in the container
+  
+  processor:
+    platform: linux/amd64
+    build:
+      context: ./data/processor
+      dockerfile: Dockerfile
+    container_name: spatially_processor
+    stdin_open: true  # Keep stdin open (docker run -i)
+    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      PYTHONPATH: /app
+    volumes:
+      - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./data/processor:/app # This will mount our ./data/processor as /app in the container
 
   label-studio:
     image: heartexlabs/label-studio:latest
-    container_name: label_studio_development_plans 
+    container_name: label_studio_development_plans
     ports:
       - "8080:8080"
       # To the label-studio frontend the host for accessing the label studio backend will be
       # http://label-studio-ml-backend:9090
     env_file:
-      - ./secrets/spatially-aws-postgres-db.env
-      - ./secrets/spatially-labelstudio-db.env
-      - ./secrets/spatially-gcp-bucket.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
+      - ./secrets/ac215-spatially-labelstudio-db.env
     environment:
       # PostgreSQL Database Configuration
       - DJANGO_DB=default
@@ -34,7 +55,7 @@ services:
       # - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
       # - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
       # Google Cloud Storage Configuration
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-data-accessor-keys.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-storage-accessor-keys.json
     volumes:
       - ./data/downloads/development_plans:/label-studio/files:ro
       - development_plans_label_studio_data:/label-studio/data
@@ -91,6 +112,39 @@ services:
       - "./label_studio/tmp/label_studio_development_plans_backend/.cache:/root/.cache"
     networks:
       - development_plans_label_studio_network
+
+  workflow:
+    build:
+      context: ./workflow
+      dockerfile: Dockerfile
+    container_name: spatially_workflow
+    stdin_open: true
+    tty: true
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
+    volumes:
+      - ./secrets:/secrets:ro
+      - ./workflow:/app
+      # - ./data:/app/data
+      - ./data:/app/data
+      # Mount Docker socket to allow publishing images from within container
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  llm_development_plans_trainer:
+    build:
+      context: ./llm/development_plans/NER
+      dockerfile: Dockerfile
+    container_name: development_plans_ner_trainer
+    stdin_open: true
+    tty: true
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+    volumes:
+      - ./llm/development_plans/NER:/app
 
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)

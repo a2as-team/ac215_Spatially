@@ -3,6 +3,7 @@ from utils.selenium import SeleniumUtil
 import pandas as pd
 import os
 import time
+import json
 from .base import BaseDevelopmentPlansCollector
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -11,13 +12,17 @@ from selenium.common.exceptions import NoSuchElementException
 from bs4 import BeautifulSoup
 from geopy.geocoders import Nominatim
 from utils.geo_locater import GeoLocater
+from utils.gcp_storage import GCPStorage
+from utils.file_hash_checker import FileHashChecker
 
 
 # Set up the logger for this module at the module level
+import sys
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.hasHandlers():
-    handler = logging.StreamHandler()
+    # Use stdout instead of stderr for Vertex AI logging
+    handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -38,6 +43,7 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
     @classmethod
     def csv_file(cls) -> str:
+        """Return the CSV file path for overview of all projects."""
         return f"{cls.download_directory()}/metadata.csv"
 
     @classmethod
@@ -52,10 +58,23 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
     def __init__(self):
         super().__init__()
-        self.selenium_util = SeleniumUtil(headless=True)
-        self.all_results = []
-        self.result_df = None
+        self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
+        self.projects = {}  # Dictionary keyed by project_id
         self.logger = logger  # Use the module-level logger
+
+        # Initialize GCP Storage connection (optional - gracefully handle if credentials missing)
+        self.gcp_storage = None
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        gcp_project = os.environ.get("GCP_PROJECT")
+
+        if bucket_name and gcp_project:
+            try:
+                self.gcp_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+                self.logger.info("GCS connection established")
+            except Exception as e:
+                self.logger.warning(f"Could not connect to GCS: {e}. Will operate without GCS features.")
+        else:
+            self.logger.warning("GCS credentials not found (GCS_BUCKET_NAME or GCP_PROJECT). Will operate without GCS features.")
 
     def is_next_page_button_enabled(self):
         next_page_button = self.selenium_util.driver.find_element(
@@ -93,10 +112,237 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
         else:
             self.logger.warning(f"Row {row} has less than 3 cells")
             return None, None, None, None, None, None
+    
+    def create_safe_project_name(self, project_name: str) -> str:
+        """
+        Creates a safe project name for the project.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
+        ).strip().replace(" ", "_")
+    
+    def create_safe_document_type(self, document_type: str) -> str:
+        """
+        Creates a safe document type for the document.
+        """
+        return "".join(
+            c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
+        ).strip().replace(" ", "_")
+    
+    def create_project_id(self, project_name: str) -> str:
+        """Create a project id for the project using sanitized names."""
+        safe_name = self.create_safe_project_name(project_name)
+        return f"{safe_name}"
+    
+    def get_project_metadata_path(self, project_name: str) -> str:
+        """Get the path to the metadata.json file for a project."""
+        safe_project_name = self.create_safe_project_name(project_name)
+        project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
+        return f"{project_folder}/metadata.json"
+    
+    def save_project_metadata(self, project_name: str, metadata: dict):
+        """Save metadata for a single project to its metadata.json file."""
+        safe_project_name = self.create_safe_project_name(project_name)
+        project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
+        
+        # Create project folder if it doesn't exist
+        if not os.path.exists(project_folder):
+            os.makedirs(project_folder)
+        
+        metadata_path = self.get_project_metadata_path(project_name)
+        
+        # Load existing metadata if it exists
+        existing_metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                existing_metadata = json.load(f)
+        
+        # Merge with new metadata (new data takes precedence)
+        existing_metadata.update(metadata)
+        
+        # Save updated metadata
+        with open(metadata_path, 'w') as f:
+            json.dump(existing_metadata, f, indent=2)
+    
+    def load_project_metadata(self, project_name: str) -> dict:
+        """Load metadata for a single project from its metadata.json file."""
+        metadata_path = self.get_project_metadata_path(project_name)
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+        return {}
+
+    def should_skip_download_from_gcs(self, project_name: str, document_link: str) -> bool:
+        """
+        Check if we should skip downloading by verifying if the PDF file actually exists in GCS.
+        Returns True only if:
+        1. The metadata.json in GCS contains a document with the same document_link, AND
+        2. The actual PDF file exists in GCS at the gcs_pdf_path location
+
+        This ensures we only skip downloads when the file is truly uploaded, not just when
+        metadata exists.
+
+        Args:
+            project_name: Name of the project
+            document_link: Document link to check
+
+        Returns:
+            bool: True if download should be skipped (PDF file exists in GCS), False otherwise
+        """
+        # If GCS is not available, cannot skip
+        if not self.gcp_storage:
+            return False
+
+        try:
+            safe_project_name = self.create_safe_project_name(project_name)
+            gcs_parent_dir = self.gcp_storage_parent_directory()
+
+            # Check if metadata.json exists in GCS
+            metadata_gcs_path = f"{gcs_parent_dir}/{safe_project_name}/metadata.json"
+            metadata_blob = self.gcp_storage.bucket.blob(metadata_gcs_path)
+
+            if not metadata_blob.exists():
+                # Metadata doesn't exist in GCS, need to download
+                return False
+
+            # Download and parse metadata from GCS
+            metadata_content = metadata_blob.download_as_text()
+            gcs_metadata = json.loads(metadata_content)
+
+            # Check if any document has the same document_link AND the PDF file exists
+            gcs_documents = gcs_metadata.get("documents", [])
+            for doc in gcs_documents:
+                gcs_doc_link = doc.get("document_link")
+                if gcs_doc_link == document_link:
+                    # Found matching document link, now check if PDF actually exists
+                    gcs_pdf_path = doc.get("gcs_pdf_path")
+                    
+                    if gcs_pdf_path:
+                        # Extract blob path from gs:// URL
+                        # Format: gs://bucket-name/path/to/file.pdf
+                        # We need just: path/to/file.pdf
+                        blob_path = gcs_pdf_path.replace(f"gs://{self.gcp_storage.bucket.name}/", "")
+                        pdf_blob = self.gcp_storage.bucket.blob(blob_path)
+                        
+                        if pdf_blob.exists():
+                            # Both metadata and PDF exist, skip download
+                            return True
+                        else:
+                            # Metadata exists but PDF doesn't, need to download
+                            self.logger.info(f"Metadata exists but PDF missing in GCS for {project_name}, will download")
+                            return False
+                    else:
+                        # No gcs_pdf_path in metadata, need to download
+                        self.logger.info(f"No gcs_pdf_path in metadata for {project_name}, will download")
+                        return False
+
+            # Document link not found in GCS metadata, need to download
+            return False
+
+        except Exception as e:
+            self.logger.warning(f"Error checking GCS for {project_name}: {e}")
+            # On error, proceed with download to be safe
+            return False
+
+    def get_all_projects(self) -> list:
+        """Get list of all project folders (project names) in the download directory."""
+        base_dir = self.pdf_base_directory()
+        if not os.path.exists(base_dir):
+            return []
+        
+        projects = []
+        for item in os.listdir(base_dir):
+            item_path = os.path.join(base_dir, item)
+            # Only include directories (project folders)
+            if os.path.isdir(item_path):
+                projects.append(item)
+        return projects
+    
+    def generate_csv_from_json(self):
+        """
+        Generate metadata.csv from all individual JSON files for easy overview.
+        Each document type becomes a row in the CSV.
+        """
+        project_folders = self.get_all_projects()
+        all_rows = []
+        
+        for safe_project_name in project_folders:
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            # Get project-level fields
+            project_fields = {
+                'project_id': metadata.get('project_id'),
+                'project_name': metadata.get('project_name'),
+                'project_link': metadata.get('project_link'),
+                'neighborhood': metadata.get('neighborhood'),
+                'project_status': metadata.get('project_status'),
+                'project_type': metadata.get('project_type'),
+                'board_approval_date': metadata.get('board_approval_date'),
+                'address': metadata.get('address'),
+                'land_sq_feet': metadata.get('land_sq_feet'),
+                'gross_floor_area': metadata.get('gross_floor_area'),
+                'contact': metadata.get('contact'),
+                'project_description': metadata.get('project_description'),
+                'latitude': metadata.get('latitude'),
+                'longitude': metadata.get('longitude'),
+            }
+            
+            # Create a row for each document
+            documents = metadata.get('documents', [])
+            if documents:
+                for doc in documents:
+                    row = project_fields.copy()
+                    row['document_type'] = doc.get('document_type')
+                    row['document_link'] = doc.get('document_link')
+                    row['date'] = doc.get('date')
+                    # Add GCS paths
+                    gcs_parent_dir = self.gcp_storage_parent_directory()
+                    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')
+                    row['gcs_metadata_path'] = f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                    # Add GCS path for the PDF document
+                    row['gcs_pdf_path'] = doc.get('gcs_pdf_path', f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/{self.create_safe_document_type(doc.get('document_type', ''))}.pdf")
+                    all_rows.append(row)
+            else:
+                # No documents, but still add the project
+                row = project_fields.copy()
+                row['document_type'] = None
+                row['document_link'] = None
+                row['date'] = None
+                gcs_parent_dir = self.gcp_storage_parent_directory()
+                row['gcs_metadata_path'] = f"gs://{os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')}/{gcs_parent_dir}/{safe_project_name}/metadata.json"
+                all_rows.append(row)
+        
+        # Create DataFrame and save to CSV
+        df = pd.DataFrame(all_rows)
+        
+        # Reorder columns to put important ones first
+        preferred_order = [
+            'project_id', 'project_name', 'neighborhood', 'document_type',
+            'project_status', 'project_type', 'address', 'document_link',
+            'gcs_pdf_path', 'gcs_metadata_path', 'project_link', 'board_approval_date',
+            'land_sq_feet', 'gross_floor_area', 'contact', 'date',
+            'latitude', 'longitude', 'project_description'
+        ]
+        
+        # Only include columns that exist
+        columns = [col for col in preferred_order if col in df.columns]
+        # Add any remaining columns not in preferred_order
+        columns.extend([col for col in df.columns if col not in columns])
+        df = df[columns]
+        
+        df.to_csv(self.csv_file(), index=False)
+        self.logger.info(f"Generated CSV with {len(df)} rows from {len(project_folders)} projects: {self.csv_file()}")
+        
+        return df
 
     def collect_metadata_from_current_page(self, ALLOWED_DOCUMENT_KEYWORDS):
         """
-        Collects data from the current page and appends allowed results to self.all_results.
+        Collects data from the current page and saves to individual project metadata files.
         """
         rows = self.find_rows()
         for row in rows:
@@ -108,24 +354,62 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 document_link,
                 date,
             ) = self.parse_row(row)
+            project_id = self.create_project_id(project_name)
             if not project_name:
                 continue
-            # Only append if document_type contains one of the allowed keywords
+            # Only process if document_type contains one of the allowed keywords
             if any(keyword in document_type for keyword in ALLOWED_DOCUMENT_KEYWORDS):
-                self.all_results.append(
-                    {
-                        "project_name": project_name,
-                        "project_link": project_link,
-                        "neighborhood": neighborhood,
+                # Load existing metadata for this project
+                metadata = self.load_project_metadata(project_name)
+                
+                # Add document info to the documents list
+                if "documents" not in metadata:
+                    metadata["documents"] = []
+                
+                # Check if this document already exists (by document_type)
+                doc_exists = False
+                for doc in metadata["documents"]:
+                    if doc.get("document_type") == document_type:
+                        # Update existing document
+                        doc.update({
+                            "document_link": document_link,
+                            "date": date,
+                        })
+                        doc_exists = True
+                        break
+                
+                if not doc_exists:
+                    # Add new document with GCS path
+                    safe_doc_type = self.create_safe_document_type(document_type)
+                    safe_project_name = self.create_safe_project_name(project_name)
+                    bucket_name = os.environ.get('GCS_BUCKET_NAME', 'YOUR_BUCKET')
+                    gcs_parent_dir = self.gcp_storage_parent_directory()
+                    gcs_pdf_path = f"gs://{bucket_name}/{gcs_parent_dir}/{safe_project_name}/{safe_doc_type}.pdf"
+                    
+                    metadata["documents"].append({
                         "document_type": document_type,
                         "document_link": document_link,
                         "date": date,
-                    }
-                )
+                        "gcs_pdf_path": gcs_pdf_path,
+                    })
+                
+                # Update project-level metadata
+                metadata.update({
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "project_link": project_link,
+                    "neighborhood": neighborhood,
+                })
+                
+                # Save metadata to JSON file
+                self.save_project_metadata(project_name, metadata)
 
-    def collect_document_links(self):
+    def collect_document_links(self, test_mode: bool = False):
         """
         Collects the document links from the current page.
+
+        Args:
+            test_mode: If True, only collect first 2-3 pages for testing.
         """
         driver = self.selenium_util.driver
         self.selenium_util.driver.get(self.resource_url())
@@ -158,13 +442,20 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
         last_seen_first_row_text = None
         page_number = 1
+        max_test_pages = 1  # In test mode, only process 1 page
+
         while True:
             # Get the text of the first row before scraping, for later comparison
             tbody = driver.find_element(By.XPATH, "//table[@role='grid']/tbody")
             first_row = tbody.find_element(By.TAG_NAME, "tr")
             current_first_row_text = first_row.text
 
-            self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS)
+            self.collect_metadata_from_current_page(self.ALLOWED_DOCUMENT_KEYWORDS())
+
+            # In test mode, stop after a few pages
+            if test_mode and page_number >= max_test_pages:
+                self.logger.info(f"TEST MODE: Stopping after {max_test_pages} pages")
+                break
 
             # Try to find 'Next page' button and check if enabled
             try:
@@ -203,54 +494,42 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 ).text.lower()
             )
 
-        # Save results to CSV
-        self.result_df = pd.DataFrame(self.all_results)
-        if not os.path.exists(self.download_directory()):
-            os.makedirs(self.download_directory())
-        self.result_df.to_csv(self.csv_file(), index=False)
+        self.logger.info(f"Document links collection completed. Metadata saved to individual JSON files.")
+        
+        # Generate CSV from JSON files for easy overview
+        self.generate_csv_from_json()
 
-    def collect_metadata_from_csv(self):
+    def collect_metadata_from_projects(self):
         """
-        Collects project metadata from unique project names in the CSV file.
+        Collects project metadata from unique project names found in JSON files.
         First searches for the project using project_link to find project status/type,
         then navigates to detailed project page to extract metadata.
         """
-        if self.result_df is None:
-            self.result_df = pd.read_csv(self.csv_file())
-
-        df = self.result_df
-
-        # Initialize new columns if they don't exist
-        new_columns = [
-            "project_status",
-            "project_type",
-            "board_approval_date",
-            "address",
-            "land_sq_feet",
-            "gross_floor_area",
-            "contact",
-            "project_description",
-        ]
-        for col in new_columns:
-            if col not in df.columns:
-                df[col] = None
-
         driver = self.selenium_util.driver
 
-        # Get unique project names and their first occurrence link
-        unique_projects = df.groupby("project_name").first()["project_link"].to_dict()
-        total_unique = len(unique_projects)
+        # Get all project folders
+        project_folders = self.get_all_projects()
+        total_unique = len(project_folders)
 
-        self.logger.info(
-            f"Found {total_unique} unique projects out of {len(df)} total rows"
-        )
+        self.logger.info(f"Found {total_unique} unique projects")
 
-        # Create a dictionary to store metadata for each unique project
-        metadata_cache = {}
-
-        for count, (project_name, project_link) in enumerate(
-            unique_projects.items(), 1
-        ):
+        for count, safe_project_name in enumerate(project_folders, 1):
+            # Load existing metadata
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                self.logger.warning(f"No metadata.json found for {safe_project_name}, skipping")
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            project_name = metadata.get("project_name")
+            project_link = metadata.get("project_link")
+            
+            if not project_name or not project_link:
+                self.logger.warning(f"Missing project_name or project_link in {safe_project_name}, skipping")
+                continue
+            
             self.logger.info(f"Processing {count}/{total_unique}: {project_name}")
             self.logger.info(f"Link: {project_link}")
 
@@ -353,7 +632,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
                                 if header_text == "Address":
                                     project_metadata["address"] = detail_text
-                                    latitude, longitude = GeoLocater().geocode(detail_text)
+                                    latitude, longitude = GeoLocater().geocode(detail_text \
+                                        + ", " \
+                                        + self.city() \
+                                        + ", " \
+                                        + "MA"
+                                    )
                                     # This is a necessary step for the label studio
                                     project_metadata["latitude"] = latitude
                                     project_metadata["longitude"] = longitude
@@ -377,41 +661,30 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                                             detail_text
                                         )
 
-                # Cache the metadata for this project
-                metadata_cache[project_name] = project_metadata
-                self.logger.info(f"Successfully collected metadata for {project_name}")
+                # Save the metadata back to the project's JSON file
+                self.save_project_metadata(project_name, project_metadata)
+                self.logger.info(f"Successfully collected and saved metadata for {project_name}")
 
             except Exception as e:
                 self.logger.error(f"Error collecting metadata for {project_name}: {e}")
                 continue
 
-        # Apply cached metadata to all matching rows in the dataframe
-        self.logger.info("Applying metadata to all rows...")
-        for idx, row in df.iterrows():
-            project_name = row["project_name"]
-            if project_name in metadata_cache:
-                for key, value in metadata_cache[project_name].items():
-                    df.at[idx, key] = value
+        self.logger.info(f"Metadata collection completed for {total_unique} projects")
+        
+        # Regenerate CSV from updated JSON files
+        self.generate_csv_from_json()
 
-        # Save updated dataframe
-        self.result_df = df
-        df.to_csv(self.csv_file(), index=False)
-        self.logger.info(f"Saved metadata to {self.csv_file()}")
-
-    def collect_pdf_from_document_link(self):
+    def collect_pdf_from_document_link(self, test_mode: bool = False):
         """
         Downloads PDFs from document links (Box shared links).
-        Creates folder structure: downloads/development_plans/Boston/pdfs/[project_name]/[document_type].pdf
+        Creates folder structure: downloads/development_plans/Boston/[project_name]/[document_type].pdf
         Each project gets its own folder, and files are named by document type.
+
+        Args:
+            test_mode: If True, only download first 5 documents for testing.
         """
         import requests
         import shutil
-        import glob
-
-        if self.result_df is None:
-            self.result_df = pd.read_csv(self.csv_file())
-
-        df = self.result_df
 
         # Create base PDF directory
         if not os.path.exists(self.pdf_base_directory()):
@@ -419,30 +692,53 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
         driver = self.selenium_util.driver
 
-        # Get unique document links to avoid downloading duplicates (with project_name and document_type)
-        unique_docs = df[df["document_link"].notna()][
-            ["project_name", "document_type", "document_link"]
-        ].drop_duplicates(subset=["document_link"])
-        total_docs = len(unique_docs)
+        # Get all project folders and collect documents
+        project_folders = self.get_all_projects()
+        documents_to_download = []
 
-        self.logger.info(f"Found {total_docs} unique documents to download")
+        for safe_project_name in project_folders:
+            metadata_path = f"{self.pdf_base_directory()}/{safe_project_name}/metadata.json"
+            if not os.path.exists(metadata_path):
+                continue
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            project_name = metadata.get("project_name")
+            if not project_name:
+                continue
+            
+            # Get all documents for this project
+            documents = metadata.get("documents", [])
+            for doc in documents:
+                document_type = doc.get("document_type")
+                document_link = doc.get("document_link")
+                
+                if document_link:
+                    documents_to_download.append({
+                        "project_name": project_name,
+                        "document_type": document_type,
+                        "document_link": document_link
+                    })
 
-        for count, (idx, row) in enumerate(unique_docs.iterrows(), 1):
-            project_name = row["project_name"]
-            document_type = row["document_type"]
-            document_link = row["document_link"]
+        # Limit to 5 documents in test mode
+        if test_mode:
+            documents_to_download = documents_to_download[:5]
+            self.logger.info(f"TEST MODE: Limiting to 5 documents")
+
+        total_docs = len(documents_to_download)
+        self.logger.info(f"Found {total_docs} documents to download")
+
+        for count, doc_info in enumerate(documents_to_download, 1):
+            project_name = doc_info["project_name"]
+            document_type = doc_info["document_type"]
+            document_link = doc_info["document_link"]
 
             # Sanitize project name for folder name
-            safe_project_name = "".join(
-                c if c.isalnum() or c in (" ", "-", "_") else "_" for c in project_name
-            )
-            safe_project_name = safe_project_name.strip().replace(" ", "_")
+            safe_project_name = self.create_safe_project_name(project_name)
 
             # Sanitize document type for filename
-            safe_doc_type = "".join(
-                c if c.isalnum() or c in (" ", "-", "_") else "_" for c in document_type
-            )
-            safe_doc_type = safe_doc_type.strip().replace(" ", "_")
+            safe_document_type = self.create_safe_document_type(document_type)
 
             # Create project-specific folder
             project_folder = f"{self.pdf_base_directory()}/{safe_project_name}"
@@ -450,12 +746,12 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                 os.makedirs(project_folder)
 
             # Create full path with document type as filename
-            pdf_path = f"{project_folder}/{safe_doc_type}.pdf"
+            pdf_path = f"{project_folder}/{safe_document_type}.pdf"
 
-            # Skip if already downloaded
-            if os.path.exists(pdf_path):
+            # Skip if document link already exists in GCS
+            if self.should_skip_download_from_gcs(project_name, document_link):
                 self.logger.info(
-                    f"Skipping {count}/{total_docs}: {project_name} - {document_type} (already downloaded)"
+                    f"Skipping {count}/{total_docs}: {project_name} - {document_type} (already in GCS with same link)"
                 )
                 continue
 
@@ -519,34 +815,53 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
                         continue
 
                 if download_button:
+                    # Get list of files in download directory before clicking download
+                    download_dir = self.download_directory()
+                    existing_files = set()
+                    for root, _dirs, files in os.walk(download_dir):
+                        for f in files:
+                            existing_files.add(os.path.join(root, f))
+
                     download_button.click()
                     self.logger.info(
                         f"Clicked download button for {project_name} - {document_type}"
                     )
 
-                    # Wait for download to appear in downloads folder
+                    # Wait for download to complete
                     import time
+                    max_wait = 60  # Increased timeout for larger files
+                    download_complete = False
 
-                    time.sleep(3)
-
-                    # Check default Downloads folder for the file
-                    downloads_folder = os.path.expanduser("~/Downloads")
-
-                    # Wait for download to complete (look for .pdf files, not .crdownload)
-                    max_wait = 30
-                    for _ in range(max_wait):
-                        pdf_files = glob.glob(f"{downloads_folder}/*.pdf")
-                        if pdf_files:
-                            # Get the most recent PDF
-                            latest_pdf = max(pdf_files, key=os.path.getctime)
-                            # Check if it was created in the last 10 seconds
-                            if os.path.getctime(latest_pdf) > (time.time() - 10):
-                                shutil.move(latest_pdf, pdf_path)
-                                self.logger.info(
-                                    f"Successfully moved downloaded PDF to {pdf_path}"
-                                )
-                                break
+                    for i in range(max_wait):
                         time.sleep(1)
+                        current_files = set()
+                        for root, _dirs, files in os.walk(download_dir):
+                            for f in files:
+                                current_files.add(os.path.join(root, f))
+
+                        new_files = current_files - existing_files
+
+                        # Check for new PDF files (and ensure no .crdownload or .tmp files)
+                        pdf_files = [f for f in new_files if f.endswith('.pdf')]
+                        temp_files = [f for f in new_files if f.endswith(('.crdownload', '.tmp', '.part'))]
+
+                        if pdf_files and not temp_files:
+                            # Found a completed PDF download
+                            downloaded_file = pdf_files[0]
+                            shutil.move(downloaded_file, pdf_path)
+                            self.logger.info(
+                                f"Successfully downloaded and moved PDF to {pdf_path}"
+                            )
+                            download_complete = True
+                            break
+
+                        if i % 10 == 0 and i > 0:
+                            self.logger.info(f"Waiting for download to complete... ({i}s)")
+
+                    if not download_complete:
+                        self.logger.warning(
+                            f"Download timeout for {project_name} - {document_type}"
+                        )
                 else:
                     self.logger.warning(
                         f"Could not find download button for {project_name} - {document_type}"
@@ -560,21 +875,126 @@ class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
 
         self.logger.info(f"PDF download process completed")
 
-    def collect(self):
+    def collect(self, test_mode: bool = False):
         """
         Collects all allowed development plan documents from Boston's BPDA records library,
-        handling pagination, and saves the results as a CSV.
+        handling pagination, and saves the results as individual JSON files per project.
+        Also generates a CSV file for easy overview of all projects.
+
+        Args:
+            test_mode: If True, only process first 2-3 pages to test GCP upload functionality.
         """
 
         try:
             if not os.path.exists(self.download_directory()):
                 os.makedirs(self.download_directory())
-            if not os.path.exists(self.csv_file()):
-                logger.info("Collecting document links")
-                self.collect_document_links()
-            logger.info("Collecting metadata from CSV")
-            self.collect_metadata_from_csv()
+            
+            # Step 1: Collect document links from the website
+            logger.info("Collecting document links" + (" (TEST MODE - limited pages)" if test_mode else ""))
+            self.collect_document_links(test_mode=test_mode)
+            
+            # Step 2: Collect detailed metadata for each project
+            logger.info("Collecting metadata from projects")
+            self.collect_metadata_from_projects()
+            
+            # Step 3: Download PDFs
             logger.info("Collecting PDFs from document links. This will take a while...")
-            self.collect_pdf_from_document_link()
+            self.collect_pdf_from_document_link(test_mode=test_mode)
+            
+            # Step 4: Generate CSV from all JSON files
+            logger.info("Generating final CSV from all JSON files...")
+            self.generate_csv_from_json()
+            
+            # Step 5: Upload to GCS
+            self.upload_to_gcs()
         except Exception as e:
             raise Exception(f"Error during collection: {e}")
+
+    
+    def upload_to_gcs(self):
+        """
+        Upload the data to GCS, avoiding duplicate uploads by comparing file hashes.
+
+        Files are uploaded to: {gcp_storage_parent_directory}/{safe_project_name}/{filename}
+        For example: development_plans/boston/Project_Name/Document_Type.pdf
+        """
+        if not self.gcp_storage:
+            raise ValueError("GCS connection not available. Ensure GCS_BUCKET_NAME and GCP_PROJECT environment variables are set.")
+
+        download_dir = self.download_directory()
+        gcs_parent_dir = self.gcp_storage_parent_directory()
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+
+        uploaded_count = 0
+        skipped_count = 0
+
+        # List local files to upload (pdf, csv, etc.)
+        for root, _dirs, files in os.walk(download_dir):
+            for filename in files:
+                local_path = os.path.join(root, filename)
+                # Create GCS path relative to download directory
+                rel_path = os.path.relpath(local_path, start=download_dir)
+                # Normalize path separators for GCS (use forward slashes)
+                rel_path = rel_path.replace(os.sep, '/')
+
+                # Prepend the GCS parent directory
+                gcs_blob_path = f"{gcs_parent_dir}/{rel_path}"
+
+                try:
+                    # Check if blob exists in GCS
+                    blob = self.gcp_storage.bucket.blob(gcs_blob_path)
+                    if blob.exists():
+                        # Reload blob metadata to get the MD5 hash
+                        blob.reload()
+                        gcs_md5 = blob.md5_hash  # base64-encoded
+
+                        # Compare hashes using FileHashChecker utility
+                        if FileHashChecker.compare_file_with_gcs_hash(local_path, gcs_md5):
+                            self.logger.info(
+                                f"Skipping upload for {gcs_blob_path} (already uploaded, hash matches)"
+                            )
+                            skipped_count += 1
+                            continue  # skip upload
+
+                    # Upload file using GCPStorage utility
+                    self.gcp_storage.upload_file(local_path, gcs_blob_path)
+                    self.logger.info(f"Uploaded {gcs_blob_path} to GCS bucket {bucket_name}")
+                    uploaded_count += 1
+
+                except Exception as e:
+                    self.logger.error(f"Error uploading {gcs_blob_path}: {e}")
+                    continue
+
+        self.logger.info(
+            f"Upload complete: {uploaded_count} files uploaded, {skipped_count} files skipped (duplicates)."
+        )
+    
+    def populate_gcs_from_existing_data(self):
+        """
+        Convenience function to populate GCS from existing local data.
+        This will:
+        1. Add GCS paths to all existing metadata.json files
+        2. Regenerate the CSV with GCS paths
+        3. Upload all local files to GCS
+        
+        Use this to sync your already-downloaded local data to the cloud.
+        """
+        self.logger.info("=" * 80)
+        self.logger.info("Populating GCS from existing local data...")
+        self.logger.info("=" * 80)
+        
+        # Step 1: Add GCS paths to metadata files
+        self.logger.info("\nStep 1: Adding GCS paths to metadata files...")
+        self.add_gcs_paths_to_metadata()
+        
+        # Step 2: Regenerate CSV with updated metadata
+        self.logger.info("\nStep 2: Regenerating CSV with GCS paths...")
+        self.generate_csv_from_json()
+        
+        # Step 3: Upload everything to GCS
+        self.logger.info("\nStep 3: Uploading files to GCS...")
+        self.upload_to_gcs()
+        
+        self.logger.info("\n" + "=" * 80)
+        self.logger.info("✅ GCS population complete!")
+        self.logger.info("=" * 80)

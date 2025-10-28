@@ -7,5 +7,5 @@ class DevelopmentPlansCollector:
             "boston": BostonDevelopmentPlansCollector(),
         }
 
-    def collect(self, city: str):
-        return self.development_plans_collector_map[city].collect()
+    def collect(self, city: str, test_mode: bool = False):
+        return self.development_plans_collector_map[city].collect(test_mode=test_mode)

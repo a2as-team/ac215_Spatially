@@ -9,3 +9,8 @@ secrets/*
 !secrets/.gitkeep
 .DS_Store
 .pytest_cache
+# This is because we will mount the collector and utils directories into the processor container
+data/processor/collector
+# This is because we will mount the collector and utils directories into the processor container
+workflow/data
+wandb

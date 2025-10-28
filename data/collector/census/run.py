@@ -1,17 +1,25 @@
 import os
-import sys
-from pathlib import Path
-
-# Add parent directory to path to allow imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from census import CensusCollector
 
+# Map cities to their states
+#
+CITY_TO_STATE = {
+    "boston": "MA",
+    "chicago": "IL",
+    "new york": "NY",
+    "los angeles": "CA",
+    "san francisco": "CA",
+}
 
 if __name__ == "__main__":
     schema = {
+        "city": SmartArgItem(
+            flags=["--city"],
+            prompt="The city to collect data for (will be mapped to state)",
+            arg_type=str,
+            required=True,
+        ),
         "type": SmartArgItem(
             flags=["--type"],
             prompt="The type of data to collect",
@@ -30,27 +38,18 @@ if __name__ == "__main__":
             arg_type=int,
             required=True,
         ),
-        "state": SmartArgItem(
-            flags=["--state"],
-            prompt="The state of data to collect",
-            arg_type=str,
-            required=False,
-        ),
-        "county": SmartArgItem(
-            flags=["--county"],
-            prompt="The county of data to collect",
-            arg_type=str,
-            required=False,
-        ),
-        "tract": SmartArgItem(
-            flags=["--tract"],
-            prompt="The tract of data to collect",
-            arg_type=str,
-            required=False,
-        ),
     }
     parser = SmartArgParser(schema)
     args = parser.parse()
+
+    # Map city to state
+    city_lower = args["city"].lower()
+    if city_lower in CITY_TO_STATE:
+        args["state"] = CITY_TO_STATE[city_lower]
+        print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+    else:
+        raise ValueError(f"Unknown city: {args['city']}. Known cities: {list(CITY_TO_STATE.keys())}")
+
     collector = CensusCollector()
     if args["type"] not in collector.caller_map:
         raise ValueError(
@@ -62,8 +61,8 @@ if __name__ == "__main__":
         level=args["level"],
         year=args["year"],
         state=args["state"],
-        county=args["county"],
-        tract=args["tract"],
+        county=None,
+        tract=None,
     )
     # save the dataframe to a csv file
     df_folder = os.path.join(os.path.dirname(__file__), "downloads")
@@ -79,11 +78,9 @@ if __name__ == "__main__":
 
 """
 Example usage: (#you must be in the /data directory)
-python collector/census/run.py \
+python census/run.py \
+    --city chicago \
     --type population \
     --level tract \
-    --year 2020 \
-    --state IL \
-    --county "" \
-    --tract ""
+    --year 2020
 """

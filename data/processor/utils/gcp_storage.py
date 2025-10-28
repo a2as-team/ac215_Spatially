@@ -27,22 +27,68 @@ class GCPStorage:
             self.client = storage.Client(project=gcp_project)
         self.bucket = self.client.bucket(bucket_name)
 
-    def list_files(self, prefix: str = "") -> List[str]:
-        """_summary_
+    def list_files(self, prefix: str = "", recursive: bool = False) -> List[str]:
+        """
+        List files in the GCS bucket.
 
         Args:
-            prefix (str, optional): _description_. Defaults to "".
-            if empty string, returns all files in the bucket
+            prefix (str, optional): Prefix path to filter files. Defaults to "".
+                If empty string, returns all files in the bucket.
+            recursive (bool, optional): If True, lists files recursively under prefix.
+                If False, lists only files directly in the prefix directory. Defaults to True.
 
         Returns:
-            List[str]: _description_
+            List[str]: List of file paths (blob names).
         """
-        blobs = self.bucket.list_blobs(prefix=prefix)
-        return [blob.name for blob in blobs]
+        if recursive:
+            # List all files recursively under prefix
+            blobs = self.bucket.list_blobs(prefix=prefix)
+            # Filter out directory placeholders (blobs ending with /)
+            return [blob.name for blob in blobs if not blob.name.endswith('/')]
+        else:
+            # List only files directly in this directory (not subdirectories)
+            blobs = self.bucket.list_blobs(prefix=prefix, delimiter='/')
+            return [blob.name for blob in blobs if not blob.name.endswith('/')]
+
+    def list_dirs(self, prefix: str = "") -> List[str]:
+        """
+        List all directories in the GCS bucket.
+        Returns list of directory prefixes (e.g., "parent/child/").
+        """
+        # Use delimiter to get common prefixes (directories)
+        iterator = self.bucket.list_blobs(prefix=prefix, delimiter='/')
+
+        # We need to iterate through the blobs to populate the prefixes
+        # The prefixes attribute is only populated after iteration
+        list(iterator)  # Force iteration to populate prefixes
+
+        # Get the prefixes (directories)
+        directories = []
+        if hasattr(iterator, 'prefixes'):
+            for prefix_obj in iterator.prefixes:
+                directories.append(prefix_obj)
+
+        return directories
+    
 
     def upload_file(self, file_path: str, destination_path: str):
         blob = self.bucket.blob(destination_path)
         blob.upload_from_filename(file_path)
+
+    def upload_json(self, data: dict, destination_path: str):
+        """
+        Upload a dictionary as JSON to GCS.
+
+        Args:
+            data (dict): The dictionary to upload as JSON.
+            destination_path (str): Path in the GCS bucket where the JSON will be stored.
+        """
+        import json
+        blob = self.bucket.blob(destination_path)
+        blob.upload_from_string(
+            json.dumps(data, indent=2),
+            content_type='application/json'
+        )
 
     def upload_dir(self, source_path: str, destination_path: str):
         """
@@ -92,3 +138,28 @@ class GCPStorage:
             local_file = destination_path / rel_path
             local_file.parent.mkdir(parents=True, exist_ok=True)
             blob.download_to_filename(str(local_file))
+
+    def get_blob(self, blob_path: str):
+        """
+        Get a blob object from GCS.
+
+        Args:
+            blob_path (str): Path to the blob in the GCS bucket.
+
+        Returns:
+            google.cloud.storage.Blob: The blob object.
+        """
+        return self.bucket.blob(blob_path)
+
+    def get_public_url(self, blob_path: str) -> str:
+        """
+        Get the public URL for a blob in GCS.
+
+        Args:
+            blob_path (str): Path to the blob in the GCS bucket.
+
+        Returns:
+            str: Public URL to access the blob (gs:// format or https:// format).
+        """
+        # Return the public HTTPS URL
+        return f"https://storage.googleapis.com/{self.bucket.name}/{blob_path}"

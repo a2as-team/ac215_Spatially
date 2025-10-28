@@ -1,5 +1,4 @@
-# Use the official Debian-hosted Python image
-FROM python:3.12-slim-bookworm
+FROM infologistix/docker-selenium-python:3.10-bullseye
 
 ARG DEBIAN_PACKAGES="build-essential gdal-bin libgdal-dev libproj-dev libgeos-dev"
 
@@ -12,17 +11,20 @@ ENV LANG=C.UTF-8
 # Tell Python to disable buffering so we don't lose any logs.
 ENV PYTHONUNBUFFERED=1
 
+# Set PYTHONPATH to allow imports from /app
+ENV PYTHONPATH=/app
+
 # Tell uv to copy packages from the wheel into the site-packages
 ENV UV_LINK_MODE=copy
 ENV UV_PROJECT_ENVIRONMENT=/home/app/.venv
 
-# Ensure we have an up to date baseline, install dependencies and
-# create a user so we don't run the app as root
+# Install system dependencies (Chrome already included in base image)
 RUN set -ex; \
     for i in $(seq 1 8); do mkdir -p "/usr/share/man/man${i}"; done && \
     apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends $DEBIAN_PACKAGES && \
+    # Clean up and install Python tools
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir --upgrade pip && \

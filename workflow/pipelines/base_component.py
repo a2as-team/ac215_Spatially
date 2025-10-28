@@ -9,7 +9,7 @@ import google.cloud.aiplatform as aip
 class BaseComponent(ABC):
     """Base class for pipeline components"""
 
-    def __init__(self, city: str):
+    def __init__(self):
         self.GCP_PROJECT = os.environ["GCP_PROJECT"]
         self.GCS_BUCKET_NAME = os.environ["GCS_BUCKET_NAME"]
         self.BUCKET_URI = f"gs://{self.GCS_BUCKET_NAME}"
@@ -17,7 +17,6 @@ class BaseComponent(ABC):
         self.GCS_SERVICE_ACCOUNT = os.environ["GCS_SERVICE_ACCOUNT"]
         self.GCS_PACKAGE_URI = os.environ["GCS_PACKAGE_URI"]
         self.GCP_REGION = os.environ["GCP_REGION"]
-        self.city = city
         self.project_name = "spatially"
 
     @abstractmethod
@@ -35,15 +34,19 @@ class BaseComponent(ABC):
 
     def create_pipeline(self):
         """Create a simple pipeline that runs just this component"""
-        city = self.city
         component_name = self.get_component_name()
         component = self.get_component()
 
-        @dsl.pipeline(name=f"{component_name}-pipeline-{city}")
+        # Include city in naming if component has city attribute
+        city_suffix = f"-{self.city}" if hasattr(self, 'city') else ""
+        pipeline_name = f"{component_name}-pipeline{city_suffix}"
+        display_name = f"{component_name}{city_suffix}"
+
+        @dsl.pipeline(name=pipeline_name)
         def single_component_pipeline():
             task = (
                 component()
-                .set_display_name(f"{component_name}-{city}")
+                .set_display_name(display_name)
                 .set_cpu_limit("2000m")
                 .set_memory_limit("8G")
             )
@@ -55,8 +58,11 @@ class BaseComponent(ABC):
         pipeline = self.create_pipeline()
         component_name = self.get_component_name()
 
+        # Include city in naming if component has city attribute
+        city_suffix = f"_{self.city}" if hasattr(self, 'city') else ""
+
         # Compile the pipeline
-        pipeline_file = f"{component_name}_pipeline_{self.city}.yaml"
+        pipeline_file = f"{component_name}_pipeline{city_suffix}.yaml"
         compiler.Compiler().compile(pipeline, package_path=pipeline_file)
 
         # Initialize Vertex AI
@@ -64,7 +70,7 @@ class BaseComponent(ABC):
 
         # Create and submit the job
         job_id = self.generate_uuid()
-        display_name = f"{self.project_name}-{component_name}-{self.city}-{job_id}"
+        display_name = f"{self.project_name}-{component_name}{city_suffix}-{job_id}"
 
         job = aip.PipelineJob(
             display_name=display_name,

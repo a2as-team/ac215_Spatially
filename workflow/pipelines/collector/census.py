@@ -6,6 +6,16 @@ from registry.config import RegistryConfig
 class CensusCollectorComponent(BaseComponent):
     """Component for collecting census data"""
 
+    def __init__(self, city: str):
+        """
+        Initialize census collector component.
+
+        Args:
+            city: City name to collect data for (e.g., "boston", "cambridge")
+        """
+        super().__init__()
+        self.city = city
+
     def get_component_name(self):
         """Return the component name"""
         return "collector-census"

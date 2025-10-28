@@ -16,6 +16,7 @@ class AllPipeline(BasePipeline):
     def __init__(self, city: str):
         super().__init__(city)
         self.pipeline_name = "all"
+        self.city = city
 
     def create_pipeline(self):
         """Create and return the pipeline with all collectors and processors"""
@@ -70,7 +71,8 @@ class AllPipeline(BasePipeline):
 
         # Create and submit the job
         job_id = self.generate_uuid()
-        display_name = f"{self.project_name}-{self.pipeline_name}-{self.city}-{job_id}"
+        city_suffix = f"_{self.city}" if hasattr(self, 'city') else ""
+        display_name = f"{self.project_name}-{self.pipeline_name}{city_suffix}-{job_id}"
 
         job = aip.PipelineJob(
             display_name=display_name,

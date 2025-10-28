@@ -64,7 +64,7 @@ class Trainer:
         """
         Return the label studio annotation GCS storage path.
         """
-        return "development_plans/ner_training_data"
+        return "development_plans/ner_training_data/"
     
     def import_gcs_annotation_data(self) -> Dataset:
         """
@@ -73,25 +73,45 @@ class Trainer:
         """
         print("📥 Downloading annotation files from GCS...")
         files = self.gcp_storage.list_files(self.label_studio_annotation_gcs_storage_path())
-        
+
         if not files:
             raise ValueError(f"No files found in GCS path: {self.label_studio_annotation_gcs_storage_path()}")
-        
+
         print(f"Found {len(files)} JSON files in GCS")
-        
+
         all_json_data = []
         for file in files:
             print(f"  - Downloading {file}")
             json_blob = self.gcp_storage.get_blob(file)
             json_data = json.loads(json_blob.download_as_text())
-            # Label Studio exports can be either a list or a single dict
-            if isinstance(json_data, list):
-                all_json_data.extend(json_data)
+
+            # Transform Label Studio annotation object to expected format
+            # Input format: {"id": X, "result": [...], "task": {"data": {"text": "..."}}}
+            # Expected format: {"data": {"text": "..."}, "annotations": [{"result": [...]}]}
+            if isinstance(json_data, dict) and "task" in json_data and "result" in json_data:
+                transformed = {
+                    "data": json_data["task"]["data"],
+                    "annotations": [{"result": json_data["result"]}]
+                }
+                all_json_data.append(transformed)
+            elif isinstance(json_data, list):
+                # If it's a list, transform each item
+                for item in json_data:
+                    if isinstance(item, dict) and "task" in item and "result" in item:
+                        transformed = {
+                            "data": item["task"]["data"],
+                            "annotations": [{"result": item["result"]}]
+                        }
+                        all_json_data.append(transformed)
+                    else:
+                        # Assume it's already in the correct format
+                        all_json_data.append(item)
             else:
+                # Assume it's already in the correct format
                 all_json_data.append(json_data)
-        
+
         print(f"✅ Downloaded {len(all_json_data)} annotation entries from {len(files)} files")
-        
+
         # Process all the combined data
         return self.import_label_studio_data_from_json_data(all_json_data)
     
@@ -428,6 +448,9 @@ class Trainer:
         print(f"  - Batch size per step: {batch_size}")
         print(f"  - Gradient accumulation steps: {gradient_accumulation_steps}")
         print(f"  - Effective batch size: {effective_batch_size}")
+        print(f"  - Device: {self.device}")
+        if self.device != "gpu":
+            print("⚠️ Warning: Using CPU for training. This may be slow.")
         
         # Log dataset info
         wandb.log({

@@ -26,10 +26,14 @@ The NER model identifies and extracts the following entities from development pl
 ## Quick Start with Docker
 
 ```bash
+docker compose run --rm llm_development_plans_trainer
+```
+
+```bash
 cd llm/development_plans/NER
 
 # Build the image
-docker build -t development-plans-ner-trainer . && docker builder prune -f
+docker build -t llm_development_plans_trainer . && docker builder prune -f
 
 # Run training with GCS data (default)
 docker run -it --rm \
@@ -37,7 +41,7 @@ docker run -it --rm \
   -v $(pwd)/../../../secrets:/secrets:ro \
   --env-file ../../../secrets/ac215-spatially-project.env \
   -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-storage-accessor-keys.json \
-  development-plans-ner-trainer
+  llm
 
 # Run with custom parameters
 docker run -it --rm \
@@ -45,7 +49,7 @@ docker run -it --rm \
   -v $(pwd)/../../../secrets:/secrets:ro \
   --env-file ../../../secrets/ac215-spatially-project.env \
   -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-storage-accessor-keys.json \
-  development-plans-ner-trainer \
+  llm \
   python run.py --epochs 10 --batch-size 16
 
 # Run with local JSON file
@@ -54,7 +58,7 @@ docker run -it --rm \
   -v $(pwd)/../../../secrets:/secrets:ro \
   --env-file ../../../secrets/ac215-spatially-project.env \
   -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/ac215-spatially-storage-accessor-keys.json \
-  development-plans-ner-trainer \
+  llm \
   python run.py --json-path tmp/sample-bpda-data.json
 ```
 

@@ -7,7 +7,7 @@ import string
 class BasePipeline(ABC):
     """Base class for full pipelines"""
 
-    def __init__(self, city: str):
+    def __init__(self):
         self.GCP_PROJECT = os.environ["GCP_PROJECT"]
         self.GCS_BUCKET_NAME = os.environ["GCS_BUCKET_NAME"]
         self.BUCKET_URI = f"gs://{self.GCS_BUCKET_NAME}"
@@ -15,7 +15,6 @@ class BasePipeline(ABC):
         self.GCS_SERVICE_ACCOUNT = os.environ["GCS_SERVICE_ACCOUNT"]
         self.GCS_PACKAGE_URI = os.environ["GCS_PACKAGE_URI"]
         self.GCP_REGION = os.environ["GCP_REGION"]
-        self.city = city
         self.project_name = "spatially"
 
     def generate_uuid(self, length: int = 8) -> str:

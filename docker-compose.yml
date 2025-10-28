@@ -145,6 +145,7 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
     volumes:
       - ./llm/development_plans/NER:/app
+      - ./secrets:/secrets:ro
 
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)

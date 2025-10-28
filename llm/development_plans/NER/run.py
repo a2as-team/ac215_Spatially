@@ -65,7 +65,8 @@ def main():
     print("=" * 80)
     print("NER Model Training")
     print("=" * 80)
-    print(f"Data source: {'GCS Storage' if use_gcs else f'Local file: {args['json_path']}'}")
+    data_source = 'GCS Storage' if use_gcs else f'Local file: {args["json_path"]}'
+    print(f"Data source: {data_source}")
     print(f"Model: {args['model_name']}")
     print(f"Batch size: {args['batch_size']}")
     print(f"Epochs: {args['epochs']}")

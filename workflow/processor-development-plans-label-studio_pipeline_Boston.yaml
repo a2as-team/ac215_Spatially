@@ -1,0 +1,35 @@
+# PIPELINE DEFINITION
+# Name: processor-development-plans-label-studio-pipeline-boston
+components:
+  comp-development-plans-label-studio-processor-component:
+    executorLabel: exec-development-plans-label-studio-processor-component
+deploymentSpec:
+  executors:
+    exec-development-plans-label-studio-processor-component:
+      container:
+        command:
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && /home/app/.venv/bin/python /app/development_plans_label_studio/run.py
+          --city 'boston'
+        image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/data-processor:latest
+        resources:
+          cpuLimit: 2.0
+          memoryLimit: 8.0
+          resourceCpuLimit: 2000m
+          resourceMemoryLimit: 8G
+pipelineInfo:
+  name: processor-development-plans-label-studio-pipeline-boston
+root:
+  dag:
+    tasks:
+      development-plans-label-studio-processor-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-development-plans-label-studio-processor-component
+        taskInfo:
+          name: processor-development-plans-label-studio-boston
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

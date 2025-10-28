@@ -123,8 +123,8 @@ class SmartArgParser:
                 if cfg.action == "store_true":
                     # For store_true flags, absence means False
                     result[name] = False
-                elif not cfg.required and cfg.default is not None:
-                    # Has default and not required → use default without prompting
+                elif not cfg.required:
+                    # user did NOT supply it → return None
                     result[name] = cfg.default
                 else:
                     # user did NOT supply it → prompt interactively

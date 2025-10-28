@@ -36,14 +36,14 @@ python registry/run.py
 **Run a pipeline:**
 ```bash
 # Run all collectors and processors
-python /app/cli.py --city Boston --pipeline all
+python /app/cli.py --city boston --pipeline all
 
 # Run just development plans pipeline
-python /app/cli.py --city Boston --pipeline development_plans
+python /app/cli.py --city boston --pipeline development_plans
 
 # Run individual collector
-python /app/cli.py --city Boston --pipeline collector-development-plans
+python /app/cli.py --city boston --pipeline collector-development-plans
 
 # Run individual processor
-python /app/cli.py --city Boston --pipeline processor-development-plans-label-studio
+python /app/cli.py --city boston --pipeline processor-development-plans-label-studio
 ```

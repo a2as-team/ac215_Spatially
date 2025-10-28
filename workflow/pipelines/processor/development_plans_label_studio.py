@@ -6,6 +6,16 @@ from registry.config import RegistryConfig
 class DevelopmentPlansLabelStudioProcessorComponent(BaseComponent):
     """Component for processing development plans data in Label Studio"""
 
+    def __init__(self, city: str):
+        """
+        Initialize development plans Label Studio processor component.
+
+        Args:
+            city: City name to process data for (e.g., "boston", "cambridge")
+        """
+        super().__init__()
+        self.city = city
+
     def get_component_name(self):
         """Return the component name"""
         return "processor-development-plans-label-studio"

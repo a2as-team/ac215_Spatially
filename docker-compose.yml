@@ -131,6 +131,7 @@ services:
       - ./data:/app/data
       # Mount Docker socket to allow publishing images from within container
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./llm:/app/llm
 
   llm_development_plans_trainer:
     build:

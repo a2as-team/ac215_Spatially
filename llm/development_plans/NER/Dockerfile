@@ -1,13 +1,6 @@
-# Use GCP's Vertex AI PyTorch GPU base image
-# This image comes pre-installed with PyTorch, CUDA, and is optimized for Vertex AI
-#
-# Note: This image works on CPU-only machines too (for local development/testing)
-# The GPU libraries are only used if GPU is available at runtime.
-#
-# For faster local builds on CPU-only machines, you can optionally use:
-# --build-arg BASE_IMAGE=us-docker.pkg.dev/vertex-ai/training/pytorch-cpu.2-0.py310:latest
-ARG BASE_IMAGE=us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-0.py310:latest
-FROM ${BASE_IMAGE}
+# Lightweight local development image
+# For Vertex AI deployment, this Dockerfile is NOT used - only package/setup.py matters
+FROM python:3.13-slim-bullseye
 
 # Python wants UTF-8 locale
 ENV LANG=C.UTF-8
@@ -18,20 +11,29 @@ ENV PYTHONUNBUFFERED=1
 # Set working directory
 WORKDIR /app
 
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency installation
+RUN pip install --no-cache-dir uv
+
 # Copy dependency files first for better layer caching
 COPY pyproject.toml ./
 
-# Install Python dependencies
-# Note: PyTorch is already installed in the base image
-RUN pip install --no-cache-dir -r pyproject.toml
+# Install Python dependencies using uv (much faster than pip)
+RUN uv pip install --system --no-cache -r pyproject.toml
 
-# Copy the source code
-COPY --chown=app:app . ./
+# Copy the source code (including package with config, run.py, etc.)
+COPY . ./
 
 # Create directory for model outputs
 RUN mkdir -p /app/tmp /app/models /app/outputs
 
-# Default command to run the trainer with GCS data
+# Add package to PYTHONPATH so imports work correctly
+ENV PYTHONPATH="/app/package:${PYTHONPATH}"
+
+# Default command - allows running interactively or with commands
 ENTRYPOINT ["/bin/bash"]
-# Get into the uv virtual environment shell
 CMD ["-c", "exec bash"]

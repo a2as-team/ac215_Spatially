@@ -5,15 +5,19 @@ Submit NER training job for development plans to Vertex AI.
 Workflow:
 1. Manually label data in Label Studio
 2. Export annotations to GCS (development_plans/ner_training_data/)
-3. Run this script to train model on Vertex AI
-4. Model is saved to GCS
+3. Upload trainer package to GCS:
+   cd workflow && python packages/run.py --packages ner-trainer
+4. Run this script to train model on Vertex AI
+5. Model is saved to GCS
 
 Prerequisites:
-1. Build and push the image:
-   cd workflow && python registry/run.py --images ner-trainer
+1. Upload the trainer package to GCS:
+   cd workflow && python packages/run.py --packages ner-trainer
 
 2. Ensure labeled data exists in GCS:
    gs://{bucket}/development_plans/ner_training_data/
+
+3. Set WANDB_API_KEY environment variable for Weights & Biases logging
 
 Usage:
     python workflow/jobs/finetune/development_plans_ner.py --epochs 5
@@ -25,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from jobs.base_job import BaseJob
-from registry.config import RegistryConfig
+from packages.config import PackageConfig
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 
 
@@ -37,14 +41,12 @@ class DevelopmentPlansNERJob(BaseJob):
         batch_size: int = 4,
         epochs: int = 3,
         learning_rate: float = 2e-5,
-        gradient_accumulation_steps: int = 4,
         model_name: str = "nlpaueb/legal-bert-base-uncased",
     ):
         super().__init__()
         self.batch_size = batch_size
         self.epochs = epochs
         self.learning_rate = learning_rate
-        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.model_name = model_name
 
     def submit(
@@ -52,16 +54,17 @@ class DevelopmentPlansNERJob(BaseJob):
         machine_type: str = "n1-standard-4",
         accelerator_type: str = "NVIDIA_TESLA_T4",
         accelerator_count: int = 1,
-        image_tag: str = "latest",
+        wandb_api_key: str = None,
         sync: bool = False,
     ):
-        """Submit the training job to Vertex AI."""
+        """Submit the training job to Vertex AI using Python package."""
         import google.cloud.aiplatform as aip
+        import os
 
-        # Get image URI
-        image_uri = RegistryConfig.ner_trainer_image(self.GCP_REGION, self.GCP_PROJECT)["image_uri"]
-        if image_tag != "latest":
-            image_uri = image_uri.replace(":latest", f":{image_tag}")
+        # Get package configuration
+        package_config = PackageConfig.ner_trainer_package()
+        package_gcs_uri = f"gs://{package_config['bucket']}/{package_config['gcs_path']}"
+        container_uri = package_config['container_uri']
 
         # Generate job name
         job_id = self.generate_uuid()
@@ -70,9 +73,11 @@ class DevelopmentPlansNERJob(BaseJob):
         display_name = f"ner-{model_short}-e{self.epochs}-{timestamp}-{job_id}"
 
         # Print configuration
-        self.print_job_header("Vertex AI Training Job Configuration")
+        self.print_job_header("Vertex AI Python Package Training Job Configuration")
         print(f"Job name: {display_name}")
-        print(f"Image: {image_uri}")
+        print(f"Package URI: {package_gcs_uri}")
+        print(f"Container URI: {container_uri}")
+        print(f"Python module: run")
         print(f"Project: {self.GCP_PROJECT}")
         print(f"Region: {self.GCP_REGION}")
         print(f"Machine type: {machine_type}")
@@ -81,8 +86,6 @@ class DevelopmentPlansNERJob(BaseJob):
         print(f"Batch size: {self.batch_size}")
         print(f"Epochs: {self.epochs}")
         print(f"Learning rate: {self.learning_rate}")
-        print(f"Gradient accumulation: {self.gradient_accumulation_steps}")
-        print(f"Effective batch size: {self.batch_size * self.gradient_accumulation_steps}")
         print(f"Data source: {self.GCS_BUCKET_URI}/development_plans/ner_training_data/")
         print(f"Output location: {self.GCS_BUCKET_URI}/ner_model_output/")
         print("=" * 80)
@@ -94,10 +97,12 @@ class DevelopmentPlansNERJob(BaseJob):
             staging_bucket=self.GCS_BUCKET_URI
         )
 
-        # Create custom container training job
-        job = aip.CustomContainerTrainingJob(
+        # Create custom Python package training job
+        job = aip.CustomPythonPackageTrainingJob(
             display_name=display_name,
-            container_uri=image_uri,
+            python_package_gcs_uri=package_gcs_uri,
+            python_module_name="run",
+            container_uri=container_uri,
             project=self.GCP_PROJECT,
         )
 
@@ -106,7 +111,6 @@ class DevelopmentPlansNERJob(BaseJob):
             f"--batch-size={self.batch_size}",
             f"--epochs={self.epochs}",
             f"--learning-rate={self.learning_rate}",
-            f"--gradient-accumulation-steps={self.gradient_accumulation_steps}",
             f"--model-name={self.model_name}",
         ]
 
@@ -116,7 +120,16 @@ class DevelopmentPlansNERJob(BaseJob):
             "GCS_BUCKET_NAME": self.GCS_BUCKET_NAME,
         }
 
-        print(f"\n🚀 Launching training job on Vertex AI...")
+        # Add WANDB_API_KEY if provided
+        if wandb_api_key:
+            environment_variables["WANDB_API_KEY"] = wandb_api_key
+        elif os.environ.get("WANDB_API_KEY"):
+            environment_variables["WANDB_API_KEY"] = os.environ.get("WANDB_API_KEY")
+            print("Using WANDB_API_KEY from environment")
+        else:
+            print("⚠️  Warning: WANDB_API_KEY not set. Training will fail.")
+
+        print(f"\n🚀 Launching Python package training job on Vertex AI...")
         print(f"Sync mode: {sync} (wait for completion: {sync})")
 
         # Submit job
@@ -164,13 +177,6 @@ def main():
             default=2e-5,
             required=False,
         ),
-        "gradient_accumulation_steps": SmartArgItem(
-            flags=["--gradient-accumulation-steps"],
-            prompt="Gradient accumulation steps",
-            arg_type=int,
-            default=4,
-            required=False,
-        ),
         "model_name": SmartArgItem(
             flags=["--model-name"],
             prompt="HuggingFace model name",
@@ -199,11 +205,11 @@ def main():
             default=1,
             required=False,
         ),
-        "image_tag": SmartArgItem(
-            flags=["--image-tag"],
-            prompt="Docker image tag",
+        "wandb_api_key": SmartArgItem(
+            flags=["--wandb-api-key"],
+            prompt="Weights & Biases API key (optional, uses environment variable if not provided)",
             arg_type=str,
-            default="latest",
+            default="",
             required=False,
         ),
         "sync": SmartArgItem(
@@ -223,19 +229,18 @@ def main():
         batch_size=args["batch_size"],
         epochs=args["epochs"],
         learning_rate=args["learning_rate"],
-        gradient_accumulation_steps=args["gradient_accumulation_steps"],
         model_name=args["model_name"],
     )
 
-    print(f"\n📦 Using image from Artifact Registry")
-    print("⚠️  Make sure you've built and pushed this image first:")
-    print("    cd workflow && python registry/run.py --images ner-trainer\n")
+    print(f"\n📦 Using Python package from GCS")
+    print("⚠️  Make sure you've uploaded the package first:")
+    print("    cd workflow && python packages/run.py --packages ner-trainer\n")
 
     job.submit(
         machine_type=args["machine_type"],
         accelerator_type=args["accelerator_type"],
         accelerator_count=args["accelerator_count"],
-        image_tag=args["image_tag"],
+        wandb_api_key=args["wandb_api_key"] if args["wandb_api_key"] else None,
         sync=args["sync"],
     )
 

@@ -18,7 +18,17 @@ if __name__ == "__main__":
             required=False,
             choices=["gcp", "dockerhub"],
         ),
+        "cleanup_after_push": SmartArgItem(
+            flags=["--cleanup-after-push"],
+            prompt="Remove local images after successful push to save disk space",
+            arg_type=bool,
+            default=False,
+            required=False,
+        ),
     }
     parser = SmartArgParser(schema)
     args = parser.parse()
-    publish_local_docker_images(to_where=args["to_where"])
+    publish_local_docker_images(
+        to_where=args["to_where"],
+        cleanup_after_push=args["cleanup_after_push"]
+    )

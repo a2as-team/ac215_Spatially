@@ -163,3 +163,51 @@ class GCPStorage:
         """
         # Return the public HTTPS URL
         return f"https://storage.googleapis.com/{self.bucket.name}/{blob_path}"
+
+    def list_blobs(self, prefix: str = ""):
+        """
+        List blob objects in the GCS bucket.
+
+        Args:
+            prefix (str, optional): Prefix path to filter blobs. Defaults to "".
+
+        Returns:
+            Iterator of google.cloud.storage.Blob objects.
+        """
+        return self.bucket.list_blobs(prefix=prefix)
+
+    def download_blob_to_file(self, blob_path: str, local_path: str):
+        """
+        Download a blob to a local file.
+
+        Args:
+            blob_path (str): Path to the blob in the GCS bucket.
+            local_path (str): Local file path where the blob will be saved.
+        """
+        blob = self.bucket.blob(blob_path)
+        blob.download_to_filename(local_path)
+
+    def download_blob_as_string(self, blob_path: str) -> str:
+        """
+        Download a blob's content as a string.
+
+        Args:
+            blob_path (str): Path to the blob in the GCS bucket.
+
+        Returns:
+            str: The blob's content as a string.
+        """
+        blob = self.bucket.blob(blob_path)
+        return blob.download_as_text()
+
+    def upload_string_to_blob(self, content: str, blob_path: str, content_type: str = "text/plain"):
+        """
+        Upload string content to a blob in GCS.
+
+        Args:
+            content (str): The string content to upload.
+            blob_path (str): Path where the blob will be stored in the GCS bucket.
+            content_type (str, optional): MIME type of the content. Defaults to "text/plain".
+        """
+        blob = self.bucket.blob(blob_path)
+        blob.upload_from_string(content, content_type=content_type)

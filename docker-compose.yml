@@ -12,6 +12,7 @@ services:
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}

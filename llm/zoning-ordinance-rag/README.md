@@ -15,7 +15,7 @@ Excel/PDF Files → Text Extraction → Semantic Chunking → Embeddings → Chr
 ## Data Sources
 
 - **Boston**: Multiple Excel files containing zoning ordinance articles
-  - Location: `../../data/collector/zoning_ordinance/collected_data/boston_collected_data/`
+  - Location: `../../data/downloads/zoning_ordinance/boston/`
   - Format: `.xlsx` files with structured columns:
     - Row 1: Empty
     - Row 2: Headers (Url, NodeId, Title, Subtitle, Content)
@@ -23,7 +23,7 @@ Excel/PDF Files → Text Extraction → Semantic Chunking → Embeddings → Chr
   - Examples: ARTICLE_1_-_TITLE__PURPOSE_AND_SCOPE.xlsx, ARTICLE_2_-_DEFINITIONS.xlsx, etc.
 
 - **Chicago**: PDF document containing comprehensive zoning ordinance
-  - Location: `../../data/collector/zoning_ordinance/collected_data/chicago_collected_data/`
+  - Location: `../../data/downloads/zoning_ordinance/chicago/`
   - Format: Single PDF file (chicago-il-1.pdf)
   - Sections detected automatically using heading patterns
 
@@ -115,7 +115,7 @@ Chicago uses **hierarchical metadata** to capture the document structure:
 ### 2. Environment Configuration
 
 The project expects:
-- Zoning ordinance data in: `../../data/collector/zoning_ordinance/collected_data/`
+- Zoning ordinance data in: `../../data/downloads/zoning_ordinance/`
 - Service account key: `../secrets/llm-service-account.json`
 - GCP Project ID configured in your environment or `docker-shell.sh`
 
@@ -198,7 +198,7 @@ python cli.py --chunk
 
 **District Code Extraction:**
 - Matches district codes against authoritative JSON files:
-  - **Source**: `../../data/collector/zoning_ordinance/collected_data/district_codes/`
+  - **Source**: `../../data/collector/zoning_ordinance/district_codes/`
     - `{city}_district_codes.json`: Maps codes to descriptions
     - `{city}_district_code_categories.json`: Maps categories to code lists
   - **Boston codes**: B-1, B-2, R-2A, M-1, etc. (68 total)
@@ -708,7 +708,7 @@ GCP_LOCATION = "us-central1"
 EMBEDDING_MODEL = "text-embedding-004"
 EMBEDDING_DIMENSION = 256
 GENERATIVE_MODEL = "gemini-2.0-flash-001"
-INPUT_FOLDER = "../../data/collector/zoning_ordinance/collected_data"
+INPUT_FOLDER = "../../data/downloads/zoning_ordinance"
 OUTPUT_FOLDER = "outputs"
 CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
 CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8000"))
@@ -747,8 +747,8 @@ python cli.py --chunk
 
 ### Adding New Ordinance Documents
 
-1. **Boston (Excel)**: Place `.xlsx` files in `../../data/collector/zoning_ordinance/collected_data/boston_collected_data/`
-2. **Chicago (PDF)**: Place PDF files in `../../data/collector/zoning_ordinance/collected_data/chicago_collected_data/`
+1. **Boston (Excel)**: Place `.xlsx` files in `../../data/downloads/zoning_ordinance/boston/`
+2. **Chicago (PDF)**: Place PDF files in `../../data/downloads/zoning_ordinance/chicago/`
 3. Run the pipeline: `python cli.py --chunk --embed --load`
 4. Query: `python query.py "your question" --city {city}`
 

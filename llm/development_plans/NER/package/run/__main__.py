@@ -3,12 +3,24 @@
 Training script for NER model.
 Supports loading training data from either local files or GCS storage.
 """
+import sys
+import logging
 from trainer.train import Trainer
 from pathlib import Path
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 
 
 def main():
+    # Configure logging to use stdout instead of stderr
+    # This prevents logs from appearing as errors in GCP
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stdout
+    )
+
+    # Redirect stderr to stdout for library logs
+    sys.stderr = sys.stdout
     # Define argument schema
     schema = {
         "json_path": SmartArgItem(
@@ -29,7 +41,7 @@ def main():
             flags=["--epochs"],
             prompt="Number of training epochs",
             arg_type=int,
-            default=3,
+            default=1,
             required=False
         ),
         "learning_rate": SmartArgItem(
@@ -75,10 +87,15 @@ def main():
         json_path=Path(args["json_path"]) if args["json_path"] else None,
     )
 
+    import os
+    aip_model_dir = os.environ.get("AIP_MODEL_DIR")
+
     print("\n" + "=" * 80)
     print("✅ Training completed!")
-    print("Model saved to: tmp/ner_model")
-    print("Tokenizer saved to: tmp/ner_tokenizer")
+    print(f"Local: tmp/ner_model, tmp/ner_tokenizer")
+    if aip_model_dir:
+        print(f"GCS: {aip_model_dir}ner_model")
+        print(f"GCS: {aip_model_dir}ner_tokenizer")
     print("View results at: https://wandb.ai")
     print("=" * 80)
 

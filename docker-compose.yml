@@ -122,6 +122,7 @@ services:
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
     volumes:

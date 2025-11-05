@@ -4,9 +4,9 @@ from setuptools import setup
 REQUIRED_PACKAGES = [
     "wandb==0.15.11",
     "google-cloud-storage>=2.19.0",
-    "datasets>=4.2.0",
-    "transformers>=4.57.1",
-    "accelerate>=1.10.1",
+    "datasets>=2.14.0,<3.0.0",
+    "transformers>=4.36.0,<4.40.0",
+    "accelerate>=0.25.0,<1.0.0",
     "seqeval>=1.2.2",
 ]
 

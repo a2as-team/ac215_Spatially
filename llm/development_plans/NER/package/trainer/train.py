@@ -433,10 +433,10 @@ class Trainer:
             tags=["ner", "development-plans", "token-classification", "spatially"]
         )
 
-        print(f"📊 Training configuration:")
+        print(f"📊 B:")
         print(f"  - Batch size: {batch_size}")
         print(f"  - Device: {self.device}")
-        if self.device != "gpu":
+        if self.device.type != "cuda":
             print("⚠️ Warning: Using CPU for training. This may be slow.")
         
         # Log dataset info
@@ -512,12 +512,49 @@ class Trainer:
                 "epoch": epoch + 1,
             }, step=global_step)
 
-        # Save model
-        model_path = "tmp/ner_model"
-        tokenizer_path = "tmp/ner_tokenizer"
+        # Save model locally, then upload to GCS if on Vertex AI
+        aip_model_dir = os.environ.get("AIP_MODEL_DIR")
+
+        # Always save to local tmp directory first
+        local_model_dir = "tmp"
+        model_path = f"{local_model_dir}/ner_model"
+        tokenizer_path = f"{local_model_dir}/ner_tokenizer"
+
+        print(f"\n💾 Saving model to local directory: {model_path}")
         self.model.save_pretrained(model_path)
         self.tokenizer.save_pretrained(tokenizer_path)
-        
+        print(f"✅ Model saved locally")
+
+        # Upload to GCS if running on Vertex AI
+        if aip_model_dir:
+            print(f"\n☁️  Uploading to GCS: {aip_model_dir}")
+
+            # Extract bucket and path from gs:// URL
+            gcs_path = aip_model_dir.replace("gs://", "")
+            bucket_name = gcs_path.split("/")[0]
+            gcs_prefix = "/".join(gcs_path.split("/")[1:])
+
+            # Get GCP project from environment
+            gcp_project = os.environ.get("GCP_PROJECT")
+
+            # Initialize GCS client
+            gcs_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+
+            # Upload model files
+            gcs_storage.upload_dir(
+                source_path=model_path,
+                destination_path=f"{gcs_prefix}ner_model"
+            )
+
+            # Upload tokenizer files
+            gcs_storage.upload_dir(
+                source_path=tokenizer_path,
+                destination_path=f"{gcs_prefix}ner_tokenizer"
+            )
+
+            print(f"✅ Model uploaded to: {aip_model_dir}ner_model")
+            print(f"✅ Tokenizer uploaded to: {aip_model_dir}ner_tokenizer")
+
         # Log model as artifact (optional but recommended)
         model_artifact = wandb.Artifact(
             name="ner-model",
@@ -526,10 +563,10 @@ class Trainer:
         )
         model_artifact.add_dir(model_path)
         wandb.log_artifact(model_artifact)
-        
+
         # Finish the wandb run
         wandb.finish()
-        
+
         print("✅ Training completed and logged to Weights & Biases")
 
     def evaluate(self, loader: DataLoader, device: torch.device) -> float:

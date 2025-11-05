@@ -70,7 +70,7 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
 
     def _get_default_download_dir(self) -> Path:
         """Get the default download directory for Boston collector."""
-        return Path(__file__).parent / "boston_collected_data"
+        return Path(__file__).parent.parent.parent / "downloads" / "zoning_ordinance" / "boston"
 
     def _normalize_heading(self, text):
         """

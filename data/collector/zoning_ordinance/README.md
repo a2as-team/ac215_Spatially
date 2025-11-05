@@ -53,8 +53,8 @@ python collector/zoning_ordinance/run.py
 ## Output
 
 Downloaded files are saved to:
-- Boston: `collector/zoning_ordinance/boston_collected_data/`
-- Chicago: `collector/zoning_ordinance/chicago_collected_data/`
+- Boston: `data/downloads/zoning_ordinance/boston/`
+- Chicago: `data/downloads/zoning_ordinance/chicago/`
 
 
 ## Files
@@ -65,8 +65,6 @@ Downloaded files are saved to:
 - `run.py`: CLI entry point for running either collector
 - `__init__.py`: Module exports
 - `README.md`: This file
-- `boston_collected_data/`: Downloaded Boston files
-- `chicago_collected_data/`: Downloaded Chicago files
 
 
 ## Technical Details

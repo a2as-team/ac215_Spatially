@@ -40,13 +40,13 @@ GCP_LOCATION = "us-central1"
 EMBEDDING_MODEL = "text-embedding-004"
 EMBEDDING_DIMENSION = 256
 GENERATIVE_MODEL = "gemini-2.0-flash-001"
-INPUT_FOLDER = "../../data/collector/zoning_ordinance/collected_data"
+INPUT_FOLDER = "../../data/downloads/zoning_ordinance"
 OUTPUT_FOLDER = "outputs"
 CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
 CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8001"))
 
 # District code JSON file paths
-DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/collected_data/district_codes"
+DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/district_codes"
 
 # Global caches for district codes (loaded lazily)
 _district_codes_cache = {}
@@ -568,8 +568,8 @@ def chunk():
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     # Get all Excel files from Boston and PDF from Chicago
-    boston_files = glob.glob(os.path.join(INPUT_FOLDER, "boston_collected_data", "*.xlsx"))
-    chicago_files = glob.glob(os.path.join(INPUT_FOLDER, "chicago_collected_data", "*.pdf"))
+    boston_files = glob.glob(os.path.join(INPUT_FOLDER, "boston", "*.xlsx"))
+    chicago_files = glob.glob(os.path.join(INPUT_FOLDER, "chicago", "*.pdf"))
 
     all_files = [("boston", f, "excel") for f in boston_files] + [("chicago", f, "pdf") for f in chicago_files]
 

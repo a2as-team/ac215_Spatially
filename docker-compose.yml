@@ -15,7 +15,7 @@ services:
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
-      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      GCP_PROJECT: ${GCP_PROJECT:-spatially}
       PYTHONPATH: /app
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
@@ -33,7 +33,7 @@ services:
       - ./secrets/ac215-spatially-project.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
-      GCP_PROJECT: ${GCP_PROJECT_ID:-spatially}
+      GCP_PROJECT: ${GCP_PROJECT:-spatially}
       PYTHONPATH: /app
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container

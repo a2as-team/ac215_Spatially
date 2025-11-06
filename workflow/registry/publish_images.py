@@ -13,8 +13,21 @@ def build_and_push_to_gcp(
     repository_name: str,
     platform: str = "linux/amd64",
     tag: str = "latest",
+    cleanup_after_push: bool = False,
 ):
-    """Build and push a Docker image to GCP Artifact Registry."""
+    """Build and push a Docker image to GCP Artifact Registry.
+
+    Args:
+        image_name: Name of the Docker image
+        context_path: Path to the build context
+        dockerfile_path: Path to the Dockerfile
+        gcp_project: GCP project ID
+        gcp_region: GCP region
+        repository_name: Name of the Artifact Registry repository
+        platform: Target platform (default: linux/amd64)
+        tag: Image tag (default: latest)
+        cleanup_after_push: Remove local image after successful push
+    """
 
     # Construct the full image URI
     image_uri = f"{gcp_region}-docker.pkg.dev/{gcp_project}/{repository_name}/{image_name}:{tag}"
@@ -51,6 +64,13 @@ def build_and_push_to_gcp(
         subprocess.run(push_cmd, check=True)
         print(f"Successfully pushed: {image_uri}")
 
+        # Clean up local image if requested
+        if cleanup_after_push:
+            print(f"\nCleaning up local image: {image_uri}...")
+            cleanup_cmd = ["docker", "rmi", image_uri]
+            subprocess.run(cleanup_cmd, check=True)
+            print(f"Successfully removed local image: {image_uri}")
+
         return True
 
     except subprocess.CalledProcessError as e:
@@ -62,6 +82,7 @@ def publish_local_docker_images(
     to_where: str = "gcp",
     images: list[str] | None = None,
     tag: str = "latest",
+    cleanup_after_push: bool = False,
 ):
     """
     Publish local Docker images to a container registry.
@@ -70,6 +91,7 @@ def publish_local_docker_images(
         to_where: Destination registry ("gcp" or "dockerhub")
         images: List of specific image names to publish. If None, publishes all images.
         tag: Tag to use for the images (default: "latest")
+        cleanup_after_push: Remove local images after successful push to save disk space
     """
     if to_where == "gcp":
         # Get required environment variables
@@ -103,6 +125,7 @@ def publish_local_docker_images(
                 repository_name=repository_name,
                 platform=config["platform"],
                 tag=tag,
+                cleanup_after_push=cleanup_after_push,
             )
             results.append((config["name"], success))
 

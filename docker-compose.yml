@@ -12,6 +12,7 @@ services:
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT:-spatially}
@@ -122,6 +123,7 @@ services:
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
     volumes:
@@ -131,6 +133,7 @@ services:
       - ./data:/app/data
       # Mount Docker socket to allow publishing images from within container
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./llm:/app/llm
 
   llm_development_plans_trainer:
     build:

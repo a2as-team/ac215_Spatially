@@ -3,12 +3,24 @@
 Training script for NER model.
 Supports loading training data from either local files or GCS storage.
 """
-from train import Trainer
+import sys
+import logging
+from trainer.train import Trainer
 from pathlib import Path
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 
 
 def main():
+    # Configure logging to use stdout instead of stderr
+    # This prevents logs from appearing as errors in GCP
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stdout
+    )
+
+    # Redirect stderr to stdout for library logs
+    sys.stderr = sys.stdout
     # Define argument schema
     schema = {
         "json_path": SmartArgItem(
@@ -29,7 +41,7 @@ def main():
             flags=["--epochs"],
             prompt="Number of training epochs",
             arg_type=int,
-            default=3,
+            default=1,
             required=False
         ),
         "learning_rate": SmartArgItem(
@@ -46,26 +58,16 @@ def main():
             default="nlpaueb/legal-bert-base-uncased",
             required=False
         ),
-        "gradient_accumulation_steps": SmartArgItem(
-            flags=["--gradient-accumulation-steps"],
-            prompt="Number of steps to accumulate gradients",
-            arg_type=int,
-            default=4,
-            required=False
-        ),
     }
-    
+
     # Parse arguments
     parser = SmartArgParser(schema, description="Train NER model for development plans")
     args = parser.parse()
-    
-    # Automatically determine data source
-    use_gcs = args["json_path"] is None
-    
+
     print("=" * 80)
     print("NER Model Training")
     print("=" * 80)
-    data_source = 'GCS Storage' if use_gcs else f'Local file: {args["json_path"]}'
+    data_source = 'GCS Storage' if args["json_path"] is None else f'Local file: {args["json_path"]}'
     print(f"Data source: {data_source}")
     print(f"Model: {args['model_name']}")
     print(f"Batch size: {args['batch_size']}")
@@ -73,24 +75,27 @@ def main():
     print(f"Learning rate: {args['learning_rate']}")
     print(f"Device: auto")
     print("=" * 80)
-    
+
     # Initialize trainer
     trainer = Trainer(device=None, model_name=args["model_name"])
-    
+
     # Train the model
     trainer.train(
         batch_size=args["batch_size"],
         epochs=args["epochs"],
         learning_rate=args["learning_rate"],
-        use_gcs=use_gcs,
         json_path=Path(args["json_path"]) if args["json_path"] else None,
-        gradient_accumulation_steps=args["gradient_accumulation_steps"],
     )
-    
+
+    import os
+    aip_model_dir = os.environ.get("AIP_MODEL_DIR")
+
     print("\n" + "=" * 80)
     print("✅ Training completed!")
-    print("Model saved to: tmp/ner_model")
-    print("Tokenizer saved to: tmp/ner_tokenizer")
+    print(f"Local: tmp/ner_model, tmp/ner_tokenizer")
+    if aip_model_dir:
+        print(f"GCS: {aip_model_dir}ner_model")
+        print(f"GCS: {aip_model_dir}ner_tokenizer")
     print("View results at: https://wandb.ai")
     print("=" * 80)
 

@@ -32,16 +32,7 @@ class RegistryConfig:
             "platform": RegistryConfig.platform()
         }
 
-    @staticmethod
-    def ner_trainer_image(gcp_region: str, gcp_project: str):
-        project_root = Path(__file__).parent.parent
-        return {
-            "name": "ner-trainer",
-            "context": project_root / "llm" / "development_plans" / "NER",
-            "dockerfile": project_root / "llm" / "development_plans" / "NER" / "Dockerfile",
-            "image_uri": f"{gcp_region}-docker.pkg.dev/{gcp_project}/{RegistryConfig.repository_name()}/ner-trainer:latest",
-            "platform": RegistryConfig.platform()
-        }
+
 
     @staticmethod
     def zoning_ordinance_chunk_embed_image(gcp_region: str, gcp_project: str):

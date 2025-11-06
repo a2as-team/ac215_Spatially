@@ -124,7 +124,12 @@ class SmartArgParser:
                     # For store_true flags, absence means False
                     result[name] = False
                 else:
-                    # user did NOT supply it → prompt interactively
-                    result[name] = self._prompt(name, cfg)
+                    # user did NOT supply it
+                    if not cfg.required:
+                        # If not required, use default without prompting
+                        result[name] = cfg.default
+                    else:
+                        # If required, prompt interactively
+                        result[name] = self._prompt(name, cfg)
 
         return result

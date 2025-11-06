@@ -360,28 +360,23 @@ class Trainer:
         tokenized["labels"] = all_label_ids
         return tokenized
 
-    def prepare_model_input_data(
-        self, json_path: Path = None, use_gcs: bool = False
-    ) -> Dataset:
+    def prepare_model_input_data(self, json_path: Path = None) -> Dataset:
         """
         Full preprocessing pipeline:
         1. Load and chunk long Label Studio JSONs (from GCS or local file)
         2. Tokenize and align BIO labels
         Returns a model-ready Hugging Face Dataset with input_ids, attention_mask, and labels.
-        
+
         Args:
-            json_path: Optional path to a local JSON file (used if use_gcs=False)
-            use_gcs: If True, load data from GCS storage; if False, use json_path
+            json_path: Optional path to a local JSON file. If None, loads from GCS storage.
         """
         print("🧩 Preparing model input data...")
 
         # Step 1. Load & preprocess (handles long or short docs automatically)
-        if use_gcs:
+        if json_path is None:
             print("📦 Loading data from GCS...")
             dataset = self.import_gcs_annotation_data()
         else:
-            if json_path is None:
-                json_path = Path("tmp/sample-bpda-data.json")
             print(f"📂 Loading data from local file: {json_path}")
             dataset = self.import_label_studio_data_from_single_json(json_path)
 
@@ -391,21 +386,18 @@ class Trainer:
         print(f"✅ Prepared {len(tokenized_dataset)} examples ready for training.")
         return tokenized_dataset
 
-    def train(self, batch_size=8, epochs=3, learning_rate=2e-5, use_gcs=False, json_path=None, gradient_accumulation_steps=1):
+    def train(self, batch_size=8, epochs=3, learning_rate=2e-5, json_path=None):
         """
         Train the NER model with automatic Weights & Biases tracking.
-        
+
         Args:
             batch_size: Training batch size per device
             epochs: Number of training epochs
             learning_rate: Learning rate for optimizer
-            use_gcs: If True, load training data from GCS; if False, use local file
-            json_path: Optional path to local JSON file (used if use_gcs=False)
-            gradient_accumulation_steps: Number of steps to accumulate gradients before updating weights
-                                        Effective batch size = batch_size * gradient_accumulation_steps
+            json_path: Optional path to local JSON file. If None, loads from GCS storage.
         """
         # Split the dataset into training and validation sets
-        dataset = self.prepare_model_input_data(json_path=json_path, use_gcs=use_gcs)
+        dataset = self.prepare_model_input_data(json_path=json_path)
         dataset = dataset.remove_columns(
             [
                 col
@@ -421,17 +413,14 @@ class Trainer:
         # ✅ Initialize wandb run with auto-generated name
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         model_short_name = self.model_name.split("/")[-1]  # e.g., "legal-bert-base-uncased"
-        effective_batch_size = batch_size * gradient_accumulation_steps
-        run_name = f"{model_short_name}-e{epochs}-bs{effective_batch_size}-{timestamp}"
-        
+        run_name = f"{model_short_name}-e{epochs}-bs{batch_size}-{timestamp}"
+
         wandb.init(
             project="spatially-development-plans-ner",
             name=run_name,
             config={
                 "model_name": self.model_name,
                 "batch_size": batch_size,
-                "gradient_accumulation_steps": gradient_accumulation_steps,
-                "effective_batch_size": effective_batch_size,
                 "epochs": epochs,
                 "learning_rate": learning_rate,
                 "train_size": len(train_dataset),
@@ -439,17 +428,15 @@ class Trainer:
                 "num_labels": len(self.label_to_id),
                 "labels": list(self.label_to_id.keys()),
                 "device": str(self.device),
-                "data_source": "gcs" if use_gcs else "local",
+                "data_source": "gcs" if json_path is None else "local",
             },
             tags=["ner", "development-plans", "token-classification", "spatially"]
         )
-        
-        print(f"📊 Training configuration:")
-        print(f"  - Batch size per step: {batch_size}")
-        print(f"  - Gradient accumulation steps: {gradient_accumulation_steps}")
-        print(f"  - Effective batch size: {effective_batch_size}")
+
+        print(f"📊 B:")
+        print(f"  - Batch size: {batch_size}")
         print(f"  - Device: {self.device}")
-        if self.device != "gpu":
+        if self.device.type != "cuda":
             print("⚠️ Warning: Using CPU for training. This may be slow.")
         
         # Log dataset info
@@ -487,9 +474,8 @@ class Trainer:
             print(f"Epoch {epoch+1}/{epochs}")
             self.model.train()
             total_loss = 0
-            epoch_steps = 0
 
-            for batch_idx, batch in enumerate(tqdm(train_loader, desc="Training")):
+            for batch in tqdm(train_loader, desc="Training"):
                 batch = {
                     k: v.to(device)
                     for k, v in batch.items()
@@ -497,25 +483,18 @@ class Trainer:
                 }
                 outputs = self.model(**batch)
                 loss = outputs.loss
-                
-                # Normalize loss for gradient accumulation
-                loss = loss / gradient_accumulation_steps
-                total_loss += loss.item() * gradient_accumulation_steps
-                
+
+                total_loss += loss.item()
+
                 loss.backward()
-                
-                # Only update weights every gradient_accumulation_steps
-                if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    global_step += 1
-                
-                epoch_steps += 1
-                
-                # Log batch loss every 10 optimizer steps
-                if global_step > 0 and global_step % 10 == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+                global_step += 1
+
+                # Log batch loss every 10 steps
+                if global_step % 10 == 0:
                     wandb.log({
-                        "train/batch_loss": loss.item() * gradient_accumulation_steps,
+                        "train/batch_loss": loss.item(),
                         "train/global_step": global_step,
                     }, step=global_step)
 
@@ -533,12 +512,49 @@ class Trainer:
                 "epoch": epoch + 1,
             }, step=global_step)
 
-        # Save model
-        model_path = "tmp/ner_model"
-        tokenizer_path = "tmp/ner_tokenizer"
+        # Save model locally, then upload to GCS if on Vertex AI
+        aip_model_dir = os.environ.get("AIP_MODEL_DIR")
+
+        # Always save to local tmp directory first
+        local_model_dir = "tmp"
+        model_path = f"{local_model_dir}/ner_model"
+        tokenizer_path = f"{local_model_dir}/ner_tokenizer"
+
+        print(f"\n💾 Saving model to local directory: {model_path}")
         self.model.save_pretrained(model_path)
         self.tokenizer.save_pretrained(tokenizer_path)
-        
+        print(f"✅ Model saved locally")
+
+        # Upload to GCS if running on Vertex AI
+        if aip_model_dir:
+            print(f"\n☁️  Uploading to GCS: {aip_model_dir}")
+
+            # Extract bucket and path from gs:// URL
+            gcs_path = aip_model_dir.replace("gs://", "")
+            bucket_name = gcs_path.split("/")[0]
+            gcs_prefix = "/".join(gcs_path.split("/")[1:])
+
+            # Get GCP project from environment
+            gcp_project = os.environ.get("GCP_PROJECT")
+
+            # Initialize GCS client
+            gcs_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+
+            # Upload model files
+            gcs_storage.upload_dir(
+                source_path=model_path,
+                destination_path=f"{gcs_prefix}ner_model"
+            )
+
+            # Upload tokenizer files
+            gcs_storage.upload_dir(
+                source_path=tokenizer_path,
+                destination_path=f"{gcs_prefix}ner_tokenizer"
+            )
+
+            print(f"✅ Model uploaded to: {aip_model_dir}ner_model")
+            print(f"✅ Tokenizer uploaded to: {aip_model_dir}ner_tokenizer")
+
         # Log model as artifact (optional but recommended)
         model_artifact = wandb.Artifact(
             name="ner-model",
@@ -547,10 +563,10 @@ class Trainer:
         )
         model_artifact.add_dir(model_path)
         wandb.log_artifact(model_artifact)
-        
+
         # Finish the wandb run
         wandb.finish()
-        
+
         print("✅ Training completed and logged to Weights & Biases")
 
     def evaluate(self, loader: DataLoader, device: torch.device) -> float:

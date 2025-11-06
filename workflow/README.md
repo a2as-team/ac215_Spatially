@@ -33,6 +33,11 @@ Once inside the workflow container:
 python registry/run.py
 ```
 
+**Publish packages to GCS:**
+```bash
+python packages/run.py
+```
+
 **Run a pipeline:**
 ```bash
 # Run all collectors and processors

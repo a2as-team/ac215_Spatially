@@ -14,7 +14,7 @@ class AllPipeline(BasePipeline):
     """Pipeline that runs all data collectors in parallel, then all processors"""
 
     def __init__(self, city: str):
-        super().__init__(city)
+        super().__init__()
         self.pipeline_name = "all"
         self.city = city
 

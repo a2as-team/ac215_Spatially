@@ -4,12 +4,16 @@ from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 # Import all collector components
 from pipelines.collector.development_plans import DevelopmentPlansCollectorComponent
 from pipelines.collector.census import CensusCollectorComponent
+from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorComponent
 
 # Import all processor components
 from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
+from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
+from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
 
 # Import full pipelines
 from pipelines.all import AllPipeline
+from pipelines.zoning_ordinance import ZoningOrdinancePipeline
 
 
 def run(city: str, pipeline_type: str = "all"):
@@ -21,12 +25,15 @@ def run(city: str, pipeline_type: str = "all"):
         pipeline_type: Type to run
             Pipelines (multiple components):
             - "all": All collectors + processors (default)
-            - "development_plans": Development plans collector + processor
+            - "zoning-ordinance": Zoning ordinance collector + chunk-embed + load
 
             Individual Components:
             - "collector-development-plans": Just development plans collector
             - "collector-census": Just census collector
-            - "processor-development-plans-label-studio": Just processor
+            - "collector-zoning-ordinance": Just zoning ordinance collector
+            - "processor-development-plans-label-studio": Just development plans processor
+            - "processor-zoning-ordinance-chunk-embed": Just zoning ordinance chunk & embed
+            - "processor-zoning-ordinance-load": Just zoning ordinance ChromaDB load
     """
     print(f"Running {pipeline_type} for {city}...")
 
@@ -34,13 +41,17 @@ def run(city: str, pipeline_type: str = "all"):
     available = {
         # Full pipelines
         "all": AllPipeline,
+        "zoning-ordinance": ZoningOrdinancePipeline,
 
         # Individual collectors
         "collector-development-plans": DevelopmentPlansCollectorComponent,
         "collector-census": CensusCollectorComponent,
+        "collector-zoning-ordinance": ZoningOrdinanceCollectorComponent,
 
         # Individual processors
         "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
+        "processor-zoning-ordinance-chunk-embed": ZoningOrdinanceChunkEmbedComponent,
+        "processor-zoning-ordinance-load": ZoningOrdinanceLoadComponent,
     }
 
     if pipeline_type not in available:
@@ -73,9 +84,13 @@ if __name__ == "__main__":
             default="all",
             choices=[
                 "all",
+                "zoning-ordinance",
                 "collector-development-plans",
                 "collector-census",
+                "collector-zoning-ordinance",
                 "processor-development-plans-label-studio",
+                "processor-zoning-ordinance-chunk-embed",
+                "processor-zoning-ordinance-load",
             ],
         ),
         "test": SmartArgItem(

@@ -38,7 +38,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
 
     def _get_default_download_dir(self) -> Path:
         """Get the default download directory for Chicago collector."""
-        return Path(__file__).parent / "chicago_collected_data"
+        return Path(__file__).parent.parent.parent / "downloads" / "zoning_ordinance" / "chicago"
 
     def _wait_for_download_complete(self, timeout: int = 600) -> bool:
         """Wait for download to complete by checking for .crdownload files.
@@ -66,14 +66,13 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                 default_downloads.glob("chicago*.crdownload")
             )
 
-            # Check for downloaded files in target directory (exclude debug screenshots)
+            # Check for downloaded files in target directory
             downloaded_files = [
                 f
                 for f in self.download_dir.iterdir()
                 if f.is_file()
                 and not f.name.startswith(".")
                 and not f.name.endswith(".crdownload")
-                and not f.name.endswith(".png")
             ]
 
             # Also check for Chicago files in default Downloads folder
@@ -171,12 +170,6 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                     continue
 
             if not download_button:
-                # Save page source for debugging
-                with open(self.download_dir / "page_source_debug.html", "w") as f:
-                    f.write(self.driver.page_source)
-                logger.error(
-                    "Saved page source to page_source_debug.html for inspection"
-                )
                 raise Exception(
                     "Could not find download button with any known selector"
                 )
@@ -317,42 +310,44 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
             # Wait for file preparation to complete
             # A bottom bar appears showing "Preparing 1 item..." which can take several minutes
             logger.info("Waiting for server to prepare file...")
-            logger.info("This may take 5-10 minutes for large files...")
+            logger.info("This may take 10-30 minutes for large files...")
 
-            # Wait for the "OPEN" button to appear (indicates file is ready)
-            wait = WebDriverWait(self.driver, 600)  # 10 minute timeout for preparation
+            # Wait for the download link to appear (indicated by data-request-uuid)
+            wait = WebDriverWait(self.driver, 1800)  # 30 minute timeout for preparation
 
             try:
-                # Wait for the OPEN button to be clickable
-                open_button = wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a.request__open"))
+                # Wait for the element with data-request-uuid attribute to be present
+                download_link_element = wait.until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-request-uuid]"))
                 )
-                logger.info("File preparation complete - OPEN button is available")
+                logger.info("File preparation complete - download link is available")
             except Exception as e:
                 logger.error(f"File preparation did not complete: {e}")
-                raise Exception("OPEN button did not appear after file preparation")
+                raise Exception("Download link did not appear after file preparation")
 
-            # Click the OPEN button to trigger the actual download
-            logger.info("Clicking OPEN button to download file...")
-            try:
-                open_button.click()
-            except Exception as e:
-                logger.warning(f"Regular click failed: {e}, trying JavaScript click")
-                self.driver.execute_script("arguments[0].click();", open_button)
+            # Extract the download URL from the href attribute
+            download_url = download_link_element.get_attribute("href")
+            if not download_url:
+                raise Exception("Could not extract download URL from link element")
+
+            logger.info(f"Found download URL: {download_url}")
+
+            # Navigate directly to the download URL
+            logger.info("Navigating to download URL...")
+            self.driver.get(download_url)
 
             # Give download time to start
-            time.sleep(3)
+            time.sleep(10)
 
             # Wait for download to complete
             logger.info("Waiting for download to complete...")
             if self._wait_for_download_complete():
-                # Get the downloaded file (exclude debug screenshots)
+                # Get the downloaded files
                 downloaded_files = [
                     f
                     for f in self.download_dir.iterdir()
                     if f.is_file()
                     and not f.name.startswith(".")
-                    and not f.name.endswith(".png")
                 ]
 
                 if downloaded_files:

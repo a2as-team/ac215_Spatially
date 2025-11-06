@@ -74,7 +74,7 @@ def publish_local_docker_images(
     if to_where == "gcp":
         # Get required environment variables
         try:
-            gcp_project = os.environ["GCP_PROJECT_ID"]
+            gcp_project = os.environ["GCP_PROJECT"]
             gcp_region = os.environ.get("GCP_REGION", "us-central1")
         except KeyError as e:
             raise ValueError(f"Required environment variable not set: {e}")

@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from zoning_ordinance.base import ZoningOrdinanceBaseCollector
+from utils.gcp_storage import GCPStorage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,9 +48,29 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
         """
         super().__init__(headless=headless, download_dir=download_dir)
 
+        # Initialize GCP Storage connection
+        self.gcp_storage = None
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        gcp_project = os.environ.get("GCP_PROJECT")
+
+        if bucket_name and gcp_project:
+            try:
+                self.gcp_storage = GCPStorage(gcp_project=gcp_project, bucket_name=bucket_name)
+                logger.info(f"GCS connection established successfully (project: {gcp_project}, bucket: {bucket_name})")
+            except Exception as e:
+                logger.error(f"Failed to initialize GCS connection: {e}")
+                logger.error(f"GCP_PROJECT: {gcp_project}, GCS_BUCKET_NAME: {bucket_name}")
+                import traceback
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+                # Set to None but let upload_to_gcs raise the error
+                self.gcp_storage = None
+        else:
+            logger.error(f"GCS environment variables not set: GCS_BUCKET_NAME={bucket_name}, GCP_PROJECT={gcp_project}")
+            logger.error("Cannot upload to GCS without proper configuration.")
+
     def _get_default_download_dir(self) -> Path:
         """Get the default download directory for Boston collector."""
-        return Path(__file__).parent / "boston_collected_data"
+        return Path(__file__).parent.parent.parent / "downloads" / "zoning_ordinance" / "boston"
 
     def _normalize_heading(self, text):
         """
@@ -594,6 +615,11 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
             logger.info(
                 f"Collection complete: {downloaded_count}/{len(sections)} sections downloaded"
             )
+
+            # Upload to GCS
+            logger.info("Uploading files to GCS...")
+            self.upload_to_gcs()
+
             return results
 
         except Exception as e:
@@ -626,3 +652,37 @@ class ZoningCodeCollector(ZoningOrdinanceBaseCollector):
 
         logger.info("Validation passed")
         return True
+
+    def upload_to_gcs(self):
+        """Upload collected zoning ordinance files to GCS."""
+        if not self.gcp_storage:
+            raise ValueError("GCS connection not available. Ensure GCS_BUCKET_NAME and GCP_PROJECT environment variables are set and credentials are properly configured.")
+
+        bucket_name = os.environ.get("GCS_BUCKET_NAME")
+
+        # Upload all files in the download directory to GCS
+        # Structure: zoning_ordinance/{city}/filename.xlsx
+        city_name = "boston"
+        gcs_prefix = f"zoning_ordinance/{city_name}"
+
+        uploaded_count = 0
+        try:
+            # Get all Excel files in the download directory
+            xlsx_files = list(self.download_dir.glob("*.xlsx"))
+
+            logger.info(f"Found {len(xlsx_files)} files to upload to GCS")
+
+            for local_file in xlsx_files:
+                # Create GCS path
+                gcs_path = f"{gcs_prefix}/{local_file.name}"
+
+                # Upload file
+                self.gcp_storage.upload_file(str(local_file), gcs_path)
+                uploaded_count += 1
+                logger.info(f"Uploaded {gcs_path} to GCS bucket {bucket_name}")
+
+            logger.info(f"Upload complete: {uploaded_count} files uploaded to gs://{bucket_name}/{gcs_prefix}/")
+
+        except Exception as e:
+            logger.error(f"Error during GCS upload: {e}")
+            raise

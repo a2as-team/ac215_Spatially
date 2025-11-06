@@ -1,0 +1,37 @@
+# PIPELINE DEFINITION
+# Name: processor-zoning-ordinance-load-pipeline-boston
+components:
+  comp-zoning-ordinance-load-component:
+    executorLabel: exec-zoning-ordinance-load-component
+deploymentSpec:
+  executors:
+    exec-zoning-ordinance-load-component:
+      container:
+        command:
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && export CHROMADB_API_KEY=ck-BehWUrDxQy5enL73ebngGncidTjX5sHR9KogDJ4Cc7U9
+          && export CHROMADB_TENANT=27f98798-e3e2-4cac-8d6c-dfe7848dd2a3 && export
+          CHROMADB_DATABASE=ac215-spatially && /home/app/.venv/bin/python /app/zoning_ordinance_load/run.py
+          --city 'boston' --collection 'zoning-ordinance'
+        image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/zoning-ordinance-load:latest
+        resources:
+          cpuLimit: 2.0
+          memoryLimit: 8.0
+          resourceCpuLimit: 2000m
+          resourceMemoryLimit: 8G
+pipelineInfo:
+  name: processor-zoning-ordinance-load-pipeline-boston
+root:
+  dag:
+    tasks:
+      zoning-ordinance-load-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-zoning-ordinance-load-component
+        taskInfo:
+          name: processor-zoning-ordinance-load-boston
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

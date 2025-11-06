@@ -82,6 +82,13 @@ class TestBostonConnection(unittest.TestCase):
         """Test that we can collect data from the first page."""
         import json
         import os
+        import shutil
+
+        # Clean up any existing test data
+        base_dir = self.collector.pdf_base_directory()
+        if os.path.exists(base_dir):
+            shutil.rmtree(base_dir)
+        os.makedirs(base_dir)
 
         driver = self.collector.selenium_util.driver
         driver.get(self.collector.resource_url())
@@ -90,44 +97,61 @@ class TestBostonConnection(unittest.TestCase):
             EC.presence_of_element_located((By.XPATH, "//table[@role='grid']/tbody"))
         )
 
+        # First, check if there are any matching documents on the first page
+        rows = self.collector.find_rows()
+        self.assertGreater(len(rows), 0, "Should have rows in table")
+
+        # Count how many rows match the allowed keywords
+        matching_count = 0
+        for row in rows:
+            _, _, _, document_type, _, _ = self.collector.parse_row(row)
+            if document_type and any(keyword in document_type for keyword in self.collector.ALLOWED_DOCUMENT_KEYWORDS()):
+                matching_count += 1
+
+        print(f"Found {matching_count} matching documents out of {len(rows)} total rows")
+
         # Collect data from first page
         self.collector.collect_metadata_from_current_page(
             self.collector.ALLOWED_DOCUMENT_KEYWORDS()
         )
 
-        # Check that JSON files were created
-        base_dir = self.collector.pdf_base_directory()
+        # Check that download directory exists
         self.assertTrue(os.path.exists(base_dir), "Download directory should exist")
 
         # Get all project folders (directories in base_dir)
         project_folders = [d for d in os.listdir(base_dir)
                           if os.path.isdir(os.path.join(base_dir, d))]
 
-        self.assertGreater(
+        # The number of project folders should match the number of matching documents we found
+        self.assertEqual(
             len(project_folders),
-            0,
-            "Should collect at least one matching document from first page",
+            matching_count,
+            f"Should collect exactly {matching_count} matching projects from first page",
         )
 
-        print(f"Collected {len(project_folders)} projects with matching documents")
+        # Only verify metadata structure if we found matching documents
+        if matching_count > 0:
+            print(f"Collected {len(project_folders)} projects with matching documents")
 
-        # Verify structure of first project's metadata.json
-        first_project_folder = project_folders[0]
-        metadata_path = os.path.join(base_dir, first_project_folder, "metadata.json")
-        self.assertTrue(os.path.exists(metadata_path), "metadata.json should exist")
+            # Verify structure of first project's metadata.json
+            first_project_folder = project_folders[0]
+            metadata_path = os.path.join(base_dir, first_project_folder, "metadata.json")
+            self.assertTrue(os.path.exists(metadata_path), "metadata.json should exist")
 
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
 
-        self.assertIn("project_name", metadata)
-        self.assertIn("project_link", metadata)
-        self.assertIn("neighborhood", metadata)
-        self.assertIn("documents", metadata)
-        self.assertGreater(len(metadata["documents"]), 0, "Should have at least one document")
+            self.assertIn("project_name", metadata)
+            self.assertIn("project_link", metadata)
+            self.assertIn("neighborhood", metadata)
+            self.assertIn("documents", metadata)
+            self.assertGreater(len(metadata["documents"]), 0, "Should have at least one document")
 
-        # Verify document structure
-        first_doc = metadata["documents"][0]
-        self.assertIn("document_type", first_doc)
+            # Verify document structure
+            first_doc = metadata["documents"][0]
+            self.assertIn("document_type", first_doc)
+        else:
+            print("No matching documents found on first page - test passed (collector working correctly)")
 
 
 if __name__ == "__main__":

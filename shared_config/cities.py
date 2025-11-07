@@ -31,10 +31,10 @@ class City:
         from config.cities import City
 
         # Use constants (IDE autocomplete!)
-        city = City.BOSTON  # "boston"
+        city = City.boston  # "boston"
 
         # Get display name
-        name = City.get_display_name(City.BOSTON)  # "Boston"
+        name = City.get_display_name(City.boston)  # "Boston"
 
         # Validate
         if City.is_valid("boston"):
@@ -109,6 +109,7 @@ class City:
         return CITIES[city].get("state")
 
 
-# Auto-generate City.BOSTON, City.CHICAGO, etc. from cities.json
+# Auto-generate City.boston, City.chicago, etc. from cities.json
+# Using lowercase for consistency with JSON keys and database values
 for city_key in CITIES.keys():
     setattr(City, city_key, city_key)

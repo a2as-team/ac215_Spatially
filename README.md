@@ -6,7 +6,6 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 
 ```mermaid
 erDiagram
-    cities ||--o{ census_tracts : "has many"
     cities ||--o{ zoning_maps : "has many"
     census_tracts ||--|| census_data : "has one"
 
@@ -20,16 +19,13 @@ erDiagram
     }
 
     census_tracts {
-        int id PK
-        int city_id FK "References cities(id)"
-        varchar geoid "Geo identifier"
+        varchar geoid PK "Geo identifier"
         geometry geom "PostGIS geometry"
         timestamp created_at
     }
 
     census_data {
-        int id PK
-        int census_tract_id FK "References census_tracts(id)"
+        varchar census_tract_id FK "References census_tracts(geoid)"
         TBD TBD 
     }
 
@@ -37,6 +33,9 @@ erDiagram
         int id PK
         int city_id FK "References cities(id)"
         varchar code "Zoning code (e.g. RS1)"
+        varchar article "Zoning article"
+        varchar usage "Zoning usage"
+        geometry geom "PostGIS geometry"
         timestamp created_at
     }
 ```

@@ -32,7 +32,7 @@ if not logger.hasHandlers():
 class BostonDevelopmentPlansCollector(BaseDevelopmentPlansCollector):
     @classmethod
     def city(cls) -> str:
-        return City.BOSTON
+        return City.boston
 
     @classmethod
     def resource_url(cls) -> str:

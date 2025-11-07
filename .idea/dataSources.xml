@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
+    <data-source source="LOCAL" name="app@spatially-db.cor0jg0kbkom.us-east-1.rds.amazonaws.com" uuid="2e2f9599-4be6-4049-be1c-092e124248b2">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <remarks>aws s[atoa;;y</remarks>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://spatially-db.cor0jg0kbkom.us-east-1.rds.amazonaws.com:5432/app</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
+  </component>
+</project>

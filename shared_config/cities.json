@@ -1,10 +1,14 @@
 {
-  "BOSTON": {
+  "boston": {
     "display_name": "Boston",
     "state": "MA"
   },
-  "CHICAGO": {
+  "chicago": {
     "display_name": "Chicago",
     "state": "IL"
+  },
+  "cambridge": {
+    "display_name": "Cambridge",
+    "state": "MA"
   }
 }

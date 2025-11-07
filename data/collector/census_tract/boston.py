@@ -18,19 +18,18 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.BOSTON
+        return City.boston
 
     def resource_url(self) -> str:
-        return "https://gis.data.mass.gov/datasets/boston::2020-census-tracts-in-boston/explore"
+        return "https://gis.bostonplans.org/hosting/rest/services/Hosted/Census_2020_Tracts/FeatureServer"
     
     def geoid_column(self) -> str:
         return "geoid20"
-    
 
     
-    def upload_to_gcs(self, file_path: str):
+    def upload_to_gcs(self, file_path: str, gcs_filename: str):
         """Upload the file to GCS."""
-        self.gcp_storage.upload_file(file_path=file_path, destination_path=f"{self.gcp_storage_parent_directory()}/{file_path.name}")
+        self.gcp_storage.upload_file(file_path=file_path, destination_path=f"{self.gcp_storage_parent_directory()}/{gcs_filename}")
     
     def upload_to_db(self, gdf: gpd.GeoDataFrame):
         """Upload the geopandas dataframe to the database."""
@@ -41,19 +40,15 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         gdf = self._ensure_crs(gdf)
 
         # Insert each row
-        city = self.city().lower()
         geoid_col = self.geoid_column()
-
-        self.logger.info(f"Uploading {len(gdf)} census tracts to database...")
 
         for _, row in gdf.iterrows():
             geoid = row[geoid_col]
             # Convert geometry to WKT (Well-Known Text)
             geometry_wkt = row['geometry'].wkt
 
-            self._insert_census_tract(self.db, city, geoid, geometry_wkt)
+            self._insert_census_tract(self.db, geoid, geometry_wkt)
 
-        self.logger.info(f"Successfully uploaded {len(gdf)} census tracts for {city}")
 
     def _wait_for_download_complete(self, timeout=60):
         """Wait for download to complete by checking for downloaded file."""
@@ -88,104 +83,45 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         raise TimeoutError(f"Download did not complete within {timeout} seconds")
 
     def download_file(self):
-        """Download census tract data by clicking the Download button."""
+        from utils.featureserver_downloader import FeatureServerDownloader
+        import os
+        url = self.resource_url()
+        
+        os.makedirs(self.download_directory(), exist_ok=True)
+        
+        # Initialize the downloader utility
+        downloader = FeatureServerDownloader(logger=self.logger, epsg_code=self.EPSG_CODE)
+        
+        # Download the file
         try:
-            self.logger.info(f"Navigating to: {self.resource_url()}")
-            self.selenium_util.driver.get(self.resource_url())
-
-            # Wait for page to fully load
-            time.sleep(5)  # Give ArcGIS Hub time to fully render
-
-            self.logger.info("Page loaded, looking for Download button...")
-
-            # Try multiple selectors for the Download button
-            download_button = None
-            selectors = [
-                "//button[contains(@class, 'btn-info') and contains(., 'Download')]",
-                "//button[contains(@class, 'btn') and normalize-space(.)='Download']",
-                "//button[contains(@class, 'btn') and contains(., 'Download')]",
-                "//button[contains(text(), 'Download')]",
-            ]
-
-            for selector in selectors:
-                try:
-                    download_button = WebDriverWait(self.selenium_util.driver, 5).until(
-                        EC.element_to_be_clickable((By.XPATH, selector))
-                    )
-                    self.logger.info(f"Found Download button with selector: {selector}")
-                    break
-                except:
-                    continue
-
-            if not download_button:
-                raise Exception("Could not find Download button with any selector")
-
-            self.logger.info("Clicking Download button...")
-            download_button.click()
-
-            # Wait for download options to appear (in shadow DOM)
-            self.logger.info("Waiting for download options to appear...")
-            time.sleep(3)
-
-            # Find and click GeoJSON download button using JavaScript (to access shadow DOM)
-            self.logger.info("Finding and clicking GeoJSON download button in shadow DOM...")
-            script = """
-            // Find all download list items
-            const downloadList = document.querySelector('arcgis-hub-download-list');
-            if (!downloadList || !downloadList.shadowRoot) return false;
-
-            const items = downloadList.shadowRoot.querySelectorAll('arcgis-hub-download-list-item');
-
-            // Find the GeoJSON item and click its button
-            for (const item of items) {
-                if (!item.shadowRoot) continue;
-
-                const title = item.shadowRoot.querySelector('.download-option-card-title');
-                if (title && title.textContent.includes('GeoJSON')) {
-                    // Find the button inside this item and click it
-                    const button = item.shadowRoot.querySelector('calcite-button');
-                    if (button && button.shadowRoot) {
-                        const nativeButton = button.shadowRoot.querySelector('button');
-                        if (nativeButton) {
-                            nativeButton.click();
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-            """
-
-            clicked = self.selenium_util.driver.execute_script(script)
-
-            if not clicked:
-                raise Exception("Could not find or click GeoJSON download button in shadow DOM")
-
-            self.logger.info("Download started...")
-            # Wait for download to complete by checking for file in download directory
-            return self._wait_for_download_complete()
-
+            self.logger.info(f"Downloading file from: {url}")
+            downloaded_files = downloader.download_all_layers(
+                base_url=url,
+                output_dir=self.download_directory(),
+                filename_prefix="census_tracts",
+                use_pagination=False
+            )
+            for file_info in downloaded_files:
+                file_info['title'] = f"census_tracts - {file_info['layer_name']}"
+                file_info['url'] = f"{url}/{file_info['layer_id']}/query"
         except Exception as e:
-            self.logger.error(f"Error during download: {e}")
-            # Save screenshot for debugging
-            try:
-                screenshot_path = Path(self.download_directory()) / "error_screenshot.png"
-                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-                self.selenium_util.driver.save_screenshot(str(screenshot_path))
-                self.logger.error(f"Screenshot saved to: {screenshot_path}")
-            except Exception as screenshot_error:
-                self.logger.error(f"Could not save screenshot: {screenshot_error}")
-            raise
+            raise Exception(f"Error downloading census tracts file: {e}")
+        
+        if len(downloaded_files) == 1:
+            return downloaded_files[0]
+        else:
+            raise Exception(f"Expected 1 downloaded file, got {len(downloaded_files)}")
 
     def collect(self):
         # Download the file
         downloaded_file = self.download_file()
 
         # Upload to GCS
-        self.upload_to_gcs(downloaded_file)
+        print(downloaded_file)
+        self.upload_to_gcs(file_path=downloaded_file['filepath'], gcs_filename=downloaded_file['layer_name'])
 
         # Parse to GeoDataFrame and upload to database
-        gdf = gpd.read_file(downloaded_file)
+        gdf = gpd.read_file(downloaded_file['filepath'])
         self.upload_to_db(gdf)
 
         self.logger.info(f"Collection complete for {self.city()}")

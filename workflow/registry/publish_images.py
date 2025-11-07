@@ -1,7 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
-from config import RegistryConfig
+from .config import RegistryConfig
 
 
 def build_and_push_to_gcp(

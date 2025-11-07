@@ -1,5 +1,6 @@
 import os
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
+from shared_config.cities import City
 
 # Import all collector components
 from pipelines.collector.development_plans import DevelopmentPlansCollectorComponent
@@ -75,6 +76,7 @@ if __name__ == "__main__":
             prompt="The city of data to process",
             arg_type=str,
             required=True,
+            choices=[city.lower() for city in City.get_all()],  # Support lowercase input
         ),
         "pipeline_type": SmartArgItem(
             flags=["--pipeline"],
@@ -105,5 +107,13 @@ if __name__ == "__main__":
     parser = SmartArgParser(schema)
     args = parser.parse()
 
-    # Run the selected pipeline or component
-    run(city=args["city"], pipeline_type=args["pipeline_type"])
+    # Validate and normalize city name
+    city_upper = args["city"].upper()
+    if not City.is_valid(city_upper):
+        raise ValueError(
+            f"Unknown city: {args['city']}. "
+            f"Available cities: {', '.join(c.lower() for c in City.get_all())}"
+        )
+
+    # Run the selected pipeline or component (pass lowercase for compatibility)
+    run(city=args["city"].lower(), pipeline_type=args["pipeline_type"])

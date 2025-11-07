@@ -14,7 +14,7 @@ from geopy.geocoders import Nominatim
 from utils.geo_locater import GeoLocater
 from utils.gcp_storage import GCPStorage
 from utils.file_hash_checker import FileHashChecker
-from config.cities import City
+from shared_config.cities import City
 
 
 # Set up the logger for this module at the module level

@@ -1,6 +1,6 @@
 from utils.selenium import SeleniumUtil
 from .base import ZoningMapsBaseCollector
-from config.cities import City
+from shared_config.cities import City
 
 
 class BostonZoningMapsCollector(ZoningMapsBaseCollector):

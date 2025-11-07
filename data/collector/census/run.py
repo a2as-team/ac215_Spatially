@@ -1,7 +1,7 @@
 import os
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from census import CensusCollector
-from config.cities import City
+from shared_config.cities import City
 
 if __name__ == "__main__":
     schema = {

@@ -37,9 +37,11 @@ RUN set -ex; \
 USER app
 WORKDIR /app
 
+# Copy shared_config first (from project root perspective)
+COPY --chown=app:app ../../shared_config ./shared_config
+
 # Copy the source code
 COPY --chown=app:app . ./
-
 
 RUN uv sync
 

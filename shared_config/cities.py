@@ -28,7 +28,7 @@ class City:
     City data is loaded from cities.json.
 
     Usage:
-        from shared_config.cities import City
+        from config.cities import City
 
         # Use constants (IDE autocomplete!)
         city = City.BOSTON  # "boston"

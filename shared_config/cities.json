@@ -6,17 +6,5 @@
   "CHICAGO": {
     "display_name": "Chicago",
     "state": "IL"
-  },
-  "NEW_YORK": {
-    "display_name": "New York",
-    "state": "NY"
-  },
-  "LOS_ANGELES": {
-    "display_name": "Los Angeles",
-    "state": "CA"
-  },
-  "SAN_FRANCISCO": {
-    "display_name": "San Francisco",
-    "state": "CA"
   }
 }

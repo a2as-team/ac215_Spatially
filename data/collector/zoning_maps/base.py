@@ -3,10 +3,14 @@ import logging
 from template import BaseCollector
 import sys
 import os 
+import geopandas as gpd
 from utils.db_accessor import DBAccessor
 from utils.gcp_storage import GCPStorage
 
 class ZoningMapsBaseCollector(BaseCollector, ABC):
+    # Standard CRS for all zoning map data
+    EPSG_CODE = 4326  # WGS84 - used for database storage
+    
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(__name__)
@@ -47,7 +51,7 @@ class ZoningMapsBaseCollector(BaseCollector, ABC):
             CREATE TABLE IF NOT EXISTS zoning_maps (
                 id SERIAL PRIMARY KEY,
                 city VARCHAR(100) NOT NULL,
-                zoning_map_url VARCHAR(255) NOT NULL,
+                code VARCHAR(100) NOT NULL,
             )
         """)
     
@@ -68,13 +72,23 @@ class ZoningMapsBaseCollector(BaseCollector, ABC):
         pass
     
     @abstractmethod
-    def collect_zoning_static_files(self):
+    def download_zoning_static_files(self):
         """Collect zoning map static files."""
         pass
     
     @abstractmethod
-    def collect_zoning_geospatial_files(self):
+    def download_zoning_geospatial_files(self):
         """Collect zoning map geospatial files."""
+        pass
+    
+    @abstractmethod
+    def upload_to_gcs(self):
+        """Upload the file to GCS."""
+        pass
+    
+    @abstractmethod
+    def upload_to_db(self, gdf: gpd.GeoDataFrame):
+        """Upload the geopandas dataframe to the database."""
         pass
     
     @abstractmethod

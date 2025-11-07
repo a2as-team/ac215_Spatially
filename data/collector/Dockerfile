@@ -48,5 +48,5 @@ RUN uv sync
 # Set up entrypoint to activate virtual environment
 # Entry point
 ENTRYPOINT ["/bin/bash"]
-# Get into the uv virtual environment shell
-CMD ["-c", "source /home/app/.venv/bin/activate && exec bash"]
+# Run setup on startup, then drop into bash
+CMD ["-c", "source /home/app/.venv/bin/activate && python setup/run.py && exec bash"]

@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
+from config.cities import City
 import geopandas as gpd
 import time
 from pathlib import Path
@@ -15,9 +16,9 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
     def __init__(self):
         super().__init__()
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
-        
+
     def city(self) -> str:
-        return "boston"
+        return City.BOSTON
 
     def resource_url(self) -> str:
         return "https://gis.data.mass.gov/datasets/boston::2020-census-tracts-in-boston/explore"
@@ -40,7 +41,7 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         gdf = self._ensure_crs(gdf)
 
         # Insert each row
-        city = "us_" + self.city().lower()
+        city = self.city().lower()
         geoid_col = self.geoid_column()
 
         self.logger.info(f"Uploading {len(gdf)} census tracts to database...")

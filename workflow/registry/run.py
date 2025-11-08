@@ -1,7 +1,7 @@
 
-from publish_images import publish_local_docker_images
 import sys
 from pathlib import Path
+from publish_images import publish_local_docker_images
 
 # Add parent directory to path to allow imports
 sys.path.insert(0, str(Path(__file__).parent.parent))

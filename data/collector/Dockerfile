@@ -37,8 +37,8 @@ RUN set -ex; \
 USER app
 WORKDIR /app
 
-# Copy shared_config first (from project root perspective)
-COPY --chown=app:app ../../shared_config ./shared_config
+# Copy shared_config from named build context
+COPY --from=shared_config --chown=app:app . ./shared_config
 
 # Copy the entire data directory to match docker-compose structure
 COPY --chown=app:app . ./

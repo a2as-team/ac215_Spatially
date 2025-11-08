@@ -7,6 +7,8 @@ services:
     build:
       context: ./data/collector
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_collector
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
@@ -27,6 +29,8 @@ services:
     build:
       context: ./data/processor
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_processor
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
@@ -120,12 +124,15 @@ services:
     build:
       context: ./workflow
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_workflow
     stdin_open: true
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
+      - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
     volumes:

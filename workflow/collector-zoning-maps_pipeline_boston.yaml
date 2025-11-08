@@ -1,0 +1,37 @@
+# PIPELINE DEFINITION
+# Name: collector-zoning-maps-pipeline-boston
+components:
+  comp-zoning-maps-collector-component:
+    executorLabel: exec-zoning-maps-collector-component
+deploymentSpec:
+  executors:
+    exec-zoning-maps-collector-component:
+      container:
+        command:
+        - sh
+        - -c
+        - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
+          && export APP_DB_NAME=app && export POSTGRE_USER=postgres && export POSTGRE_PASSWORD=spatially4ever!
+          && export POSTGRE_HOST=spatially-db.cor0jg0kbkom.us-east-1.rds.amazonaws.com
+          && export POSTGRE_PORT=5432 && /home/app/.venv/bin/python /app/zoning_maps/run.py
+          --city 'boston'
+        image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/data-collector:latest
+        resources:
+          cpuLimit: 2.0
+          memoryLimit: 8.0
+          resourceCpuLimit: 2000m
+          resourceMemoryLimit: 8G
+pipelineInfo:
+  name: collector-zoning-maps-pipeline-boston
+root:
+  dag:
+    tasks:
+      zoning-maps-collector-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-zoning-maps-collector-component
+        taskInfo:
+          name: collector-zoning-maps-boston
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.14.6

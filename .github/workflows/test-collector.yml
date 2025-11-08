@@ -25,6 +25,9 @@ jobs:
 
     - name: Run all tests except heavy tests
       run: |
+        # Add project root to PYTHONPATH so shared_config can be imported
+        export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH}"
+
         # Define tests to exclude (require GPU, Selenium, or are too heavy for CI)
         EXCLUDE_TESTS=(
           # Add more heavy tests here as needed, e.g.:

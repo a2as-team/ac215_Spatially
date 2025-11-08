@@ -38,7 +38,7 @@ Your code directory will be mounted into the container, so most code changes are
 If you've updated the Dockerfile or installed new dependencies and need to rebuild, you can do everything in one line:
 
 ```bash
-docker compose build processor && docker builder prune -f && docker compose run --rm processor
+docker compose build --no-cache processor && docker builder prune -f && docker compose run --rm processor
 ```
 
 - This command rebuilds the processor image, cleans up build cache to free up disk space, and starts the processor container fresh.

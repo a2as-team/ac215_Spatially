@@ -36,7 +36,7 @@ class ZoningOrdinanceBaseCollector(BaseCollector, ABC):
     
     def gcp_storage_parent_directory(self) -> str:
         """Return the GCS storage path for this collector."""
-        return f"zoining_ordinance/{self.city()}"
+        return f"zoning_ordinance/{self.city()}"
     
     def download_directory(self) -> str:
         """Return the download directory path for this collector."""

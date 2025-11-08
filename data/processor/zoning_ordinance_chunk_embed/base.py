@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 import logging
 import sys
-from template import BaseProceesor
+from template import BaseProcessor
 
 
-class ZoningOrdinanceEmbeddingsBaseProcessor(BaseProceesor, ABC):
+class ZoningOrdinanceEmbeddingsBaseProcessor(BaseProcessor, ABC):
     def __init__(self):
         super().__init__()
 

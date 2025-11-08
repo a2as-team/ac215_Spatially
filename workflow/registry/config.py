@@ -46,6 +46,17 @@ class RegistryConfig:
         }
 
     @staticmethod
+    def zoning_ordinance_embed_image(gcp_region: str, gcp_project: str):
+        project_root = Path(__file__).parent.parent
+        return {
+            "name": "zoning-ordinance-embed",
+            "context": project_root / "data" / "processor",
+            "dockerfile": project_root / "data" / "processor" / "Dockerfile",
+            "image_uri": f"{gcp_region}-docker.pkg.dev/{gcp_project}/{RegistryConfig.repository_name()}/zoning-ordinance-embed:latest",
+            "platform": RegistryConfig.platform()
+        }
+
+    @staticmethod
     def zoning_ordinance_load_image(gcp_region: str, gcp_project: str):
         project_root = Path(__file__).parent.parent
         return {
@@ -62,5 +73,6 @@ class RegistryConfig:
             RegistryConfig.data_collector_image(gcp_region, gcp_project),
             RegistryConfig.data_processor_image(gcp_region, gcp_project),
             RegistryConfig.zoning_ordinance_chunk_embed_image(gcp_region, gcp_project),
+            RegistryConfig.zoning_ordinance_embed_image(gcp_region, gcp_project),
             RegistryConfig.zoning_ordinance_load_image(gcp_region, gcp_project),
         ]

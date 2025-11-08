@@ -4,12 +4,12 @@ import google.cloud.aiplatform as aip
 
 # Import zoning ordinance components
 from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorComponent
-from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
+from pipelines.processor.zoning_ordinance_embed import ZoningOrdinanceEmbedComponent
 from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
 
 
 class ZoningOrdinancePipeline(BasePipeline):
-    """Pipeline for zoning ordinance: collect → chunk/embed → load to ChromaDB"""
+    """Pipeline for zoning ordinance: collect → embed (docx→md, chunk, embed) → load to ChromaDB"""
 
     def __init__(self, city: str, collection_name: str = "zoning-ordinance"):
         super().__init__()
@@ -24,7 +24,7 @@ class ZoningOrdinancePipeline(BasePipeline):
 
         # Initialize components
         collector = ZoningOrdinanceCollectorComponent(city=city).get_component()
-        processor = ZoningOrdinanceChunkEmbedComponent(city=city).get_component()
+        processor = ZoningOrdinanceEmbedComponent(city=city).get_component()
         loader = ZoningOrdinanceLoadComponent(
             city=city,
             collection_name=collection_name
@@ -40,10 +40,10 @@ class ZoningOrdinancePipeline(BasePipeline):
                 .set_memory_limit("8G")
             )
 
-            # Step 2: Chunk and generate embeddings (waits for collector)
+            # Step 2: Convert DOCX to markdown, chunk and generate embeddings (waits for collector)
             processor_task = (
                 processor()
-                .set_display_name(f"processor-zoning-ordinance-chunk-embed-{city}")
+                .set_display_name(f"processor-zoning-ordinance-embed-{city}")
                 .set_cpu_limit("4000m")  # Embedding generation is CPU intensive
                 .set_memory_limit("16G")  # Large documents need more memory
                 .after(collector_task)

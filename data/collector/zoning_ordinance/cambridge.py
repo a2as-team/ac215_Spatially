@@ -58,6 +58,7 @@ class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
             file_path=f"{self.download_directory()}/metadata.json",
             destination_path=f"{self.gcp_storage_parent_directory()}/metadata.json"
         )
+        self.logger.info(f"Uploaded metadata to {self.gcp_storage_parent_directory()}/metadata.json")
 
     def collect(self):
         self.logger.info(f"Collecting zoning ordinance for {self.city()}")

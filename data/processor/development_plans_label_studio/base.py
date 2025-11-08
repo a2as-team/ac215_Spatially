@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 import logging
 import os
 import shutil
-from template import BaseProceesor
+from template import BaseProcessor
 
-class DevelopmentPlansLabelStudioBaseProcessor(BaseProceesor, ABC):
+class DevelopmentPlansLabelStudioBaseProcessor(BaseProcessor, ABC):
     def __init__(self):
         super().__init__()
 

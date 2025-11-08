@@ -9,6 +9,7 @@ from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorCompone
 
 # Import all processor components
 from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
+from pipelines.processor.zoning_ordinance_embed import ZoningOrdinanceEmbedComponent
 from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
 from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
 from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
@@ -34,6 +35,7 @@ def run(city: str, pipeline_type: str = "all"):
             - "collector-census": Just census collector
             - "collector-zoning-ordinance": Just zoning ordinance collector
             - "processor-development-plans-label-studio": Just development plans processor
+            - "processor-zoning-ordinance-embed": Zoning ordinance DOCX→MD, chunk & embed
             - "processor-zoning-ordinance-chunk-embed": Just zoning ordinance chunk & embed
             - "processor-zoning-ordinance-load": Just zoning ordinance ChromaDB load
     """

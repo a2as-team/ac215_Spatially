@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Entry point for zoning ordinance ChromaDB loader."""
+"""Entry point for zoning ordinance Milvus loader."""
 
 from utils.smart_arg_parser import SmartArgParser, SmartArgItem
-from zoning_ordinance_load import ZoningOrdinanceChromaDBLoader
+from zoning_ordinance_load import ZoningOrdinanceMilvusLoader
 
 
 def main():
@@ -17,10 +17,10 @@ def main():
         ),
         "collection": SmartArgItem(
             flags=["--collection"],
-            prompt="ChromaDB collection name",
+            prompt="Milvus collection name",
             arg_type=str,
             required=False,
-            default="zoning-ordinance",
+            default="zoning_ordinance",
         ),
         "test": SmartArgItem(
             flags=["--test"],
@@ -36,7 +36,7 @@ def main():
     args = parser.parse()
 
     # Run loader
-    loader = ZoningOrdinanceChromaDBLoader()
+    loader = ZoningOrdinanceMilvusLoader()
     loader.process(
         city=args["city"],
         collection_name=args["collection"],

@@ -1,17 +1,43 @@
 from utils.selenium import SeleniumUtil
 from selenium.webdriver.common.by import By
 import time
+import random
 from pathlib import Path
 
 class MunicodeScraper:
     FILE_NAME_SEPARATOR = "⫸"
-    
+    REINIT_AFTER_N_DOWNLOADS = 5  # Reinitialize driver every N downloads to avoid detection
+
     def __init__(self, url: str, download_dir: str):
         if not url.startswith("https://library.municode.com"):
             raise ValueError("Invalid URL. Must start with https://library.municode.com")
         self.url = url
         self.download_dir = download_dir
         self.selenium_util = SeleniumUtil(headless=True, download_dir=download_dir)
+        self.download_count = 0
+
+    def _refresh_session(self):
+        """
+        Refresh the browser session with new headers to avoid detection.
+        Useful for long-running scraping sessions.
+        """
+        print(f"\n{'='*60}")
+        print("Refreshing session with new headers to avoid detection...")
+        print(f"{'='*60}")
+
+        # Reinitialize with new user agent
+        self.selenium_util.reinitialize_with_new_headers()
+
+        # Navigate back to the page
+        print(f"Navigating back to {self.url}")
+        self.selenium_util.driver.get(self.url)
+
+        # Dismiss any popups
+        self._dismiss_popups()
+        time.sleep(2)
+
+        print("Session refreshed successfully")
+        print(f"{'='*60}\n")
 
     def _dismiss_popups(self):
         """
@@ -275,6 +301,11 @@ class MunicodeScraper:
 
             # Download each section individually
             for idx, (path, parent_node_id, node_id) in enumerate(all_sections, 1):
+                # Refresh session periodically to avoid detection
+                if self.download_count > 0 and self.download_count % self.REINIT_AFTER_N_DOWNLOADS == 0:
+                    print(f"\n[After {self.download_count} downloads] Refreshing session...")
+                    self._refresh_session()
+
                 # Create hierarchical filename
                 path_str = separator.join(path)
                 safe_filename = path_str.replace("/", "-").replace("\\", "-") + ".docx"
@@ -291,6 +322,14 @@ class MunicodeScraper:
                     downloaded_file = self._download_single_section(node_id, safe_filename)
                     print(f"Saved as: {safe_filename}")
                     downloaded_files.append(downloaded_file)
+                    self.download_count += 1  # Increment successful download count
+
+                    # Add random delay to appear more human-like
+                    if idx < len(all_sections):
+                        delay = random.uniform(1.0, 3.0)
+                        print(f"Waiting {delay:.1f}s before next download...")
+                        time.sleep(delay)
+
                     # Panel closes after download; next iteration will reopen and expand the next parent
 
                 except TimeoutError as e:
@@ -432,17 +471,72 @@ class MunicodeScraper:
         if is_checked == "false":
             print("Clicking checkbox to select section")
             checkbox.click()
-            time.sleep(0.3)
+            time.sleep(0.5)  # Wait for UI to update
+
+            # Verify checkbox was actually checked
+            is_checked_after = checkbox.get_attribute("aria-checked")
+            print(f"Checkbox state after click: {is_checked_after}")
+            if is_checked_after != "true":
+                print("WARNING: Checkbox not checked after click, trying again...")
+                checkbox.click()
+                time.sleep(0.5)
         else:
             print("Checkbox already selected")
+
+        # Wait a bit for the download button to be enabled
+        time.sleep(0.5)
+
+        # Check how many sections are selected
+        try:
+            selected_checkboxes = self.selenium_util.driver.find_elements(
+                By.XPATH,
+                "//button[@role='checkbox' and @aria-checked='true']"
+            )
+            print(f"Total sections selected: {len(selected_checkboxes)}")
+        except:
+            print("Could not count selected checkboxes")
 
         # Click download button
         print("Clicking Download button...")
         try:
-            self.selenium_util.click_element(By.XPATH, "//button[contains(., 'Download') and contains(@class, 'btn-primary')]", timeout=10)
+            download_button = self.selenium_util.find_element(
+                By.XPATH,
+                "//button[contains(., 'Download') and contains(@class, 'btn-primary')]",
+                timeout=10
+            )
+
+            # Check if button is disabled
+            is_disabled = download_button.get_attribute("disabled")
+            button_text = download_button.text
+            print(f"Download button text: '{button_text}'")
+            print(f"Download button disabled state: {is_disabled}")
+
+            if is_disabled:
+                print("ERROR: Download button is disabled!")
+                # Take screenshot for debugging
+                try:
+                    screenshot_path = f"{self.download_dir}/debug_disabled_button.png"
+                    self.selenium_util.driver.save_screenshot(screenshot_path)
+                    print(f"Screenshot saved to: {screenshot_path}")
+                except:
+                    pass
+                raise Exception("Download button is disabled")
+
+            # Use JavaScript click to ensure it triggers
+            print("Using JavaScript click on Download button...")
+            self.selenium_util.driver.execute_script("arguments[0].click();", download_button)
             print("Download button clicked successfully")
+            time.sleep(1)  # Wait for download to start
+
         except Exception as e:
             print(f"ERROR: Failed to click Download button: {e}")
+            # Take screenshot for debugging
+            try:
+                screenshot_path = f"{self.download_dir}/debug_download_error.png"
+                self.selenium_util.driver.save_screenshot(screenshot_path)
+                print(f"Screenshot saved to: {screenshot_path}")
+            except:
+                pass
             raise
 
         # Wait for NEW download (excluding pre-existing files)

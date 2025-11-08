@@ -3,17 +3,17 @@ from shared_config.cities import City
 from utils.scrapers.municode_scraper import MunicodeScraper
 import time
 
-class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
+class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
     def __init__(self):
         super().__init__()
         self.scraper = MunicodeScraper(url=self.resource_url(), download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.cambridge
+        return City.boston
 
     def resource_url(self) -> str:
-        return "https://library.municode.com/ma/cambridge/codes/zoning_ordinance?nodeId=ZOORCAMA"
-    
+        return "https://library.municode.com/ma/boston/codes/redevelopment_authority?nodeId=PRONZOCOBOMA"
+
     def upload_to_gcs(self, downloaded_files: list):
         """Upload all downloaded files to GCS."""
         if not self.gcp_storage:

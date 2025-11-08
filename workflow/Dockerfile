@@ -55,6 +55,9 @@ COPY --chown=app:app pyproject.toml uv.lock* ./
 # Install dependencies in a separate layer for better caching
 RUN uv sync --frozen
 
+# Copy shared_config from named build context (needed for building other images)
+COPY --from=shared_config --chown=app:app . ./shared_config
+
 # Copy the rest of the source code
 COPY --chown=app:app . ./
 

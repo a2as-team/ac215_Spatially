@@ -80,40 +80,39 @@ class CensusTractBaseCollector(BaseCollector, ABC):
         try:
             db.enable_postgis()
             query = f"""
-                CREATE TABLE IF NOT EXISTS census_tract (
-                    id SERIAL PRIMARY KEY,
-                    city VARCHAR(100) NOT NULL,
-                    geoid VARCHAR(50) NOT NULL UNIQUE,
-                    geometry GEOMETRY(MultiPolygon, {self.EPSG_CODE}),
+                CREATE TABLE IF NOT EXISTS census_tracts (
+                    geoid VARCHAR(50) PRIMARY KEY,
+                    geom GEOMETRY(Geometry, {self.EPSG_CODE}),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """
             db.execute(query)
 
-            # Create spatial index for better query performance
-            index_query = """
-                CREATE INDEX IF NOT EXISTS census_tract_geometry_idx
-                ON census_tract USING GIST (geometry);
+            # Create indexes for better query performance
+            index_queries = """
+                CREATE INDEX IF NOT EXISTS idx_census_tracts_geom ON census_tracts USING GIST(geom);
             """
-            db.execute(index_query)
+            db.execute(index_queries)
 
-            self.logger.info("census_tract table created successfully")
+            self.logger.info("census_tracts table created successfully")
         except Exception as e:
-            self.logger.error(f"Failed to create census_tract table: {e}")
+            self.logger.error(f"Failed to create census_tracts table: {e}")
             raise
 
-    def _insert_census_tract(self, db: DBAccessor, city: str, geoid: str, geometry_wkt: str):
+    def _insert_census_tract(self, db: DBAccessor, geoid: str, geometry_wkt: str):
         """Insert a census tract record. Update only if geometry is different."""
+        # No, this is not correct: the VALUES clause has one too many placeholders (%s, %s, ST_GeomFromText(%s, ...)) -- 
+        # geom should be set using ST_GeomFromText, so there should be only two placeholders in VALUES.
         query = f"""
-            INSERT INTO census_tract (city, geoid, geometry)
-            VALUES (%s, %s, ST_GeomFromText(%s, {self.EPSG_CODE}))
+            INSERT INTO census_tracts (geoid, geom)
+            VALUES (%s, ST_GeomFromText(%s, {self.EPSG_CODE}))
             ON CONFLICT (geoid)
             DO UPDATE SET
-                geometry = EXCLUDED.geometry,
+                geom = EXCLUDED.geom,
                 created_at = CURRENT_TIMESTAMP
-            WHERE census_tract.geometry IS DISTINCT FROM EXCLUDED.geometry;
+            WHERE census_tracts.geom IS DISTINCT FROM EXCLUDED.geom;
         """
-        db.execute(query, (city.lower(), geoid, geometry_wkt))
+        db.execute(query, (geoid, geometry_wkt))
 
     def _ensure_crs(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """Ensure GeoDataFrame is in the correct CRS (EPSG:4326).

@@ -40,12 +40,18 @@ def build_and_push_to_gcp(
     print(f"Destination: {image_uri}")
     print(f"{'='*80}\n")
 
+    # Get project root for shared_config path
+    # In container: /app/registry/publish_images.py -> /app
+    # shared_config is mounted at /app/shared_config
+    project_root = Path(__file__).parent.parent
+
     try:
         # Build the image for specified platform
         print(f"Building image: {image_name}...")
         build_cmd = [
             "docker", "build",
             "--platform", platform,
+            "--build-context", f"shared_config={project_root}/shared_config",
             "-t", image_uri,
             "-f", str(dockerfile_path),
             str(context_path)

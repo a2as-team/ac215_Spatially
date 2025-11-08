@@ -1,14 +1,14 @@
 import os
-import chromadb
+from pymilvus import MilvusClient
 import argparse
 
 # Set default environment variables if not already set
 if "GCP_PROJECT" not in os.environ:
     os.environ["GCP_PROJECT"] = "our-dominion-471022-n9"
-if "CHROMADB_HOST" not in os.environ:
-    os.environ["CHROMADB_HOST"] = "localhost"
-if "CHROMADB_PORT" not in os.environ:
-    os.environ["CHROMADB_PORT"] = os.getenv("CHROMADB_PORT", "8001")
+if "MILVUS_PUBLIC_ENDPOINT" not in os.environ:
+    os.environ["MILVUS_PUBLIC_ENDPOINT"] = os.getenv("MILVUS_PUBLIC_ENDPOINT")
+if "MILVUS_API_KEY" not in os.environ:
+    os.environ["MILVUS_API_KEY"] = os.getenv("MILVUS_API_KEY")
 if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "../secrets/llm-service-account.json"
 
@@ -37,25 +37,6 @@ AVAILABLE_FILTERS = {
 }
 
 
-def normalize_district_code_to_field(code):
-    """Convert district code to valid ChromaDB field name for filtering.
-
-    Replaces special characters with underscores and adds 'district_' prefix.
-
-    Examples:
-        'RS3' -> 'district_RS3'
-        'RT3.5' -> 'district_RT3_5'
-        'H-1' -> 'district_H_1'
-        'B-3-65' -> 'district_B_3_65'
-
-    Args:
-        code (str): District code from ordinance
-
-    Returns:
-        str: Normalized field name safe for ChromaDB metadata
-    """
-    normalized = code.replace('.', '_').replace('-', '_').replace(' ', '_')
-    return f"district_{normalized}"
 
 
 def extract_filters_from_query(query: str) -> dict:
@@ -158,13 +139,15 @@ def main(args=None):
     print("RAG (ZONING ORDINANCES)")
     print("=" * 50)
 
-    # Connect to chroma DB - use environment variables for flexibility
-    chromadb_host = os.environ.get("CHROMADB_HOST", "localhost")
-    chromadb_port = int(os.environ.get("CHROMADB_PORT", "8000"))
+    # Connect to Milvus - use environment variables for flexibility
+    milvus_uri = os.environ.get("MILVUS_PUBLIC_ENDPOINT")
+    milvus_token = os.environ.get("MILVUS_API_KEY")
 
-    print(f"Connecting to ChromaDB at {chromadb_host}:{chromadb_port}")
-    client = chromadb.HttpClient(host=chromadb_host, port=chromadb_port)
-    collection = client.get_collection(name=args.collection)
+    if not milvus_uri or not milvus_token:
+        raise ValueError("MILVUS_PUBLIC_ENDPOINT and MILVUS_API_KEY must be set in environment variables")
+
+    print(f"Connecting to Milvus at {milvus_uri}")
+    client = MilvusClient(uri=milvus_uri, token=milvus_token)
 
     query = args.query
 
@@ -207,56 +190,14 @@ def main(args=None):
     print("\nSearching zoning ordinance documents...")
     query_embedding = cli.generate_query_embedding(query)
 
-    # Build query parameters
-    query_params = {
-        "query_embeddings": [query_embedding],
-        "n_results": args.n_results
-    }
-
-    # Build where clause with filters
-    where_conditions = []
+    # Build list of active filters for display
     active_filters = []
-
-    # Add city filter if specified
     if args.city:
-        where_conditions.append({"city": args.city})
         active_filters.append(f"City: {args.city}")
-
-    # Add district code filters using flattened boolean fields (pre-retrieval filtering)
     if args.district_codes:
-        # Build OR conditions for multiple district codes
-        district_conditions = []
-        for code in args.district_codes:
-            field_name = normalize_district_code_to_field(code)
-            district_conditions.append({field_name: True})
-
-        if len(district_conditions) == 1:
-            where_conditions.append(district_conditions[0])
-        else:
-            where_conditions.append({"$or": district_conditions})
-
         active_filters.append(f"District Code(s): {', '.join(args.district_codes)}")
-
-    # Add district category filters using flattened boolean fields
     if args.district_categories:
-        # Build OR conditions for multiple district categories
-        category_conditions = []
-        for category in args.district_categories:
-            cat_field = f"category_{category.replace(' ', '_')}"
-            category_conditions.append({cat_field: True})
-
-        if len(category_conditions) == 1:
-            where_conditions.append(category_conditions[0])
-        else:
-            where_conditions.append({"$or": category_conditions})
-
         active_filters.append(f"District Category(ies): {', '.join(args.district_categories)}")
-
-    # Combine all where conditions with AND logic
-    if len(where_conditions) == 1:
-        query_params["where"] = where_conditions[0]
-    elif len(where_conditions) > 1:
-        query_params["where"] = {"$and": where_conditions}
 
     # Display active filters
     if active_filters:
@@ -264,8 +205,58 @@ def main(args=None):
         for filter_desc in active_filters:
             print(f"  - {filter_desc}")
 
-    # Search
-    results = collection.query(**query_params)
+    # Build Milvus filter expression for server-side filtering
+    filter_expressions = []
+
+    # Add city filter
+    if args.city:
+        filter_expressions.append(f'city == "{args.city}"')
+
+    # Add district code filters using ARRAY_CONTAINS_ANY
+    if args.district_codes:
+        codes_str = ', '.join([f'"{code}"' for code in args.district_codes])
+        filter_expressions.append(f'ARRAY_CONTAINS_ANY(district_codes, [{codes_str}])')
+
+    # Add district category filters using ARRAY_CONTAINS_ANY
+    if args.district_categories:
+        cats_str = ', '.join([f'"{cat}"' for cat in args.district_categories])
+        filter_expressions.append(f'ARRAY_CONTAINS_ANY(district_categories, [{cats_str}])')
+
+    # Combine all filters with AND
+    milvus_filter = ' && '.join(filter_expressions) if filter_expressions else None
+
+    # Search in Milvus with server-side filtering
+    search_results = client.search(
+        collection_name=args.collection,
+        data=[query_embedding],
+        limit=args.n_results,
+        filter=milvus_filter,
+        output_fields=["text", "city", "document", "district_codes", "district_categories",
+                      "heading_1", "heading_2", "url"]
+    )
+
+    # Convert Milvus results to ChromaDB-like format for backward compatibility
+    results = {
+        "documents": [[]],
+        "metadatas": [[]]
+    }
+
+    if search_results and len(search_results) > 0:
+        for hit in search_results[0]:
+            entity = hit["entity"]
+            results["documents"][0].append(entity["text"])
+
+            # Build metadata dict from fields (convert Protobuf arrays to Python lists)
+            metadata = {
+                "city": entity.get("city", ""),
+                "document": entity.get("document", ""),
+                "district_code": list(entity.get("district_codes", [])),  # Convert to Python list
+                "district_category": list(entity.get("district_categories", [])),  # Convert to Python list
+                "heading_1": entity.get("heading_1", ""),  # Boston: Article, Chicago: Title
+                "heading_2": entity.get("heading_2", ""),  # Boston: Section, Chicago: Chapter
+                "url": entity.get("url", "")               # Boston-specific
+            }
+            results["metadatas"][0].append(metadata)
 
     print(f"Found {len(results['documents'][0])} relevant chunks")
 
@@ -326,8 +317,6 @@ Ordinance excerpts:
     print("Sources & Metadata:")
     print("-" * 50)
     if results['metadatas'] and results['metadatas'][0]:
-        import json as json_lib
-
         # Display detailed metadata for each chunk
         for i, meta in enumerate(results['metadatas'][0], 1):
             if meta:
@@ -335,44 +324,32 @@ Ordinance excerpts:
                 print(f"  City: {meta.get('city', 'Unknown').upper()}")
                 print(f"  Document: {meta.get('document', 'Unknown')}")
 
-                # Display Boston metadata (article + section) vs Chicago metadata (hierarchical)
-                if 'article' in meta and meta['article'] and 'url' in meta:  # Boston
-                    print(f"  Article: {meta['article']}")
-                    print(f"  Section: {meta.get('section', 'N/A')}")
-                    # Display URL for Boston
-                    if meta['url']:
-                        print(f"  URL: {meta['url']}")
-                elif 'heading' in meta:  # Chicago (hierarchical)
-                    if meta.get('chapter'): print(f"  Chapter: {meta['chapter']}")
-                    if meta.get('article'): print(f"  Article: {meta['article']}")
-                    if meta.get('section'): print(f"  Section: {meta['section']}")
-                    print(f"  Heading: {meta['heading']}")
+                # Display standardized hierarchical metadata
+                # Boston: heading_1 = Article, heading_2 = Section
+                # Chicago: heading_1 = Title, heading_2 = Chapter
+                city = meta.get('city', '').lower()
 
-                # Display district codes
-                district_code = meta.get('district_code', '[]')
-                if isinstance(district_code, str):
-                    try:
-                        codes = json_lib.loads(district_code)
-                        if codes:
-                            print(f"  District Codes: {', '.join(codes)}")
-                    except:
-                        if district_code and district_code != '[]':
-                            print(f"  District Codes: {district_code}")
-                elif isinstance(district_code, list) and district_code:
-                    print(f"  District Codes: {', '.join(district_code)}")
+                if meta.get('heading_1'):
+                    label_1 = "Article" if city == "boston" else "Title"
+                    print(f"  {label_1}: {meta['heading_1']}")
 
-                # Display district categories
-                district_category = meta.get('district_category', '[]')
-                if isinstance(district_category, str):
-                    try:
-                        categories = json_lib.loads(district_category)
-                        if categories:
-                            print(f"  District Categories: {', '.join(categories)}")
-                    except:
-                        if district_category and district_category != '[]':
-                            print(f"  District Categories: {district_category}")
-                elif isinstance(district_category, list) and district_category:
-                    print(f"  District Categories: {', '.join(district_category)}")
+                if meta.get('heading_2'):
+                    label_2 = "Section" if city == "boston" else "Chapter"
+                    print(f"  {label_2}: {meta['heading_2']}")
+
+                # Display URL for Boston (Boston-specific field)
+                if meta.get('url'):
+                    print(f"  URL: {meta['url']}")
+
+                # Display district codes (now always a list from array field)
+                district_codes = meta.get('district_code', [])
+                if district_codes and isinstance(district_codes, list):
+                    print(f"  District Codes: {', '.join(district_codes)}")
+
+                # Display district categories (now always a list from array field)
+                district_categories = meta.get('district_category', [])
+                if district_categories and isinstance(district_categories, list):
+                    print(f"  District Categories: {', '.join(district_categories)}")
     else:
         print("  No metadata available")
     print("=" * 50)
@@ -388,8 +365,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--collection",
         type=str,
-        default="zoning-ordinance-collection",
-        help="Collection name to query (default: zoning-ordinance-collection)"
+        default="zoning_ordinance_collection",
+        help="Collection name to query (default: zoning_ordinance_collection)"
     )
     parser.add_argument(
         "--n-results",

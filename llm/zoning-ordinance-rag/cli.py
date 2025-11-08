@@ -13,7 +13,7 @@ import re
 
 # Third-party imports
 import pandas as pd
-import chromadb
+from pymilvus import MilvusClient
 import fitz  # PyMuPDF
 import openpyxl
 from dotenv import load_dotenv
@@ -42,8 +42,8 @@ EMBEDDING_DIMENSION = 256
 GENERATIVE_MODEL = "gemini-2.0-flash-001"
 INPUT_FOLDER = "../../data/downloads/zoning_ordinance"
 OUTPUT_FOLDER = "outputs"
-CHROMADB_HOST = os.environ.get("CHROMADB_HOST", "localhost")
-CHROMADB_PORT = int(os.environ.get("CHROMADB_PORT", "8001"))
+MILVUS_URI = os.environ.get("MILVUS_PUBLIC_ENDPOINT")
+MILVUS_TOKEN = os.environ.get("MILVUS_API_KEY")
 
 # District code JSON file paths
 DISTRICT_CODES_FOLDER = "../../data/collector/zoning_ordinance/district_codes"
@@ -229,9 +229,13 @@ def extract_district_codes(text, city):
 def extract_structured_data_from_excel(excel_file):
     """Extract structured data from Boston Excel files with metadata per row
 
+    Boston zoning ordinance has 2-level hierarchy:
+    - ARTICLE (heading_1): e.g., "ARTICLE 9 NONCONFORMING USES"
+    - SECTION (heading_2): e.g., "Section 9-1. Extension of Nonconforming Uses..."
+
     Returns tuple: (article_name, list of dicts)
     article_name: str - Article name from first data row
-    sections: list of [{url, section, content}, ...]
+    sections: list of [{url, heading_2, content}, ...]
     """
     try:
         workbook = openpyxl.load_workbook(excel_file, data_only=True)
@@ -242,7 +246,7 @@ def extract_structured_data_from_excel(excel_file):
         article_title = sheet.cell(4, 3).value  # Column 3 = Title
         article_subtitle = sheet.cell(4, 4).value  # Column 4 = Subtitle
 
-        # Concatenate to form article name
+        # Concatenate to form article name (heading_1)
         article_name = ""
         if article_title and article_subtitle:
             article_name = f"{article_title} {article_subtitle}".strip()
@@ -255,7 +259,7 @@ def extract_structured_data_from_excel(excel_file):
 
         structured_data = []
 
-        # Process all data rows starting from Row 3 (including the row before article)
+        # Process all data rows starting from Row 3
         # Columns: 1=Url, 2=NodeId, 3=Title, 4=Subtitle, 5=Content
         for row_num in range(3, sheet.max_row + 1):
             url = sheet.cell(row_num, 1).value
@@ -267,7 +271,7 @@ def extract_structured_data_from_excel(excel_file):
             if not content or not str(content).strip():
                 continue
 
-            # Concatenate Title and Subtitle for section name
+            # Concatenate Title and Subtitle for section name (heading_2)
             section_name = ""
             if title and subtitle:
                 section_name = f"{title} {subtitle}".strip()
@@ -278,7 +282,7 @@ def extract_structured_data_from_excel(excel_file):
 
             structured_data.append({
                 "url": str(url) if url else "",
-                "section": section_name,
+                "heading_2": section_name,  # Section (standardized field name)
                 "content": str(content)
             })
 
@@ -291,12 +295,13 @@ def extract_structured_data_from_excel(excel_file):
 
 
 def extract_hierarchical_sections_from_pdf(pdf_file):
-    """Extract text from PDF with hierarchical section detection using PyMuPDF
+    """Extract text from Chicago PDF with Title and Chapter detection using PyMuPDF
 
-    Detects CHAPTER, ARTICLE, SECTION, and APPENDIX headings.
-    Maintains hierarchical context (current chapter/article) for each section.
+    Chicago zoning ordinance has 2-level hierarchy:
+    - TITLE (heading_1): e.g., "TITLE 17 CHICAGO ZONING ORDINANCE"
+    - CHAPTER (heading_2): e.g., "CHAPTER 17-1 GENERAL PROVISIONS"
 
-    Returns list of dicts: [{chapter, article, section, heading, content}, ...]
+    Returns list of dicts: [{heading_1, heading_2, content}, ...]
     """
     try:
         # Extract full text using PyMuPDF
@@ -309,13 +314,10 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
         if not all_text.strip():
             return []
 
-        # Define regex patterns for different heading types
+        # Define regex patterns for Title and Chapter headings only
         patterns = {
             'title': re.compile(r'^TITLE\s+\d+[-\w]*\s+.*$', re.IGNORECASE | re.MULTILINE),
             'chapter': re.compile(r'^CHAPTER\s+\d+[-\w]*\s+.*$', re.IGNORECASE | re.MULTILINE),
-            'article': re.compile(r'^ARTICLE\s+\d+[A-Z\-]*\s+.*$', re.IGNORECASE | re.MULTILINE),
-            'appendix': re.compile(r'^APPENDIX(?:\s+[A-Z0-9\-]+)?(?:\s+.*)?$', re.IGNORECASE | re.MULTILINE),
-            'section': re.compile(r'^SECTION\s+\d+[-\d]*\s+.*$', re.IGNORECASE | re.MULTILINE),
         }
 
         # Find all headings with their positions
@@ -335,26 +337,17 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
         if not headings:
             # No headings found, return entire text as one section
             return [{
-                "title": None,
-                "chapter": None,
-                "article": None,
-                "section": None,
-                "heading": "Document",
+                "heading_1": None,
+                "heading_2": None,
                 "content": all_text
             }]
 
-        # Maintain current context
-        current_context = {
-            "title": None,
-            "chapter": None,
-            "article": None,
-            "section": None
-        }
-
+        # Track current Title and Chapter context
+        current_title = None
+        current_chapter = None
         sections = []
 
         for i, heading in enumerate(headings):
-            # Update context based on heading type
             heading_text = heading['text']
 
             # Skip RESERVED sections
@@ -363,21 +356,10 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
 
             # Update context based on heading type
             if heading['type'] == 'title':
-                current_context['title'] = heading_text
-                current_context['chapter'] = None  # Reset lower levels
-                current_context['article'] = None
-                current_context['section'] = None
+                current_title = heading_text
+                current_chapter = None  # Reset chapter when new title starts
             elif heading['type'] == 'chapter':
-                current_context['chapter'] = heading_text
-                current_context['article'] = None  # Reset lower levels
-                current_context['section'] = None
-            elif heading['type'] == 'article':
-                current_context['article'] = heading_text
-                current_context['section'] = None  # Reset lower level
-            elif heading['type'] == 'appendix':
-                current_context['section'] = heading_text
-            elif heading['type'] == 'section':
-                current_context['section'] = heading_text
+                current_chapter = heading_text
 
             # Extract content from this heading to the next
             content_start = heading['end']
@@ -392,13 +374,10 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
             if not content:
                 continue
 
-            # Store section with hierarchical metadata
+            # Store section with standardized metadata
             sections.append({
-                "title": current_context['title'],
-                "chapter": current_context['chapter'],
-                "article": current_context['article'],
-                "section": current_context['section'],
-                "heading": heading_text,
+                "heading_1": current_title,      # Title
+                "heading_2": current_chapter,    # Chapter
                 "content": content
             })
 
@@ -413,25 +392,6 @@ def extract_hierarchical_sections_from_pdf(pdf_file):
 #                         EMBEDDING UTILITIES                               #
 #############################################################################
 
-def normalize_district_code_to_field(code):
-    """Convert district code to valid ChromaDB field name for filtering.
-
-    Replaces special characters with underscores and adds 'district_' prefix.
-
-    Examples:
-        'RS3' -> 'district_RS3'
-        'RT3.5' -> 'district_RT3_5'
-        'H-1' -> 'district_H_1'
-        'B-3-65' -> 'district_B_3_65'
-
-    Args:
-        code (str): District code from ordinance
-
-    Returns:
-        str: Normalized field name safe for ChromaDB metadata
-    """
-    normalized = code.replace('.', '_').replace('-', '_').replace(' ', '_')
-    return f"district_{normalized}"
 
 
 def generate_query_embedding(query):
@@ -483,7 +443,7 @@ def generate_text_embeddings(chunks, dimensionality: int = 256, batch_size=250, 
     return all_embeddings
 
 
-def load_text_embeddings(df, collection, batch_size=500):
+def load_text_embeddings(df, client, collection_name, batch_size=500):
 
     # Generate ids
     df["id"] = df.index.astype(str)
@@ -491,70 +451,47 @@ def load_text_embeddings(df, collection, batch_size=500):
         lambda x: hashlib.sha256(x.encode()).hexdigest()[:16])
     df["id"] = hashed_docs + "-" + df["id"]
 
+    # Fill NaN values with empty strings to ensure no None values
+    string_fields = ["heading_1", "heading_2", "url"]
+    for field in string_fields:
+        if field in df.columns:
+            df[field] = df[field].fillna("")
+
     # Process data in batches
     total_inserted = 0
     for i in range(0, df.shape[0], batch_size):
         # Create a copy of the batch and reset the index
         batch = df.iloc[i:i+batch_size].copy().reset_index(drop=True)
 
-        ids = batch["id"].tolist()
-        documents = batch["chunk"].tolist()
-        embeddings = batch["embedding"].tolist()
-
-        # Build metadata for each row individually
-        # Boston: article, section, url, district_code, district_category
-        # Chicago: hierarchical metadata, district_code, district_category
-        metadatas = []
+        # Build data for Milvus insert with optimal schema
+        insert_data = []
         for _, row in batch.iterrows():
-            metadata = {
-                "document": row["document"],
+            # Ensure arrays are proper lists (not empty strings or None)
+            district_codes = row["district_code"] if isinstance(row["district_code"], list) else []
+            district_categories = row["district_category"] if isinstance(row["district_category"], list) else []
+
+            # Create data entry matching the schema (use .get() for optional fields)
+            data_entry = {
+                "id": row["id"],
+                "text": row["chunk"],
+                "vector": row["embedding"],
                 "city": row["city"],
-                # Keep original JSON for display/backward compatibility
-                "district_code": json.dumps(row["district_code"]) if isinstance(row["district_code"], list) else row["district_code"],
-                "district_category": json.dumps(row["district_category"]) if isinstance(row["district_category"], list) else row["district_category"]
+                "document": row["document"],
+                "district_codes": district_codes,
+                "district_categories": district_categories,
+                "heading_1": row.get("heading_1", ""),  # Boston: Article, Chicago: Title
+                "heading_2": row.get("heading_2", ""),  # Boston: Section, Chicago: Chapter
+                "url": row.get("url", "")               # Boston-specific
             }
+            insert_data.append(data_entry)
 
-            # Add flattened boolean fields for filtering district codes
-            if isinstance(row["district_code"], list):
-                for code in row["district_code"]:
-                    if code:  # Skip empty strings
-                        field_name = normalize_district_code_to_field(code)
-                        metadata[field_name] = True
-
-            # Add flattened boolean fields for filtering district categories
-            if isinstance(row["district_category"], list):
-                for category in row["district_category"]:
-                    if category:  # Skip empty strings
-                        # Normalize category name: replace spaces with underscores
-                        cat_field = f"category_{category.replace(' ', '_')}"
-                        metadata[cat_field] = True
-
-            # Handle Boston (article + section) vs Chicago (hierarchical or old title)
-            if "article" in row and row["article"]:  # Boston
-                metadata["article"] = row["article"]
-                metadata["section"] = row["section"]
-                # Add URL for Boston only
-                if "url" in row and row["url"]:
-                    metadata["url"] = row["url"]
-            elif "heading" in row:  # Chicago (hierarchical)
-                if row.get("chapter"): metadata["chapter"] = row["chapter"]
-                if row.get("article"): metadata["article"] = row["article"]
-                if row.get("section"): metadata["section"] = row["section"]
-                metadata["heading"] = row["heading"]
-
-            metadatas.append(metadata)
-
-        collection.add(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas,
-            embeddings=embeddings
-        )
+        # Insert batch into Milvus
+        client.insert(collection_name=collection_name, data=insert_data)
         total_inserted += len(batch)
         print(f"Inserted {total_inserted} items...")
 
     print(
-        f"Finished inserting {total_inserted} items into collection '{collection.name}'")
+        f"Finished inserting {total_inserted} items into collection '{collection_name}'")
 
 
 #############################################################################
@@ -588,7 +525,7 @@ def chunk():
 
         try:
             if file_type == "excel":
-                # Boston: Extract structured data with url, section, content per row
+                # Boston: Extract structured data with url, heading_2 (section), content per row
                 article_name, structured_data = extract_structured_data_from_excel(file_path)
                 print(f"Extracted {len(structured_data)} sections from Excel")
 
@@ -602,7 +539,7 @@ def chunk():
                     chunks = text_splitter.create_documents([content])
                     chunk_texts = [doc.page_content for doc in chunks]
 
-                    # Each chunk inherits the article and section metadata
+                    # Each chunk inherits the article (heading_1) and section (heading_2) metadata
                     for chunk_text in chunk_texts:
                         # Extract district codes using regex
                         district_codes, district_categories = extract_district_codes(chunk_text, city)
@@ -611,15 +548,15 @@ def chunk():
                             "chunk": chunk_text,
                             "document": document_name,
                             "city": city,
-                            "article": article_name,
-                            "section": section_data["section"],
-                            "url": section_data["url"],
+                            "heading_1": article_name,              # Article
+                            "heading_2": section_data["heading_2"], # Section
+                            "url": section_data["url"],             # Boston-specific
                             "district_code": district_codes,
                             "district_category": district_categories
                         })
 
             elif file_type == "pdf":
-                # Chicago: Extract sections with hierarchical metadata
+                # Chicago: Extract sections with Title (heading_1) and Chapter (heading_2) metadata
                 sections = extract_hierarchical_sections_from_pdf(file_path)
                 print(f"Extracted {len(sections)} sections from PDF")
 
@@ -633,7 +570,7 @@ def chunk():
                     chunks = text_splitter.create_documents([content])
                     chunk_texts = [doc.page_content for doc in chunks]
 
-                    # Each chunk inherits the section's hierarchical metadata
+                    # Each chunk inherits the hierarchical metadata
                     for chunk_text in chunk_texts:
                         # Extract district codes using regex
                         district_codes, district_categories = extract_district_codes(chunk_text, city)
@@ -647,12 +584,10 @@ def chunk():
                         }
 
                         # Add hierarchical metadata (only if not None)
-                        if section.get("title"):
-                            chunk_metadata["title"] = section["title"]
-                        if section.get("chapter"):
-                            chunk_metadata["chapter"] = section["chapter"]
-                        if section.get("article"):
-                            chunk_metadata["article"] = section["article"]
+                        if section.get("heading_1"):
+                            chunk_metadata["heading_1"] = section["heading_1"]  # Title
+                        if section.get("heading_2"):
+                            chunk_metadata["heading_2"] = section["heading_2"]  # Chapter
 
                         all_chunk_data.append(chunk_metadata)
 
@@ -711,28 +646,84 @@ def embed():
 def load():
     print("load()")
 
-    # Clear Cache
-    chromadb.api.client.SharedSystemClient.clear_system_cache()
+    # Connect to Milvus
+    if not MILVUS_URI or not MILVUS_TOKEN:
+        raise ValueError("MILVUS_PUBLIC_ENDPOINT and MILVUS_API_KEY must be set in environment variables")
 
-    # Connect to chroma DB
-    print(f"Connecting to ChromaDB at {CHROMADB_HOST}:{CHROMADB_PORT}")
-    client = chromadb.HttpClient(host=CHROMADB_HOST, port=CHROMADB_PORT)
+    print(f"Connecting to Milvus at {MILVUS_URI}")
+    client = MilvusClient(uri=MILVUS_URI, token=MILVUS_TOKEN)
 
     # Get a collection object from an existing collection, by name. If it doesn't exist, create it.
-    collection_name = "zoning-ordinance-collection"
+    collection_name = "zoning_ordinance_collection"  # Milvus requires underscores, not hyphens
     print("Creating collection:", collection_name)
 
-    try:
-        # Clear out any existing items in the collection
-        client.delete_collection(name=collection_name)
+    # Check if collection exists and drop it
+    if client.has_collection(collection_name):
+        client.drop_collection(collection_name)
         print(f"Deleted existing collection '{collection_name}'")
-    except Exception:
+    else:
         print(f"Collection '{collection_name}' did not exist. Creating new.")
 
-    collection = client.create_collection(
-        name=collection_name, metadata={"hnsw:space": "cosine"})
+    # Create collection with optimal schema for filtering
+    from pymilvus import DataType
+
+    schema = client.create_schema(
+        auto_id=False,
+        enable_dynamic_field=False  # Use defined fields only for better performance
+    )
+
+    # Primary key
+    schema.add_field(field_name="id", datatype=DataType.VARCHAR, is_primary=True, max_length=100)
+
+    # Document text
+    schema.add_field(field_name="text", datatype=DataType.VARCHAR, max_length=65535)
+
+    # Vector embedding
+    schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=EMBEDDING_DIMENSION)
+
+    # Filterable metadata fields
+    schema.add_field(field_name="city", datatype=DataType.VARCHAR, max_length=50)
+    schema.add_field(field_name="document", datatype=DataType.VARCHAR, max_length=500)
+
+    # Array fields for multi-value filtering
+    schema.add_field(
+        field_name="district_codes",
+        datatype=DataType.ARRAY,
+        element_type=DataType.VARCHAR,
+        max_capacity=100,  # Increased to handle documents with many district codes
+        max_length=50
+    )
+    schema.add_field(
+        field_name="district_categories",
+        datatype=DataType.ARRAY,
+        element_type=DataType.VARCHAR,
+        max_capacity=10,
+        max_length=100
+    )
+
+    # Standardized hierarchical metadata fields (used by both Boston and Chicago)
+    # Boston: heading_1 = Article, heading_2 = Section
+    # Chicago: heading_1 = Title, heading_2 = Chapter
+    schema.add_field(field_name="heading_1", datatype=DataType.VARCHAR, max_length=500)
+    schema.add_field(field_name="heading_2", datatype=DataType.VARCHAR, max_length=500)
+
+    # Boston-specific field
+    schema.add_field(field_name="url", datatype=DataType.VARCHAR, max_length=1000)
+
+    # Create index for vector field
+    index_params = client.prepare_index_params()
+    index_params.add_index(
+        field_name="vector",
+        metric_type="COSINE",
+        index_type="AUTOINDEX"
+    )
+
+    client.create_collection(
+        collection_name=collection_name,
+        schema=schema,
+        index_params=index_params
+    )
     print(f"Created new empty collection '{collection_name}'")
-    print("Collection:", collection)
 
     # Get the list of embedding files
     jsonl_files = glob.glob(os.path.join(OUTPUT_FOLDER, "embeddings-*.jsonl"))
@@ -747,7 +738,12 @@ def load():
         print(data_df.head())
 
         # Load data
-        load_text_embeddings(data_df, collection)
+        load_text_embeddings(data_df, client, collection_name)
+
+    # Flush the collection to persist all data
+    print(f"\nFlushing collection to persist data...")
+    client.flush(collection_name)
+    print(f"Data flushed successfully!")
 
 
 #############################################################################

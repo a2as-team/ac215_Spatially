@@ -46,17 +46,32 @@ class SeleniumUtil:
         chrome_options.add_argument(
             "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        # Enable kiosk printing to auto-print without dialog
+        chrome_options.add_argument("--kiosk-printing")
 
         # Configure download directory if specified
         if self.download_dir:
             import os
+            import json
             os.makedirs(self.download_dir, exist_ok=True)
             prefs = {
                 "download.default_directory": self.download_dir,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "plugins.always_open_pdf_externally": True,  # Disable Chrome's PDF viewer
-                "safebrowsing.enabled": True
+                "safebrowsing.enabled": True,
+                "printing.print_preview_sticky_settings.appState": json.dumps({
+                    "recentDestinations": [{
+                        "id": "Save as PDF",
+                        "origin": "local",
+                        "account": "",
+                    }],
+                    "selectedDestinationId": "Save as PDF",
+                    "version": 2,
+                    "isHeaderFooterEnabled": False,
+                    "isLandscapeEnabled": False,
+                    "isCssBackgroundEnabled": True,
+                })
             }
             chrome_options.add_experimental_option("prefs", prefs)
 
@@ -101,6 +116,14 @@ class SeleniumUtil:
         return WebDriverWait(self.driver, timeout).until(
             EC.presence_of_element_located((by, value))
         )
+    
+    def find_elements(self, by, value, timeout: int = 10):
+        """
+        Finds elements on the page.
+        """
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_all_elements_located((by, value))
+        )
 
     def click_element(self, by, value, timeout: int = 10):
         """
@@ -110,6 +133,14 @@ class SeleniumUtil:
             EC.element_to_be_clickable((by, value))
         )
         element.click()
+    
+    def wait_for_element(self, by, value, timeout: int = 10):
+        """
+        Waits for an element to be present and visible.
+        """
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_element_located((by, value))
+        )
 
     def quit(self):
         """

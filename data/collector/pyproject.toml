@@ -20,8 +20,7 @@ dependencies = [
     "pymupdf>=1.26.5",
     "pytest>=8.4.2",
     "us>=3.2.0",
-    "geopy>=2.4.1",
-    "markitdown[all]>=1.0.0",
+    "geopy>=2.4.1"
 ]
 
 [tool.pytest.ini_options]

@@ -8,9 +8,13 @@ from pipelines.collector.census import CensusCollectorComponent
 from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorComponent
 
 # Import all processor components
-from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
+from pipelines.processor.development_plans_label_studio import (
+    DevelopmentPlansLabelStudioProcessorComponent,
+)
 from pipelines.processor.zoning_ordinance_embed import ZoningOrdinanceEmbedComponent
-from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
+from pipelines.processor.zoning_ordinance_chunk_embed import (
+    ZoningOrdinanceChunkEmbedComponent,
+)
 from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
 from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
 
@@ -46,23 +50,21 @@ def run(city: str, pipeline_type: str = "all"):
         # Full pipelines
         "all": AllPipeline,
         "zoning-ordinance": ZoningOrdinancePipeline,
-
         # Individual collectors
         "collector-development-plans": DevelopmentPlansCollectorComponent,
         "collector-census": CensusCollectorComponent,
         "collector-zoning-ordinance": ZoningOrdinanceCollectorComponent,
         "collector-zoning-maps": ZoningMapsCollectorComponent,
-
         # Individual processors
         "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
+        "processor-zoning-ordinance-embed": ZoningOrdinanceEmbedComponent,
         "processor-zoning-ordinance-chunk-embed": ZoningOrdinanceChunkEmbedComponent,
         "processor-zoning-ordinance-load": ZoningOrdinanceLoadComponent,
     }
 
     if pipeline_type not in available:
         raise ValueError(
-            f"Unknown type: {pipeline_type}. "
-            f"Available: {list(available.keys())}"
+            f"Unknown type: {pipeline_type}. " f"Available: {list(available.keys())}"
         )
 
     # Instantiate and run
@@ -80,7 +82,9 @@ if __name__ == "__main__":
             prompt="The city of data to process",
             arg_type=str,
             required=True,
-            choices=[city.lower() for city in City.get_all()],  # Support lowercase input
+            choices=[
+                city.lower() for city in City.get_all()
+            ],  # Support lowercase input
         ),
         "pipeline_type": SmartArgItem(
             flags=["--pipeline"],
@@ -96,6 +100,7 @@ if __name__ == "__main__":
                 "collector-zoning-ordinance",
                 "collector-zoning-maps",
                 "processor-development-plans-label-studio",
+                "processor-zoning-ordinance-embed",
                 "processor-zoning-ordinance-chunk-embed",
                 "processor-zoning-ordinance-load",
             ],

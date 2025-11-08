@@ -2,6 +2,7 @@ from .base import ZoningOrdinanceBaseCollector
 from shared_config.cities import City
 from utils.scrapers.municode_scraper import MunicodeScraper
 import time
+import json
 
 class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
     def __init__(self):
@@ -27,7 +28,7 @@ class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
                 try:
                     self.gcp_storage.upload_file(
                         file_path=str(file_path),
-                        destination_path=f"zoning_ordinance/{self.city()}/{file_path.name}"
+                        destination_path=f"{self.gcp_storage_parent_directory()}/{file_path.name}"
                     )
                     self.logger.info(f"Uploaded {file_path.name} to GCS")
                     break  # Success, exit retry loop
@@ -42,6 +43,21 @@ class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
                 except Exception as e:
                     self.logger.error(f"Failed to upload {file_path.name}: {e}")
                     break
+    
+    def upload_metadata(self):
+        # we will store the resource url in the gcs bucket
+        metadata = {
+            "resource_url": self.resource_url(),
+        }
+        # save the metadata to a json file
+        with open(f"{self.download_directory()}/metadata.json", "w") as f:
+            json.dump(metadata, f)
+        
+        # upload the metadata to the gcs bucket
+        self.gcp_storage.upload_file(
+            file_path=f"{self.download_directory()}/metadata.json",
+            destination_path=f"{self.gcp_storage_parent_directory()}/metadata.json"
+        )
 
     def collect(self):
         self.logger.info(f"Collecting zoning ordinance for {self.city()}")
@@ -53,4 +69,5 @@ class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
         time.sleep(3)
 
         self.upload_to_gcs(downloaded_files)
+        self.upload_metadata()
         return downloaded_files

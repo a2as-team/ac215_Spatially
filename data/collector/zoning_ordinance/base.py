@@ -46,7 +46,12 @@ class ZoningOrdinanceBaseCollector(BaseCollector, ABC):
     def resource_url(self) -> str:
         """Return the resource URL for this collector."""
         pass
-
+    
+    @abstractmethod
+    def upload_metadata(self):
+        """Upload the data to the database."""
+        pass
+    
     @abstractmethod
     def upload_to_gcs(self):
         """Upload the data to GCS."""

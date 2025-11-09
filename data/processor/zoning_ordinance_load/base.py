@@ -4,12 +4,21 @@ import hashlib
 import logging
 import sys
 import pandas as pd
+<<<<<<< HEAD
 from pymilvus import MilvusClient, DataType, CollectionSchema, FieldSchema
 from template import BaseProceesor
 from utils.gcp_storage import GCPStorage
 
 
 class ZoningOrdinanceMilvusLoader(BaseProceesor):
+=======
+import chromadb
+from template import BaseProcessor
+from utils.gcp_storage import GCPStorage
+
+
+class ZoningOrdinanceChromaDBLoader(BaseProcessor):
+>>>>>>> 60e08e9 (Make a generalizable docx embedder)
     def __init__(self):
         super().__init__()
 

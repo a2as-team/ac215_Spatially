@@ -4,58 +4,54 @@ import google.cloud.aiplatform as aip
 
 # Import zoning ordinance components
 from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorComponent
-from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
-from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
+from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
+from pipelines.processor.zoning_ordinance import ZoningOrdinanceProcessorComponent
 
 
 class ZoningOrdinancePipeline(BasePipeline):
-    """Pipeline for zoning ordinance: collect → chunk/embed → load to ChromaDB"""
+    """Pipeline for zoning ordinance: collect ordinances & maps → process (docx→md, chunk, embed, save to PostgreSQL)"""
 
-    def __init__(self, city: str, collection_name: str = "zoning-ordinance"):
+    def __init__(self, city: str):
         super().__init__()
         self.pipeline_name = "zoning-ordinance"
         self.city = city
-        self.collection_name = collection_name
 
     def create_pipeline(self):
-        """Create and return the zoning ordinance pipeline with 3 sequential components"""
+        """Create and return the zoning ordinance pipeline with 3 components"""
         city = self.city
-        collection_name = self.collection_name
 
         # Initialize components
-        collector = ZoningOrdinanceCollectorComponent(city=city).get_component()
-        processor = ZoningOrdinanceChunkEmbedComponent(city=city).get_component()
-        loader = ZoningOrdinanceLoadComponent(
-            city=city,
-            collection_name=collection_name
-        ).get_component()
+        ordinance_collector = ZoningOrdinanceCollectorComponent(city=city).get_component()
+        maps_collector = ZoningMapsCollectorComponent(city=city).get_component()
+        processor = ZoningOrdinanceProcessorComponent(city=city).get_component()
 
         @dsl.pipeline(name=f"{self.pipeline_name}-pipeline-{city}")
         def zoning_ordinance_pipeline():
-            # Step 1: Collect ordinance data from city websites
-            collector_task = (
-                collector()
+            # Step 1a: Collect ordinance documents from city websites
+            ordinance_collector_task = (
+                ordinance_collector()
                 .set_display_name(f"collector-zoning-ordinance-{city}")
                 .set_cpu_limit("2000m")  # Web scraping needs resources
                 .set_memory_limit("8G")
             )
 
-            # Step 2: Chunk and generate embeddings (waits for collector)
-            processor_task = (
-                processor()
-                .set_display_name(f"processor-zoning-ordinance-chunk-embed-{city}")
-                .set_cpu_limit("4000m")  # Embedding generation is CPU intensive
-                .set_memory_limit("16G")  # Large documents need more memory
-                .after(collector_task)
+            # Step 1b: Collect zoning maps (runs in parallel with ordinance collection)
+            maps_collector_task = (
+                maps_collector()
+                .set_display_name(f"collector-zoning-maps-{city}")
+                .set_cpu_limit("2000m")
+                .set_memory_limit("8G")
             )
 
-            # Step 3: Load embeddings to ChromaDB Cloud (waits for processor)
-            loader_task = (
-                loader()
-                .set_display_name(f"processor-zoning-ordinance-load-{city}")
-                .set_cpu_limit("1000m")
-                .set_memory_limit("4G")
-                .after(processor_task)
+            # Step 2: Process DOCX files: convert to markdown, chunk, generate embeddings, save to PostgreSQL
+            # Waits for both collectors to complete
+            processor_task = (
+                processor()
+                .set_display_name(f"processor-zoning-ordinance-{city}")
+                .set_cpu_limit("4000m")  # Embedding generation is CPU intensive
+                .set_memory_limit("16G")  # Large documents need more memory
+                .after(ordinance_collector_task)
+                .after(maps_collector_task)
             )
 
         return zoning_ordinance_pipeline
@@ -64,9 +60,9 @@ class ZoningOrdinancePipeline(BasePipeline):
         """Compile and submit the pipeline to Vertex AI"""
         pipeline = self.create_pipeline()
 
-        # Compile the pipeline
-        pipeline_file = f"{self.pipeline_name}_pipeline_{self.city}.yaml"
-        compiler.Compiler().compile(pipeline, package_path=pipeline_file)
+        # Compile the pipeline to pipeline_outputs directory
+        pipeline_file = self.pipeline_outputs_dir / f"{self.pipeline_name}_pipeline_{self.city}.yaml"
+        compiler.Compiler().compile(pipeline, package_path=str(pipeline_file))
 
         # Initialize Vertex AI
         aip.init(project=self.GCP_PROJECT, staging_bucket=self.BUCKET_URI)
@@ -77,7 +73,7 @@ class ZoningOrdinancePipeline(BasePipeline):
 
         job = aip.PipelineJob(
             display_name=display_name,
-            template_path=pipeline_file,
+            template_path=str(pipeline_file),
             pipeline_root=self.PIPELINE_ROOT,
             enable_caching=False,
         )
@@ -86,6 +82,5 @@ class ZoningOrdinancePipeline(BasePipeline):
 
         print(f"Pipeline job submitted: {job.resource_name}")
         print(f"City: {self.city}")
-        print(f"Collection: {self.collection_name}")
 
         return job

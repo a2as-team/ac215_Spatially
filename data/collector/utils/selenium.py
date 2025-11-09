@@ -1,5 +1,6 @@
 from selenium import webdriver
 import logging
+import random
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,11 +13,24 @@ class SeleniumUtil:
     Use the 'driver' property to access the current WebDriver from anywhere this util is used.
     """
 
+    # List of realistic user agents to rotate through
+    USER_AGENTS = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
+    ]
+
     def __init__(self, headless: bool = True, logger: logging.Logger = None, download_dir: str = None):
         self.headless = headless
         self.logger = logger or logging.getLogger(__name__)
         self.download_dir = download_dir
         self._driver = None
+        self.current_user_agent = None
 
     @property
     def driver(self):
@@ -28,6 +42,10 @@ class SeleniumUtil:
         return self._driver
 
     def initialize_driver(self):
+        # Select a random user agent
+        self.current_user_agent = random.choice(self.USER_AGENTS)
+        self.logger.info(f"Using User-Agent: {self.current_user_agent[:50]}...")
+
         chrome_options = Options()
         if self.headless:
             chrome_options.add_argument("--headless=new")
@@ -43,20 +61,33 @@ class SeleniumUtil:
         chrome_options.add_argument(
             "--disable-features=IsolateOrigins,site-per-process"
         )
-        chrome_options.add_argument(
-            "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
+        chrome_options.add_argument(f"--user-agent={self.current_user_agent}")
+        # Enable kiosk printing to auto-print without dialog
+        chrome_options.add_argument("--kiosk-printing")
 
         # Configure download directory if specified
         if self.download_dir:
             import os
+            import json
             os.makedirs(self.download_dir, exist_ok=True)
             prefs = {
                 "download.default_directory": self.download_dir,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "plugins.always_open_pdf_externally": True,  # Disable Chrome's PDF viewer
-                "safebrowsing.enabled": True
+                "safebrowsing.enabled": True,
+                "printing.print_preview_sticky_settings.appState": json.dumps({
+                    "recentDestinations": [{
+                        "id": "Save as PDF",
+                        "origin": "local",
+                        "account": "",
+                    }],
+                    "selectedDestinationId": "Save as PDF",
+                    "version": 2,
+                    "isHeaderFooterEnabled": False,
+                    "isLandscapeEnabled": False,
+                    "isCssBackgroundEnabled": True,
+                })
             }
             chrome_options.add_experimental_option("prefs", prefs)
 
@@ -101,6 +132,14 @@ class SeleniumUtil:
         return WebDriverWait(self.driver, timeout).until(
             EC.presence_of_element_located((by, value))
         )
+    
+    def find_elements(self, by, value, timeout: int = 10):
+        """
+        Finds elements on the page.
+        """
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_all_elements_located((by, value))
+        )
 
     def click_element(self, by, value, timeout: int = 10):
         """
@@ -110,6 +149,24 @@ class SeleniumUtil:
             EC.element_to_be_clickable((by, value))
         )
         element.click()
+    
+    def wait_for_element(self, by, value, timeout: int = 10):
+        """
+        Waits for an element to be present and visible.
+        """
+        return WebDriverWait(self.driver, timeout).until(
+            EC.presence_of_element_located((by, value))
+        )
+
+    def reinitialize_with_new_headers(self):
+        """
+        Reinitialize the driver with a new random user agent.
+        Useful for avoiding detection when making many requests.
+        """
+        self.logger.info("Reinitializing driver with new headers...")
+        self.quit()
+        self.initialize_driver()
+        return self._driver
 
     def quit(self):
         """

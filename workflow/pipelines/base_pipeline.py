@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import random
 import string
+from pathlib import Path
 
 
 class BasePipeline(ABC):
@@ -16,6 +17,11 @@ class BasePipeline(ABC):
         self.GCS_PACKAGE_URI = os.environ["GCS_PACKAGE_URI"]
         self.GCP_REGION = os.environ["GCP_REGION"]
         self.project_name = "spatially"
+
+        # Pipeline outputs directory for compiled YAML files
+        workflow_dir = Path(__file__).parent.parent
+        self.pipeline_outputs_dir = workflow_dir / "pipeline_outputs"
+        self.pipeline_outputs_dir.mkdir(exist_ok=True)
 
     def generate_uuid(self, length: int = 8) -> str:
         return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))

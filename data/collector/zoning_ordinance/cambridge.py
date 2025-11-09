@@ -4,17 +4,17 @@ from utils.scrapers.municode_scraper import MunicodeScraper
 import time
 import json
 
-class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
+class CambridgeZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
     def __init__(self):
         super().__init__()
         self.scraper = MunicodeScraper(url=self.resource_url(), download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.boston
+        return City.cambridge
 
     def resource_url(self) -> str:
-        return "https://library.municode.com/ma/boston/codes/redevelopment_authority?nodeId=PRONZOCOBOMA"
-
+        return "https://library.municode.com/ma/cambridge/codes/zoning_ordinance?nodeId=ZOORCAMA"
+    
     def upload_to_gcs(self, downloaded_files: list):
         """Upload all downloaded files to GCS."""
         if not self.gcp_storage:
@@ -43,8 +43,9 @@ class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
                 except Exception as e:
                     self.logger.error(f"Failed to upload {file_path.name}: {e}")
                     break
-
+    
     def upload_metadata(self):
+        # we will store the resource url in the gcs bucket
         metadata = {
             "resource_url": self.resource_url(),
         }
@@ -52,12 +53,13 @@ class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
         with open(f"{self.download_directory()}/metadata.json", "w") as f:
             json.dump(metadata, f)
         
-        # create a json file in the gcs bucket
+        # upload the metadata to the gcs bucket
         self.gcp_storage.upload_file(
             file_path=f"{self.download_directory()}/metadata.json",
             destination_path=f"{self.gcp_storage_parent_directory()}/metadata.json"
         )
-        
+        self.logger.info(f"Uploaded metadata to {self.gcp_storage_parent_directory()}/metadata.json")
+
     def collect(self):
         self.logger.info(f"Collecting zoning ordinance for {self.city()}")
         downloaded_files = self.scraper.scrape()

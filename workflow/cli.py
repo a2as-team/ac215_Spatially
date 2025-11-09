@@ -8,17 +8,34 @@ from pipelines.collector.census import CensusCollectorComponent
 from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorComponent
 
 # Import all processor components
-from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
-from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
-from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
+from pipelines.processor.development_plans_label_studio import (
+    DevelopmentPlansLabelStudioProcessorComponent,
+)
+from pipelines.processor.zoning_ordinance import ZoningOrdinanceProcessorComponent
 from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
 
 # Import full pipelines
 from pipelines.all import AllPipeline
 from pipelines.zoning_ordinance import ZoningOrdinancePipeline
 
+# Map to classes
+available = {
+    # Full pipelines
+    "all": AllPipeline,
+    "zoning-ordinance": ZoningOrdinancePipeline,
+    # Individual collectors
+    "collector-development-plans": DevelopmentPlansCollectorComponent,
+    "collector-census": CensusCollectorComponent,
+    "collector-zoning-ordinance": ZoningOrdinanceCollectorComponent,
+    "collector-zoning-maps": ZoningMapsCollectorComponent,
+    # Individual processors
+    "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
+    "processor-zoning-ordinance": ZoningOrdinanceProcessorComponent,
+}
+
 
 def run(city: str, pipeline_type: str = "all"):
+    global available
     """
     Run a pipeline or component
 
@@ -27,40 +44,21 @@ def run(city: str, pipeline_type: str = "all"):
         pipeline_type: Type to run
             Pipelines (multiple components):
             - "all": All collectors + processors (default)
-            - "zoning-ordinance": Zoning ordinance collector + chunk-embed + load
+            - "zoning-ordinance": Zoning ordinance & maps collector + processor (DOCX→MD, chunk, embed, save to PostgreSQL)
 
             Individual Components:
             - "collector-development-plans": Just development plans collector
             - "collector-census": Just census collector
             - "collector-zoning-ordinance": Just zoning ordinance collector
+            - "collector-zoning-maps": Just zoning maps collector
             - "processor-development-plans-label-studio": Just development plans processor
-            - "processor-zoning-ordinance-chunk-embed": Just zoning ordinance chunk & embed
-            - "processor-zoning-ordinance-load": Just zoning ordinance ChromaDB load
+            - "processor-zoning-ordinance": Zoning ordinance processor (DOCX→MD, chunk, embed, save to PostgreSQL)
     """
     print(f"Running {pipeline_type} for {city}...")
 
-    # Map to classes
-    available = {
-        # Full pipelines
-        "all": AllPipeline,
-        "zoning-ordinance": ZoningOrdinancePipeline,
-
-        # Individual collectors
-        "collector-development-plans": DevelopmentPlansCollectorComponent,
-        "collector-census": CensusCollectorComponent,
-        "collector-zoning-ordinance": ZoningOrdinanceCollectorComponent,
-        "collector-zoning-maps": ZoningMapsCollectorComponent,
-
-        # Individual processors
-        "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
-        "processor-zoning-ordinance-chunk-embed": ZoningOrdinanceChunkEmbedComponent,
-        "processor-zoning-ordinance-load": ZoningOrdinanceLoadComponent,
-    }
-
     if pipeline_type not in available:
         raise ValueError(
-            f"Unknown type: {pipeline_type}. "
-            f"Available: {list(available.keys())}"
+            f"Unknown type: {pipeline_type}. " f"Available: {list(available.keys())}"
         )
 
     # Instantiate and run
@@ -78,7 +76,9 @@ if __name__ == "__main__":
             prompt="The city of data to process",
             arg_type=str,
             required=True,
-            choices=[city.lower() for city in City.get_all()],  # Support lowercase input
+            choices=[
+                city.lower() for city in City.get_all()
+            ],  # Support lowercase input
         ),
         "pipeline_type": SmartArgItem(
             flags=["--pipeline"],
@@ -87,15 +87,8 @@ if __name__ == "__main__":
             required=True,
             default="all",
             choices=[
-                "all",
-                "zoning-ordinance",
-                "collector-development-plans",
-                "collector-census",
-                "collector-zoning-ordinance",
-                "collector-zoning-maps",
-                "processor-development-plans-label-studio",
-                "processor-zoning-ordinance-chunk-embed",
-                "processor-zoning-ordinance-load",
+                # Automate by deriving from available.keys(), maintaining order
+                *[k for k in available.keys()],
             ],
         ),
         "test": SmartArgItem(

@@ -34,7 +34,7 @@ class ChicagoZoningCollector(ZoningOrdinanceBaseCollector):
                          collector/zoning_ordinance/chicago_collected_data/
         """
         super().__init__(headless=headless, download_dir=download_dir)
-        self.base_url = "https://codelibrary.amlegal.com/codes/chicago/latest/overview"
+        self.base_url = "https://codelibrary.amlegal.com/codes/chiscago/latest/overview"
 
     def _get_default_download_dir(self) -> Path:
         """Get the default download directory for Chicago collector."""

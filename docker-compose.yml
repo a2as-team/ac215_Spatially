@@ -17,7 +17,6 @@ services:
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
-      GCP_PROJECT: ${GCP_PROJECT:-spatially}
       PYTHONPATH: /app:/
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
@@ -36,9 +35,9 @@ services:
     tty: true         # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
-      GCP_PROJECT: ${GCP_PROJECT:-spatially}
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
       PYTHONPATH: /app:/
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
@@ -132,7 +131,7 @@ services:
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
-      - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
+      # - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json

@@ -1,177 +1,59 @@
-"""Base class for zoning ordinance data collectors."""
-
+from utils.db_accessor import DBAccessor
+from utils.gcp_storage import GCPStorage
+from template import BaseCollector
 from abc import ABC, abstractmethod
-import os
 import logging
-from pathlib import Path
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import os
 import sys
 
 
-from template import BaseCollector
-
-logger = logging.getLogger(__name__)
-
-
 class ZoningOrdinanceBaseCollector(BaseCollector, ABC):
-    """
-    Base class for zoning ordinance collectors that use Selenium WebDriver.
-
-    Provides common functionality for:
-    - Chrome WebDriver setup with download configuration
-    - Headless mode support
-    - Download directory management
-    - CDP command setup for downloads
-    """
-
-    def __init__(self, headless: bool = True, download_dir: str = None):
-        """
-        Initialize the zoning ordinance collector.
-
-        Args:
-            headless: Whether to run Chrome in headless mode
-            download_dir: Directory to save downloaded files
-        """
+    def __init__(self):
         super().__init__()
-        self.headless = headless
-        self.download_dir = self._setup_download_dir(download_dir)
-        self.driver = None
-
-    @abstractmethod
-    def _get_default_download_dir(self) -> Path:
-        """
-        Get the default download directory for this collector.
-
-        Returns:
-            Path to the default download directory
-        """
-        pass
-
-    def _setup_download_dir(self, download_dir: str = None) -> Path:
-        """
-        Set up and create the download directory.
-
-        Args:
-            download_dir: Optional custom download directory
-
-        Returns:
-            Resolved Path object for the download directory
-        """
-        if download_dir is None:
-            dl_path = self._get_default_download_dir()
-        else:
-            dl_path = Path(download_dir)
-
-        dl_path.mkdir(parents=True, exist_ok=True)
-        return dl_path.resolve()
-
-    def _setup_driver(self):
-        """
-        Initialize Chrome WebDriver with download-friendly options.
-
-        Sets up:
-        - Headless mode (if enabled)
-        - Download directory preferences
-        - CDP commands for download behavior
-        - Anti-detection measures
-        """
-        chrome_options = Options()
-
-        if self.headless:
-            chrome_options.add_argument("--headless=new")
-
-        # Common Chrome options for stability
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-
-        # Enhanced anti-detection measures
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option("useAutomationExtension", False)
-
-        # Additional anti-detection for Cloudflare and similar
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--allow-running-insecure-content")
-        chrome_options.add_argument(
-            "--disable-features=IsolateOrigins,site-per-process"
-        )
-        chrome_options.add_argument(
-            "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-
-        # Set download preferences
-        prefs = {
-            "download.default_directory": str(self.download_dir),
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True,
-            "profile.default_content_setting_values.notifications": 2,
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-
-        self.driver = webdriver.Chrome(options=chrome_options)
-        logger.info(f"Chrome WebDriver initialized (headless={self.headless})")
-
-        # Set navigator.webdriver to undefined to avoid detection
-        try:
-            self.driver.execute_cdp_cmd(
-                "Page.addScriptToEvaluateOnNewDocument",
-                {
-                    "source": """
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                """
-                },
-            )
-        except Exception as e:
-            logger.warning(f"Could not set webdriver property: {e}")
-
-        # Enable automatic downloads in headless mode via DevTools
-        try:
-            self.driver.execute_cdp_cmd(
-                "Page.setDownloadBehavior",
-                {"behavior": "allow", "downloadPath": str(self.download_dir)},
-            )
-            logger.info(f"Set download path via CDP: {self.download_dir}")
-        except Exception as e:
-            logger.warning(f"Could not set download behavior via CDP: {e}")
-            # Best-effort; not all driver versions support this
-
-    def _cleanup_driver(self):
-        """Close the WebDriver if it exists."""
-        if self.driver:
+        self.logger = logging.getLogger(f"{self.__class__.__name__}")
+        if not self.logger.hasHandlers():
+            # Use stdout instead of stderr for Vertex AI logging
+            handler = logging.StreamHandler(sys.stdout)
+            formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
+        
+        self.gcp_storage = None
+        self.bucket_name = os.environ.get("GCS_BUCKET_NAME")
+        self.gcp_project = os.environ.get("GCP_PROJECT")
+        self.db_name = os.environ.get("APP_DB_NAME") # We will store the census tracts in the app database
+        self.db = DBAccessor(db_name=self.db_name)
+        
+        if self.bucket_name and self.gcp_project:
             try:
-                self.driver.quit()
-                logger.info("Browser closed")
+                self.gcp_storage = GCPStorage(gcp_project=self.gcp_project, bucket_name=self.bucket_name)
+                self.logger.info("GCS connection established")
             except Exception as e:
-                logger.warning(f"Error closing browser: {e}")
-
+                self.logger.warning(f"Could not connect to GCS: {e}. Will operate without GCS features.")
+        else:
+            self.logger.warning("GCS credentials not found (GCS_BUCKET_NAME or GCP_PROJECT). Will operate without GCS features.")
+    
+    def gcp_storage_parent_directory(self) -> str:
+        """Return the GCS storage path for this collector."""
+        return f"zoning_ordinance/{self.city()}"
+    
+    def download_directory(self) -> str:
+        """Return the download directory path for this collector."""
+        return os.path.abspath(f"tmp/zoning_ordinance/{self.city()}")
+    
     @abstractmethod
-    def collect(self) -> dict:
-        """
-        Collect zoning ordinance data.
-
-        Returns:
-            Dictionary with collection results
-        """
+    def resource_url(self) -> str:
+        """Return the resource URL for this collector."""
         pass
-
+    
     @abstractmethod
-    def validate(self, data: dict) -> bool:
-        """
-        Validate the collected data.
-
-        Args:
-            data: The collection results to validate
-
-        Returns:
-            True if validation passes, False otherwise
-        """
+    def upload_metadata(self):
+        """Upload the data to the database."""
         pass
-
-
-__all__ = ["ZoningOrdinanceBaseCollector", "BaseCollector"]
+    
+    @abstractmethod
+    def upload_to_gcs(self):
+        """Upload the data to GCS."""
+        pass
+        

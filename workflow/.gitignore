@@ -1,0 +1,3 @@
+# Compiled pipeline YAML files
+pipeline_outputs/
+*.yaml

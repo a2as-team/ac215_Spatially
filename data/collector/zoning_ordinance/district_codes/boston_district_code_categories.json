@@ -1,9 +1,0 @@
-{
-    "Mixed Use Districts": ["S0", "S1", "S2", "S3", "S4", "S5"],
-    "Residential Districts": ["R-.8", "H-1", "H-1-50", "H-2", "H-2-65", "H-3", "H-3-65", "H-4", "H-5"],
-    "Local Business Districts": ["L-.5", "L-1", "L-2", "L-2-65"],
-    "General Business Districts": ["B-1", "B-2", "B-3-65", "B-4", "B-6-90a", "B-6-90b", "B-8-120a", "B-8-120b", "B-8-120c", "B-8", "B-10"],
-    "Industrial / Manufacturing Districts": ["M-1", "M-2", "M-4", "M-8", "I-2", "MER-2"],
-    "Open Space Districts": ["OS", "OS-A", "OS-CM", "OS-G", "OS-P", "OS-RC", "OS-SL", "OS-S", "OS-UP", "OS-UW", "OS-WA"]
-  }
-  

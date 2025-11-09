@@ -62,9 +62,9 @@ class AllPipeline(BasePipeline):
         """Compile and submit the pipeline to Vertex AI"""
         pipeline = self.create_pipeline()
 
-        # Compile the pipeline
-        pipeline_file = f"{self.pipeline_name}_pipeline_{self.city}.yaml"
-        compiler.Compiler().compile(pipeline, package_path=pipeline_file)
+        # Compile the pipeline to pipeline_outputs directory
+        pipeline_file = self.pipeline_outputs_dir / f"{self.pipeline_name}_pipeline_{self.city}.yaml"
+        compiler.Compiler().compile(pipeline, package_path=str(pipeline_file))
 
         # Initialize Vertex AI
         aip.init(project=self.GCP_PROJECT, staging_bucket=self.BUCKET_URI)
@@ -76,7 +76,7 @@ class AllPipeline(BasePipeline):
 
         job = aip.PipelineJob(
             display_name=display_name,
-            template_path=pipeline_file,
+            template_path=str(pipeline_file),
             pipeline_root=self.PIPELINE_ROOT,
             enable_caching=False,
         )

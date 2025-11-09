@@ -3,7 +3,7 @@ from kfp import dsl
 from registry.config import RegistryConfig
 
 
-class ZoningOrdinanceEmbedComponent(BaseComponent):
+class ZoningOrdinanceProcessorComponent(BaseComponent):
     """Component for converting DOCX to markdown, chunking and generating embeddings for zoning ordinance data"""
 
     def __init__(self, city: str):
@@ -45,7 +45,9 @@ class ZoningOrdinanceEmbedComponent(BaseComponent):
                 f"/home/app/.venv/bin/python /app/zoning_ordinance_embed/run.py --city '{city}'"
             )
             container_spec = dsl.ContainerSpec(
-                image=RegistryConfig.zoning_ordinance_embed_image(gcp_region, gcp_project)["image_uri"],
+                image=RegistryConfig.data_processor_image(gcp_region, gcp_project)[
+                    "image_uri"
+                ],
                 command=["sh", "-c", cmd],
             )
             return container_spec

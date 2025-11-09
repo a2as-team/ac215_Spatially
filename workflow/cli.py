@@ -1,5 +1,6 @@
 import os
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
+from shared_config.cities import City
 
 # Import all collector components
 from pipelines.collector.development_plans import DevelopmentPlansCollectorComponent
@@ -10,6 +11,7 @@ from pipelines.collector.zoning_ordinance import ZoningOrdinanceCollectorCompone
 from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
 from pipelines.processor.zoning_ordinance_chunk_embed import ZoningOrdinanceChunkEmbedComponent
 from pipelines.processor.zoning_ordinance_load import ZoningOrdinanceLoadComponent
+from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
 
 # Import full pipelines
 from pipelines.all import AllPipeline
@@ -47,6 +49,7 @@ def run(city: str, pipeline_type: str = "all"):
         "collector-development-plans": DevelopmentPlansCollectorComponent,
         "collector-census": CensusCollectorComponent,
         "collector-zoning-ordinance": ZoningOrdinanceCollectorComponent,
+        "collector-zoning-maps": ZoningMapsCollectorComponent,
 
         # Individual processors
         "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
@@ -75,12 +78,13 @@ if __name__ == "__main__":
             prompt="The city of data to process",
             arg_type=str,
             required=True,
+            choices=[city.lower() for city in City.get_all()],  # Support lowercase input
         ),
         "pipeline_type": SmartArgItem(
             flags=["--pipeline"],
             prompt="Type of pipeline or component to run",
             arg_type=str,
-            required=False,
+            required=True,
             default="all",
             choices=[
                 "all",
@@ -88,6 +92,7 @@ if __name__ == "__main__":
                 "collector-development-plans",
                 "collector-census",
                 "collector-zoning-ordinance",
+                "collector-zoning-maps",
                 "processor-development-plans-label-studio",
                 "processor-zoning-ordinance-chunk-embed",
                 "processor-zoning-ordinance-load",
@@ -105,5 +110,13 @@ if __name__ == "__main__":
     parser = SmartArgParser(schema)
     args = parser.parse()
 
-    # Run the selected pipeline or component
-    run(city=args["city"], pipeline_type=args["pipeline_type"])
+    # Validate and normalize city name
+    city_upper = args["city"].lower()
+    if not City.is_valid(city_upper):
+        raise ValueError(
+            f"Unknown city: {args['city']}. "
+            f"Available cities: {', '.join(c.lower() for c in City.get_all())}"
+        )
+
+    # Run the selected pipeline or component (pass lowercase for compatibility)
+    run(city=args["city"].lower(), pipeline_type=args["pipeline_type"])

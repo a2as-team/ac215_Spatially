@@ -1,16 +1,7 @@
 import os
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from census import CensusCollector
-
-# Map cities to their states
-#
-CITY_TO_STATE = {
-    "boston": "MA",
-    "chicago": "IL",
-    "new york": "NY",
-    "los angeles": "CA",
-    "san francisco": "CA",
-}
+from shared_config.cities import City
 
 if __name__ == "__main__":
     schema = {
@@ -42,13 +33,17 @@ if __name__ == "__main__":
     parser = SmartArgParser(schema)
     args = parser.parse()
 
-    # Map city to state
-    city_lower = args["city"].lower()
-    if city_lower in CITY_TO_STATE:
-        args["state"] = CITY_TO_STATE[city_lower]
-        print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+    # Map city to state using City registry
+    city_upper = args["city"].upper()
+    if City.is_valid(city_upper):
+        state = City.get_state(city_upper)
+        if state:
+            args["state"] = state
+            print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+        else:
+            raise ValueError(f"City '{args['city']}' found but has no state defined. Please add state to cities.json")
     else:
-        raise ValueError(f"Unknown city: {args['city']}. Known cities: {list(CITY_TO_STATE.keys())}")
+        raise ValueError(f"Unknown city: {args['city']}. Known cities: {City.get_all()}")
 
     collector = CensusCollector()
     if args["type"] not in collector.caller_map:
@@ -83,4 +78,6 @@ python census/run.py \
     --type population \
     --level tract \
     --year 2020
+
+Note: City names are case-insensitive. Available cities are defined in config/cities.json
 """

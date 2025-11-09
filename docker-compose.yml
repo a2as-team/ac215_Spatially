@@ -7,6 +7,8 @@ services:
     build:
       context: ./data/collector
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_collector
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
@@ -16,9 +18,10 @@ services:
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT:-spatially}
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/collector:/app # This will mount our ./data/collector as /app in the container
   
   processor:
@@ -26,6 +29,8 @@ services:
     build:
       context: ./data/processor
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_processor
     stdin_open: true  # Keep stdin open (docker run -i)
     tty: true         # Allocate a pseudo-TTY (docker run -t)
@@ -34,9 +39,10 @@ services:
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
       GCP_PROJECT: ${GCP_PROJECT:-spatially}
-      PYTHONPATH: /app
+      PYTHONPATH: /app:/
     volumes:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/processor:/app # This will mount our ./data/processor as /app in the container
 
   label-studio:
@@ -118,6 +124,8 @@ services:
     build:
       context: ./workflow
       dockerfile: Dockerfile
+      additional_contexts:
+        shared_config: ./shared_config
     container_name: spatially_workflow
     stdin_open: true
     tty: true
@@ -125,10 +133,12 @@ services:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
       - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
+      - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
     volumes:
       - ./secrets:/secrets:ro
+      - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./workflow:/app
       # - ./data:/app/data
       - ./data:/app/data

@@ -17,6 +17,12 @@ class BaseComponent(ABC):
         self.GCS_SERVICE_ACCOUNT = os.environ["GCS_SERVICE_ACCOUNT"]
         self.GCS_PACKAGE_URI = os.environ["GCS_PACKAGE_URI"]
         self.GCP_REGION = os.environ["GCP_REGION"]
+        self.APP_DB_NAME = os.environ["APP_DB_NAME"]
+        # Database connection parameters
+        self.POSTGRE_USER = os.environ["POSTGRE_USER"]
+        self.POSTGRE_PASSWORD = os.environ["POSTGRE_PASSWORD"]
+        self.POSTGRE_HOST = os.environ["POSTGRE_HOST"]
+        self.POSTGRE_PORT = os.environ.get("POSTGRE_PORT", "5432")
         self.project_name = "spatially"
 
     @abstractmethod

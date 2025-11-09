@@ -1,6 +1,46 @@
 # AC215 Spatially Project
 
-This is a project that will leverage LLM to create a spatially intelligent agent that can help real estate decisions. 
+This is a project that will leverage LLM to create a spatially intelligent agent that can help real estate decisions.
+
+## Database Schema
+
+```mermaid
+erDiagram
+    cities ||--o{ zoning_maps : "has many"
+    census_tracts ||--|| census_data : "has one"
+
+    cities {
+        int id PK
+        varchar name "Unique city identifier"
+        varchar display_name "Human-readable name"
+        varchar state "State code"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    census_tracts {
+        varchar geoid PK "Geo identifier"
+        geometry geom "PostGIS geometry"
+        timestamp created_at
+    }
+
+    census_data {
+        varchar census_tract_id FK "References census_tracts(geoid)"
+        TBD TBD 
+    }
+
+    zoning_maps {
+        int id PK
+        int city_id FK "References cities(id)"
+        varchar code "Zoning code (e.g. RS1)"
+        varchar article "Zoning article"
+        varchar usage "Zoning usage"
+        geometry geom "PostGIS geometry"
+        timestamp created_at
+    }
+```
+
+> **Note:** The `census_data` table schema is a placeholder. Please define the appropriate fields based on the census data requirements (e.g., demographics, housing statistics, economic indicators, etc.).
 
 ### Quick Start
 

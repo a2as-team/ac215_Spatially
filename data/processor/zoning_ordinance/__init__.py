@@ -3,7 +3,7 @@ from utils.gcp_storage import GCPStorage
 import os
 
 
-class ZoningOrdinanceEmbedProcessor:
+class ZoningOrdinanceProcessor:
     def __init__(self, city: str):
         self._init_gcp()
         self.city = city

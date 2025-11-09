@@ -1,11 +1,11 @@
 from utils.gcp_storage import GCPStorage
-from .base import ZoningOrdinanceEmbedBaseProcessor
+from .base import ZoningOrdinanceBaseProcessor
 import os
 import pandas as pd
 from markitdown import MarkItDown
 
 
-class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
+class DocxProcessor(ZoningOrdinanceBaseProcessor):
     """
     General DOCX processor for embedding zoning ordinance documents.
     Assumes files follow a title/subtitle naming structure separated by FILE_NAME_SEPARATOR.
@@ -108,7 +108,9 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
 
         # Create markdown GCS path
         markdown_filename = os.path.basename(source_gcs_path) + ".md"
-        markdown_gcs_path = f"{self.gcp_storage_markdown_directory()}/{markdown_filename}"
+        markdown_gcs_path = (
+            f"{self.gcp_storage_markdown_directory()}/{markdown_filename}"
+        )
 
         # Create metadata with GCS information
         bucket_name = self.storage.bucket.name
@@ -175,9 +177,16 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
                 self.process_single_docx_file(docx_blob)
             )
             self.create_chunk_data(
-                all_chunk_data, text_content, title, subtitle, download_path, source_gcs_path
+                all_chunk_data,
+                text_content,
+                title,
+                subtitle,
+                download_path,
+                source_gcs_path,
             )
-            self.logger.info(f"[{idx}/{total_files}] Created {len(all_chunk_data)} chunks so far")
+            self.logger.info(
+                f"[{idx}/{total_files}] Created {len(all_chunk_data)} chunks so far"
+            )
 
             # Upload markdown file to GCS
             markdown_filename = os.path.basename(docx_blob.name) + ".md"
@@ -210,16 +219,16 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
 
         # Save embeddings to PostgreSQL database
         # Convert dataframe back to list of dicts with embeddings
-        embeddings_with_data = data_df.to_dict('records')
+        embeddings_with_data = data_df.to_dict("records")
         self.logger.info("\nSaving embeddings to database...")
         inserted, skipped = self._insert_embeddings_to_db(embeddings_with_data)
 
         # Final summary
-        self.logger.info("\n" + "="*60)
+        self.logger.info("\n" + "=" * 60)
         self.logger.info("PROCESSING COMPLETE")
-        self.logger.info("="*60)
+        self.logger.info("=" * 60)
         self.logger.info(f"Files processed:     {len(docx_blobs)}/{total_files}")
         self.logger.info(f"Chunks created:      {len(all_chunk_data)}")
         self.logger.info(f"Embeddings generated: {len(data_df)}")
         self.logger.info(f"Database records:    {inserted} inserted, {skipped} skipped")
-        self.logger.info("="*60)
+        self.logger.info("=" * 60)

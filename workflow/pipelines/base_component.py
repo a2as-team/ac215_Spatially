@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import os
 import random
 import string
+from pathlib import Path
 from kfp import dsl, compiler
 import google.cloud.aiplatform as aip
 
@@ -24,6 +25,11 @@ class BaseComponent(ABC):
         self.POSTGRE_HOST = os.environ["POSTGRE_HOST"]
         self.POSTGRE_PORT = os.environ.get("POSTGRE_PORT", "5432")
         self.project_name = "spatially"
+
+        # Pipeline outputs directory for compiled YAML files
+        workflow_dir = Path(__file__).parent.parent
+        self.pipeline_outputs_dir = workflow_dir / "pipeline_outputs"
+        self.pipeline_outputs_dir.mkdir(exist_ok=True)
 
     @abstractmethod
     def get_component(self):
@@ -67,9 +73,9 @@ class BaseComponent(ABC):
         # Include city in naming if component has city attribute
         city_suffix = f"_{self.city}" if hasattr(self, 'city') else ""
 
-        # Compile the pipeline
-        pipeline_file = f"{component_name}_pipeline{city_suffix}.yaml"
-        compiler.Compiler().compile(pipeline, package_path=pipeline_file)
+        # Compile the pipeline to pipeline_outputs directory
+        pipeline_file = self.pipeline_outputs_dir / f"{component_name}_pipeline{city_suffix}.yaml"
+        compiler.Compiler().compile(pipeline, package_path=str(pipeline_file))
 
         # Initialize Vertex AI
         aip.init(project=self.GCP_PROJECT, staging_bucket=self.BUCKET_URI)
@@ -80,7 +86,7 @@ class BaseComponent(ABC):
 
         job = aip.PipelineJob(
             display_name=display_name,
-            template_path=pipeline_file,
+            template_path=str(pipeline_file),
             pipeline_root=self.PIPELINE_ROOT,
             enable_caching=False,
         )

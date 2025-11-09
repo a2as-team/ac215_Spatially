@@ -1,5 +1,5 @@
 from utils.smart_arg_parser import SmartArgParser, SmartArgItem
-from zoning_ordinance_embed import ZoningOrdinanceEmbedProcessor
+from zoning_ordinance import ZoningOrdinanceProcessor
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
     parser = SmartArgParser(schema)
     args = parser.parse()
 
-    processor = ZoningOrdinanceEmbedProcessor(city=args["city"])
+    processor = ZoningOrdinanceProcessor(city=args["city"])
     processor.process(test_mode=args["test"])
 
 

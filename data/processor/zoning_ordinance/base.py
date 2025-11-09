@@ -15,7 +15,7 @@ import time
 from psycopg2.extras import Json
 
 
-class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
+class ZoningOrdinanceBaseProcessor(BaseProcessor, ABC):
     def __init__(
         self,
         city: str,
@@ -123,7 +123,8 @@ class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
 
     def _create_zoning_ordinance_embed_table(self):
         """Create the zoning_ordinance_embed table with pgvector support."""
-        self.db.execute(f"""
+        self.db.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS zoning_ordinance_embed (
                 id SERIAL PRIMARY KEY,
                 city_id INTEGER NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
@@ -143,7 +144,8 @@ class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
                 ON zoning_ordinance_embed(chunk_hash);
             CREATE INDEX IF NOT EXISTS idx_zoning_ordinance_embed_embedding
                 ON zoning_ordinance_embed USING hnsw (embedding vector_cosine_ops);
-        """)
+        """
+        )
         self.logger.info("zoning_ordinance_embed table created/verified")
 
     def _get_city_id(self, city_name: str) -> int:
@@ -162,18 +164,19 @@ class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
         # Check if table exists
         self.db.connect()
         with self.db.conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_schema = 'public'
                     AND table_name = 'zoning_ordinance_embed'
                 )
-            """)
+            """
+            )
             table_exists = cur.fetchone()[0]
             if table_exists:
                 self.db.execute(
-                    "DELETE FROM zoning_ordinance_embed WHERE city_id = %s",
-                    (city_id,)
+                    "DELETE FROM zoning_ordinance_embed WHERE city_id = %s", (city_id,)
                 )
                 self.logger.info(f"Deleted existing embeddings for {city_name}")
 
@@ -196,15 +199,17 @@ class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
 
         self.db.connect()
         for i in range(0, len(embeddings_data), batch_size):
-            batch = embeddings_data[i:i + batch_size]
+            batch = embeddings_data[i : i + batch_size]
 
             for data in batch:
                 try:
                     # Compute hash for deduplication
-                    chunk_hash = PgVectorUtils.compute_text_hash(data['text_chunk'])
+                    chunk_hash = PgVectorUtils.compute_text_hash(data["text_chunk"])
 
                     # Convert embedding to pgvector format
-                    embedding_str = PgVectorUtils.embedding_to_pgvector(data['embedding'])
+                    embedding_str = PgVectorUtils.embedding_to_pgvector(
+                        data["embedding"]
+                    )
 
                     # Insert with ON CONFLICT to skip duplicates
                     insert_query = """
@@ -223,20 +228,24 @@ class ZoningOrdinanceEmbedBaseProcessor(BaseProcessor, ABC):
                             (
                                 city_id,
                                 chunk_hash,
-                                data['text_chunk'],
-                                data.get('document_title', ''),
-                                data.get('document_subtitle', ''),
-                                data.get('zoning_codes', []),
+                                data["text_chunk"],
+                                data.get("document_title", ""),
+                                data.get("document_subtitle", ""),
+                                data.get("zoning_codes", []),
                                 embedding_str,
-                                Json(data.get('metadata', {}))  # Use Json() for JSONB field
-                            )
+                                Json(
+                                    data.get("metadata", {})
+                                ),  # Use Json() for JSONB field
+                            ),
                         )
                         result = cur.fetchone()
                         if result:
                             inserted_count += 1
                             # Log progress every 50 records for visibility
                             if inserted_count % 50 == 0:
-                                self.logger.info(f"  → Progress: {inserted_count}/{len(embeddings_data)} embeddings inserted")
+                                self.logger.info(
+                                    f"  → Progress: {inserted_count}/{len(embeddings_data)} embeddings inserted"
+                                )
                         else:
                             skipped_count += 1
 

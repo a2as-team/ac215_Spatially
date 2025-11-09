@@ -8,6 +8,7 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 erDiagram
     cities ||--o{ zoning_maps : "has many"
     census_tracts ||--|| census_data : "has one"
+    cities ||--o{ zoning_ordinance_embed : "has many"
 
     cities {
         int id PK
@@ -36,6 +37,19 @@ erDiagram
         varchar article "Zoning article"
         varchar usage "Zoning usage"
         geometry geom "PostGIS geometry"
+        timestamp created_at
+    }
+
+    zoning_ordinance_embed {
+        int id PK
+        int city_id FK "References cities(id)"
+        text chunk_hash "SHA256 hash for deduplication (unique)"
+        text text_chunk "Zoning ordinance text chunk"
+        varchar document_title "Title of the zoning ordinance"
+        varchar document_subtitle "Subtitle of the zoning ordinance"
+        text[] zoning_codes "Zoning codes mentioned in text"
+        vector(768) embedding "Vector(768) for semantic search"
+        jsonb metadata "Flexible metadata (source_url, tokens, etc.)"
         timestamp created_at
     }
 ```

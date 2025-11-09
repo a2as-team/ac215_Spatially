@@ -54,7 +54,7 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
             docx_blob: GCS blob object for the DOCX file
 
         Returns:
-            tuple: (text_content, title, subtitle, download_path)
+            tuple: (text_content, title, subtitle, download_path, source_gcs_path)
         """
         # Ensure download directory exists
         os.makedirs(self.download_directory(), exist_ok=True)
@@ -81,7 +81,7 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
         with open(download_path, "w", encoding="utf-8") as file:
             file.write(result.text_content)
 
-        return result.text_content, title, subtitle, download_path
+        return result.text_content, title, subtitle, download_path, docx_blob.name
 
     def create_chunk_data(
         self,
@@ -90,6 +90,7 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
         title: str,
         subtitle: str,
         download_path: str,
+        source_gcs_path: str,
     ):
         """
         Create chunks from text content and extract zoning codes.
@@ -100,20 +101,36 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
             title: Document title
             subtitle: Document subtitle
             download_path: Path to the markdown file
+            source_gcs_path: GCS path to the original DOCX file
         """
         chunks = self.text_splitter.create_documents([text_content])
         chunk_texts = [doc.page_content for doc in chunks]
+
+        # Create markdown GCS path
+        markdown_filename = os.path.basename(source_gcs_path) + ".md"
+        markdown_gcs_path = f"{self.gcp_storage_markdown_directory()}/{markdown_filename}"
+
+        # Create metadata with GCS information
+        bucket_name = self.storage.bucket.name
+        metadata = {
+            "source_docx_gcs_path": source_gcs_path,
+            "markdown_gcs_path": markdown_gcs_path,
+            "bucket_name": bucket_name,
+            "source_docx_url": f"gs://{bucket_name}/{source_gcs_path}",
+            "markdown_url": f"gs://{bucket_name}/{markdown_gcs_path}",
+        }
 
         for chunk_text in chunk_texts:
             zoning_codes = self.zoning_code_extractor.extract_zoning_codes_from_text(
                 chunk_text
             )
             chunk_data = {
-                "chunk": chunk_text,
-                "title": title,
-                "subtitle": subtitle,
+                "text_chunk": chunk_text,
+                "document_title": title,
+                "document_subtitle": subtitle,
                 "download_path": download_path,
                 "zoning_codes": zoning_codes,
+                "metadata": metadata,
             }
             all_chunk_data.append(chunk_data)
 
@@ -131,7 +148,7 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
             DataFrame with chunks and their embeddings
         """
         data_df = pd.DataFrame(all_chunk_data)
-        chunks = data_df["chunk"].values.tolist()
+        chunks = data_df["text_chunk"].values.tolist()
         embeddings = self._generate_text_embeddings(chunks, batch_size=15)
         data_df["embedding"] = embeddings
         return data_df
@@ -148,16 +165,19 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
             f"Starting {self.__class__.__name__} processor (test_mode={test_mode})"
         )
         docx_blobs = self.load_docx_files_from_gcp(test_mode=test_mode)
+        total_files = len(docx_blobs)
+        self.logger.info(f"Found {total_files} DOCX file(s) to process")
         all_chunk_data = []
 
-        for docx_blob in docx_blobs:
-            self.logger.info(f"\nProcessing: {docx_blob.name}")
-            text_content, title, subtitle, download_path = (
+        for idx, docx_blob in enumerate(docx_blobs, 1):
+            self.logger.info(f"\n[{idx}/{total_files}] Processing: {docx_blob.name}")
+            text_content, title, subtitle, download_path, source_gcs_path = (
                 self.process_single_docx_file(docx_blob)
             )
             self.create_chunk_data(
-                all_chunk_data, text_content, title, subtitle, download_path
+                all_chunk_data, text_content, title, subtitle, download_path, source_gcs_path
             )
+            self.logger.info(f"[{idx}/{total_files}] Created {len(all_chunk_data)} chunks so far")
 
             # Upload markdown file to GCS
             markdown_filename = os.path.basename(docx_blob.name) + ".md"
@@ -165,26 +185,41 @@ class DocxProcessor(ZoningOrdinanceEmbedBaseProcessor):
                 download_path,
                 f"{self.gcp_storage_markdown_directory()}/{markdown_filename}",
             )
+            self.logger.info(f"[{idx}/{total_files}] Uploaded markdown to GCS")
 
-        # Generate embeddings and save to JSONL
+        # Generate embeddings
+        self.logger.info(f"\nGenerating embeddings for {len(all_chunk_data)} chunks...")
         data_df = self.generate_embedding_table(all_chunk_data)
+        self.logger.info(f"✓ Generated {len(data_df)} embeddings")
+
+        # Save to JSONL in GCS
         jsonl_content = data_df.to_json(orient="records", lines=True)
-        # save internally as JSON for better readability
+        self.storage.upload_string_to_blob(
+            jsonl_content, f"{self.gcp_storage_markdown_directory()}/embeddings.jsonl"
+        )
+        self.logger.info(
+            f"Uploaded embeddings to: {self.gcp_storage_markdown_directory()}/embeddings.jsonl"
+        )
+
+        # Save internally as JSON for better readability
         data_df.to_json(
             os.path.join(self.download_directory(), "embeddings.json"),
             orient="records",
             indent=2,
         )
-        self.storage.upload_string_to_blob(
-            jsonl_content, f"{self.gcp_storage_markdown_directory()}/embeddings.jsonl"
-        )
 
-        self.logger.info(
-            f"Uploaded embeddings to: {self.gcp_storage_markdown_directory()}/embeddings.jsonl"
-        )
-        self.logger.info(f"Processed {len(docx_blobs)} docx files")
-        self.logger.info(f"Created {len(all_chunk_data)} chunks")
-        self.logger.info(f"Generated {len(data_df)} embeddings")
-        self.logger.info(
-            f"Completed {self.__class__.__name__} processor (test_mode={test_mode})"
-        )
+        # Save embeddings to PostgreSQL database
+        # Convert dataframe back to list of dicts with embeddings
+        embeddings_with_data = data_df.to_dict('records')
+        self.logger.info("\nSaving embeddings to database...")
+        inserted, skipped = self._insert_embeddings_to_db(embeddings_with_data)
+
+        # Final summary
+        self.logger.info("\n" + "="*60)
+        self.logger.info("PROCESSING COMPLETE")
+        self.logger.info("="*60)
+        self.logger.info(f"Files processed:     {len(docx_blobs)}/{total_files}")
+        self.logger.info(f"Chunks created:      {len(all_chunk_data)}")
+        self.logger.info(f"Embeddings generated: {len(data_df)}")
+        self.logger.info(f"Database records:    {inserted} inserted, {skipped} skipped")
+        self.logger.info("="*60)

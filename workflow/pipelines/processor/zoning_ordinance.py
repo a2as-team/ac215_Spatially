@@ -18,10 +18,10 @@ class ZoningOrdinanceProcessorComponent(BaseComponent):
 
     def get_component_name(self):
         """Return the component name"""
-        return "processor-zoning-ordinance-embed"
+        return "processor-zoning-ordinance"
 
     def get_component(self):
-        """Return the KFP component for zoning ordinance embedding"""
+        """Return the KFP component for zoning ordinance processing"""
         city = self.city
         gcp_region = self.GCP_REGION
         gcp_project = self.GCP_PROJECT
@@ -32,7 +32,7 @@ class ZoningOrdinanceProcessorComponent(BaseComponent):
         postgre_port = self.POSTGRE_PORT
 
         @dsl.container_component
-        def zoning_ordinance_embed_component():
+        def zoning_ordinance_processor_component():
             cmd = (
                 f"export GCS_BUCKET_NAME={self.GCS_BUCKET_NAME} && "
                 f"export GCP_PROJECT={gcp_project} && "
@@ -42,7 +42,7 @@ class ZoningOrdinanceProcessorComponent(BaseComponent):
                 f"export POSTGRE_PASSWORD={postgre_password} && "
                 f"export POSTGRE_HOST={postgre_host} && "
                 f"export POSTGRE_PORT={postgre_port} && "
-                f"/home/app/.venv/bin/python /app/zoning_ordinance_embed/run.py --city '{city}'"
+                f"/home/app/.venv/bin/python /app/zoning_ordinance/run.py --city '{city}'"
             )
             container_spec = dsl.ContainerSpec(
                 image=RegistryConfig.data_processor_image(gcp_region, gcp_project)[
@@ -52,4 +52,4 @@ class ZoningOrdinanceProcessorComponent(BaseComponent):
             )
             return container_spec
 
-        return zoning_ordinance_embed_component
+        return zoning_ordinance_processor_component

@@ -63,7 +63,7 @@ class ZoningOrdinanceMilvusLoader(BaseProceesor):
         data_df["id"] = hashed_docs + "-" + data_df["id"]
 
         # Fill NaN values with empty strings to ensure no None values
-        string_fields = ["article", "section", "url", "heading", "chapter", "title"]
+        string_fields = ["heading_1", "heading_2", "url"]
         for field in string_fields:
             if field in data_df.columns:
                 data_df[field] = data_df[field].fillna("")
@@ -89,12 +89,9 @@ class ZoningOrdinanceMilvusLoader(BaseProceesor):
                     "document": row["document"],
                     "district_codes": district_codes,
                     "district_categories": district_categories,
-                    "article": row.get("article", ""),
-                    "section": row.get("section", ""),
-                    "url": row.get("url", ""),
-                    "heading": row.get("heading", ""),
-                    "chapter": row.get("chapter", ""),
-                    "title": row.get("title", "")
+                    "heading_1": row.get("heading_1", ""),  # Boston: Article, Chicago: Title
+                    "heading_2": row.get("heading_2", ""),  # Boston: Section, Chicago: Chapter
+                    "url": row.get("url", "")               # Boston-specific
                 }
                 insert_data.append(data_entry)
 
@@ -195,13 +192,14 @@ class ZoningOrdinanceMilvusLoader(BaseProceesor):
                 max_length=100
             )
 
-            # Optional metadata fields
-            schema.add_field(field_name="article", datatype=DataType.VARCHAR, max_length=500)
-            schema.add_field(field_name="section", datatype=DataType.VARCHAR, max_length=500)
+            # Standardized hierarchical metadata fields (used by both Boston and Chicago)
+            # Boston: heading_1 = Article, heading_2 = Section
+            # Chicago: heading_1 = Title, heading_2 = Chapter
+            schema.add_field(field_name="heading_1", datatype=DataType.VARCHAR, max_length=500)
+            schema.add_field(field_name="heading_2", datatype=DataType.VARCHAR, max_length=500)
+
+            # Boston-specific field
             schema.add_field(field_name="url", datatype=DataType.VARCHAR, max_length=1000)
-            schema.add_field(field_name="heading", datatype=DataType.VARCHAR, max_length=500)
-            schema.add_field(field_name="chapter", datatype=DataType.VARCHAR, max_length=500)
-            schema.add_field(field_name="title", datatype=DataType.VARCHAR, max_length=500)
 
             # Create index for vector field
             index_params = client.prepare_index_params()

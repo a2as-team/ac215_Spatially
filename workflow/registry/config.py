@@ -61,7 +61,7 @@ class RegistryConfig:
         return [
             RegistryConfig.data_collector_image(gcp_region, gcp_project),
             RegistryConfig.data_processor_image(gcp_region, gcp_project),
-            RegistryConfig.ner_trainer_image(gcp_region, gcp_project),
+            # RegistryConfig.ner_trainer_image(gcp_region, gcp_project),
             RegistryConfig.zoning_ordinance_chunk_embed_image(gcp_region, gcp_project),
             RegistryConfig.zoning_ordinance_load_image(gcp_region, gcp_project),
         ]

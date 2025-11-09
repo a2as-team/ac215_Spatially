@@ -155,7 +155,14 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
         return sorted(list(matched_codes)), sorted(list(matched_categories))
 
     def extract_hierarchical_sections_from_pdf(self, pdf_path):
-        """Extract text from PDF with hierarchical section detection"""
+        """Extract text from Chicago PDF with Title and Chapter detection using PyMuPDF
+
+        Chicago zoning ordinance has 2-level hierarchy:
+        - TITLE (heading_1): e.g., "TITLE 17 CHICAGO ZONING ORDINANCE"
+        - CHAPTER (heading_2): e.g., "CHAPTER 17-1 GENERAL PROVISIONS"
+
+        Returns list of dicts: [{heading_1, heading_2, content}, ...]
+        """
         try:
             doc = fitz.open(pdf_path)
             all_text = ""
@@ -166,16 +173,13 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
             if not all_text.strip():
                 return []
 
-            # Define regex patterns for headings
+            # Define regex patterns for Title and Chapter headings only
             patterns = {
                 'title': re.compile(r'^TITLE\s+\d+[-\w]*\s+.*$', re.IGNORECASE | re.MULTILINE),
                 'chapter': re.compile(r'^CHAPTER\s+\d+[-\w]*\s+.*$', re.IGNORECASE | re.MULTILINE),
-                'article': re.compile(r'^ARTICLE\s+\d+[A-Z\-]*\s+.*$', re.IGNORECASE | re.MULTILINE),
-                'appendix': re.compile(r'^APPENDIX(?:\s+[A-Z0-9\-]+)?(?:\s+.*)?$', re.IGNORECASE | re.MULTILINE),
-                'section': re.compile(r'^SECTION\s+\d+[-\d]*\s+.*$', re.IGNORECASE | re.MULTILINE),
             }
 
-            # Find all headings with positions
+            # Find all headings with their positions
             headings = []
             for heading_type, pattern in patterns.items():
                 for match in pattern.finditer(all_text):
@@ -186,26 +190,20 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
                         'end': match.end()
                     })
 
+            # Sort headings by position in document
             headings.sort(key=lambda x: x['start'])
 
             if not headings:
+                # No headings found, return entire text as one section
                 return [{
-                    "title": None,
-                    "chapter": None,
-                    "article": None,
-                    "section": None,
-                    "heading": "Document",
+                    "heading_1": None,
+                    "heading_2": None,
                     "content": all_text
                 }]
 
-            # Maintain current context
-            current_context = {
-                "title": None,
-                "chapter": None,
-                "article": None,
-                "section": None
-            }
-
+            # Track current Title and Chapter context
+            current_title = None
+            current_chapter = None
             sections = []
 
             for i, heading in enumerate(headings):
@@ -215,23 +213,14 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
                 if 'RESERVED' in heading_text.upper():
                     continue
 
-                # Update context
+                # Update context based on heading type
                 if heading['type'] == 'title':
-                    current_context['title'] = heading_text
-                    current_context['chapter'] = None
-                    current_context['article'] = None
-                    current_context['section'] = None
+                    current_title = heading_text
+                    current_chapter = None  # Reset chapter when new title starts
                 elif heading['type'] == 'chapter':
-                    current_context['chapter'] = heading_text
-                    current_context['article'] = None
-                    current_context['section'] = None
-                elif heading['type'] == 'article':
-                    current_context['article'] = heading_text
-                    current_context['section'] = None
-                elif heading['type'] in ['appendix', 'section']:
-                    current_context['section'] = heading_text
+                    current_chapter = heading_text
 
-                # Extract content
+                # Extract content from this heading to the next
                 content_start = heading['end']
                 if i + 1 < len(headings):
                     content_end = headings[i + 1]['start']
@@ -240,15 +229,14 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
 
                 content = all_text[content_start:content_end].strip()
 
+                # Skip if no content
                 if not content:
                     continue
 
+                # Store section with standardized metadata
                 sections.append({
-                    "title": current_context['title'],
-                    "chapter": current_context['chapter'],
-                    "article": current_context['article'],
-                    "section": current_context['section'],
-                    "heading": heading_text,
+                    "heading_1": current_title,      # Title
+                    "heading_2": current_chapter,    # Chapter
                     "content": content
                 })
 
@@ -307,20 +295,15 @@ class ChicagoZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBasePro
                         "chunk": chunk_text,
                         "document": document_name,
                         "city": "chicago",
-                        "heading": section["heading"],
                         "district_code": district_codes,
                         "district_category": district_categories
                     }
 
-                    # Add hierarchical metadata if present
-                    if section.get("title"):
-                        chunk_metadata["title"] = section["title"]
-                    if section.get("chapter"):
-                        chunk_metadata["chapter"] = section["chapter"]
-                    if section.get("article"):
-                        chunk_metadata["article"] = section["article"]
-                    if section.get("section"):
-                        chunk_metadata["section"] = section["section"]
+                    # Add hierarchical metadata (only if not None)
+                    if section.get("heading_1"):
+                        chunk_metadata["heading_1"] = section["heading_1"]  # Title
+                    if section.get("heading_2"):
+                        chunk_metadata["heading_2"] = section["heading_2"]  # Chapter
 
                     all_chunk_data.append(chunk_metadata)
 

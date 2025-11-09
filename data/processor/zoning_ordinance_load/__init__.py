@@ -1,3 +1,3 @@
-from .base import ZoningOrdinanceChromaDBLoader
+from .base import ZoningOrdinanceMilvusLoader
 
-__all__ = ["ZoningOrdinanceChromaDBLoader"]
+__all__ = ["ZoningOrdinanceMilvusLoader"]

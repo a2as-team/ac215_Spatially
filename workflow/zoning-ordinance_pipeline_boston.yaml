@@ -43,10 +43,8 @@ deploymentSpec:
         - sh
         - -c
         - export GCS_BUCKET_NAME=spatially-data && export GCP_PROJECT=spatially-476017
-          && export CHROMADB_API_KEY=ck-BehWUrDxQy5enL73ebngGncidTjX5sHR9KogDJ4Cc7U9
-          && export CHROMADB_TENANT=27f98798-e3e2-4cac-8d6c-dfe7848dd2a3 && export
-          CHROMADB_DATABASE=ac215-spatially && /home/app/.venv/bin/python /app/zoning_ordinance_load/run.py
-          --city 'boston' --collection 'zoning-ordinance'
+          && export MILVUS_PUBLIC_ENDPOINT= && export MILVUS_API_KEY= && /home/app/.venv/bin/python
+          /app/zoning_ordinance_load/run.py --city 'boston' --collection 'zoning-ordinance'
         image: us-central1-docker.pkg.dev/spatially-476017/workflow-images/zoning-ordinance-load:latest
         resources:
           cpuLimit: 1.0

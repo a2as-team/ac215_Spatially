@@ -155,7 +155,16 @@ class BostonZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBaseProc
         return sorted(list(matched_codes)), sorted(list(matched_categories))
 
     def extract_structured_data_from_excel(self, excel_path):
-        """Extract structured data from Boston Excel files"""
+        """Extract structured data from Boston Excel files with metadata per row
+
+        Boston zoning ordinance has 2-level hierarchy:
+        - ARTICLE (heading_1): e.g., "ARTICLE 9 NONCONFORMING USES"
+        - SECTION (heading_2): e.g., "Section 9-1. Extension of Nonconforming Uses..."
+
+        Returns tuple: (article_name, list of dicts)
+        article_name: str - Article name from first data row
+        sections: list of [{url, heading_2, content}, ...]
+        """
         try:
             workbook = openpyxl.load_workbook(excel_path, data_only=True)
             sheet = workbook.active
@@ -164,6 +173,7 @@ class BostonZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBaseProc
             article_title = sheet.cell(4, 3).value
             article_subtitle = sheet.cell(4, 4).value
 
+            # Concatenate to form article name (heading_1)
             article_name = ""
             if article_title and article_subtitle:
                 article_name = f"{article_title} {article_subtitle}".strip()
@@ -186,6 +196,7 @@ class BostonZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBaseProc
                 if not content or not str(content).strip():
                     continue
 
+                # Concatenate Title and Subtitle for section name (heading_2)
                 section_name = ""
                 if title and subtitle:
                     section_name = f"{title} {subtitle}".strip()
@@ -196,7 +207,7 @@ class BostonZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBaseProc
 
                 structured_data.append({
                     "url": str(url) if url else "",
-                    "section": section_name,
+                    "heading_2": section_name,  # Section (standardized field name)
                     "content": str(content)
                 })
 
@@ -256,9 +267,9 @@ class BostonZoningOrdinanceEmbeddingsProcessor(ZoningOrdinanceEmbeddingsBaseProc
                         "chunk": chunk_text,
                         "document": document_name,
                         "city": "boston",
-                        "article": article_name,
-                        "section": section_data["section"],
-                        "url": section_data["url"],
+                        "heading_1": article_name,              # Article
+                        "heading_2": section_data["heading_2"], # Section
+                        "url": section_data["url"],             # Boston-specific
                         "district_code": district_codes,
                         "district_category": district_categories
                     })

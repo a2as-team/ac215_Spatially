@@ -26,11 +26,17 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
     def geoid_column(self) -> str:
         return "geoid20"
 
-    
     def upload_to_gcs(self, file_path: str, gcs_filename: str):
-        """Upload the file to GCS."""
-        self.gcp_storage.upload_file(file_path=file_path, destination_path=f"{self.gcp_storage_parent_directory()}/{gcs_filename}")
-    
+        """Upload the file to GCS if credentials exist; otherwise skip."""
+        if not self.gcp_storage:
+            self.logger.warning("GCS credentials not found. Skip uploading to GCS.")
+            return
+        if not gcs_filename.endswith(".geojson"):
+            gcs_filename = f"{gcs_filename}.geojson"
+        self.gcp_storage.upload_file(
+            file_path=file_path,
+            destination_path=f"{self.gcp_storage_parent_directory()}/{gcs_filename}"
+        )
     def upload_to_db(self, gdf: gpd.GeoDataFrame):
         """Upload the geopandas dataframe to the database."""
         # Create table if needed (database is auto-created on first connect)
@@ -86,31 +92,24 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         from utils.featureserver_downloader import FeatureServerDownloader
         import os
         url = self.resource_url()
-        
         os.makedirs(self.download_directory(), exist_ok=True)
-        
-        # Initialize the downloader utility
+
         downloader = FeatureServerDownloader(logger=self.logger, epsg_code=self.EPSG_CODE)
-        
-        # Download the file
+
         try:
             self.logger.info(f"Downloading file from: {url}")
-            downloaded_files = downloader.download_all_layers(
+            result = downloader.download_as_single_geojson(
                 base_url=url,
                 output_dir=self.download_directory(),
-                filename_prefix="census_tracts",
-                use_pagination=False
+                merged_filename="boston_2020_tracts.geojson",
+                layer_name="Census 2020 Tracts"
             )
-            for file_info in downloaded_files:
-                file_info['title'] = f"census_tracts - {file_info['layer_name']}"
-                file_info['url'] = f"{url}/{file_info['layer_id']}/query"
+            downloaded_file = result
         except Exception as e:
             raise Exception(f"Error downloading census tracts file: {e}")
-        
-        if len(downloaded_files) == 1:
-            return downloaded_files[0]
-        else:
-            raise Exception(f"Expected 1 downloaded file, got {len(downloaded_files)}")
+
+        return downloaded_file
+
 
     def collect(self):
         # Download the file

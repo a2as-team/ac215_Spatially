@@ -33,10 +33,10 @@ if __name__ == "__main__":
     parser = SmartArgParser(schema)
     args = parser.parse()
 
-    # Map city to state using City registry
-    city_upper = args["city"].upper()
-    if City.is_valid(city_upper):
-        state = City.get_state(city_upper)
+    # Map city to state using City registry (normalize to lowercase)
+    city_key = args["city"].strip().lower()
+    if City.is_valid(city_key):
+        state = City.get_state(city_key)
         if state:
             args["state"] = state
             print(f"Mapping city '{args['city']}' to state '{args['state']}'")

@@ -160,6 +160,19 @@ services:
       - ./llm/development_plans/NER:/app
       - ./secrets:/secrets:ro
 
+  backend:
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spatially_backend
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - ./backend:/app
+
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)
   development_plans_label_studio_data:

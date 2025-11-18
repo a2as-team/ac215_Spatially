@@ -7,8 +7,12 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 ```mermaid
 erDiagram
     cities ||--o{ zoning_maps : "has many"
-    census_tracts ||--|| census_data : "has one"
     cities ||--o{ zoning_ordinance_embed : "has many"
+    CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
+    ACS_TABLE ||--o{ ACS_RELEASE : "defines releases"
+    ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
+    ACS_RELEASE ||--o{ ACS_VALUE : "provides release context"
+    ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
 
     cities {
         int id PK
@@ -19,15 +23,42 @@ erDiagram
         timestamp updated_at
     }
 
-    census_tracts {
+    CENSUS_TRACT {
         varchar geoid PK "Geo identifier"
         geometry geom "PostGIS geometry"
         timestamp created_at
     }
 
-    census_data {
-        varchar census_tract_id FK "References census_tracts(geoid)"
-        TBD TBD 
+    ACS_TABLE {
+        string acs_table_id PK
+        string title
+        string topic
+        string table_type
+        string description
+    }
+
+    ACS_RELEASE {
+        string acs_release_id PK
+        string acs_table_id FK
+        int year
+        string dataset
+        string vintage
+    }
+
+    ACS_VARIABLE {
+        string variable_id PK
+        string acs_table_id FK
+        string name
+        string concept
+    }
+
+    ACS_VALUE {
+        int acs_value_id PK
+        string geoid FK
+        string acs_release_id FK
+        string variable_id FK
+        float value
+        datetime ingested_at
     }
 
     zoning_maps {
@@ -52,6 +83,8 @@ erDiagram
         jsonb metadata "Flexible metadata (source_url, tokens, etc.)"
         timestamp created_at
     }
+
+
 ```
 
 > **Note:** The `census_data` table schema is a placeholder. Please define the appropriate fields based on the census data requirements (e.g., demographics, housing statistics, economic indicators, etc.).
@@ -63,17 +96,19 @@ docker compose -f docker-compose.yml up
 ```
 
 If you only want to run the collector, you can run the following command
+
 ```bash
 docker compose -f docker-compose.yml run --rm collector
 ```
 
 If you only want to run the label studio, you can run the following command
+
 ```bash
 docker compose -f docker-compose.yml run --rm label-studio
 ```
 
 ## References
+
 1. NYC Zoning Webmap: https://zola.planning.nyc.gov/l/zoning-district/C5-P?search=false
 2. ReZone (Keep in track of zoning changes): https://www.re-zone.ai/
 3. TryMappr (Interactive zoning map): https://trymappr.com/
-

@@ -32,11 +32,11 @@ erDiagram
     ACS_TABLE {
         string acs_table_id PK
         string title
-        topic topic
+        topic topic //enum type
         string description
     }
 
-    enum topic {
+    topic {
         DEMOGRAPHICS
         HOUSEHOLD_COMPOSITION
         HOUSING_STOCK

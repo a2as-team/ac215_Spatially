@@ -27,9 +27,7 @@ erDiagram
     cities ||--o{ zoning_maps : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
     CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
-    ACS_TABLE ||--o{ ACS_RELEASE : "defines releases"
     ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
-    ACS_RELEASE ||--o{ ACS_VALUE : "provides release context"
     ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
 
     cities {

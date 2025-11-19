@@ -5,6 +5,24 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 ## Database Schema
 
 ```mermaid
+%% Enum: topic
+%% Values:
+%% - DEMOGRAPHICS
+%% - HOUSEHOLD_COMPOSITION
+%% - HOUSING_STOCK
+%% - HOUSING_FINANCIALS
+%% - HOUSING_TENURE_OCCUPANCY
+%% - HOUSING_COST_BURDEN
+%% - HOUSING_AGE_CONDITION
+%% - VACANCY
+%% - INCOME
+%% - POVERTY
+%% - EMPLOYMENT
+%% - INDUSTRY
+%% - TRANSPORTATION
+%% - GEOGRAPHIC_MOBILITY
+%% - EDUCATION
+
 erDiagram
     cities ||--o{ zoning_maps : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
@@ -34,24 +52,6 @@ erDiagram
         string title
         topic topic
         string description
-    }
-
-    topic {
-        DEMOGRAPHICS
-        HOUSEHOLD_COMPOSITION
-        HOUSING_STOCK
-        HOUSING_FINANCIALS
-        HOUSING_TENURE_OCCUPANCY
-        HOUSING_COST_BURDEN
-        HOUSING_AGE_CONDITION
-        VACANCY
-        INCOME
-        POVERTY
-        EMPLOYMENT
-        INDUSTRY
-        TRANSPORTATION
-        GEOGRAPHIC_MOBILITY
-        EDUCATION
     }
 
     ACS_VARIABLE {

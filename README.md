@@ -32,26 +32,17 @@ erDiagram
     ACS_TABLE {
         string acs_table_id PK
         string title
-        topic topic
+        string topic
+        string table_type
         string description
     }
 
-    enum topic {
-        DEMOGRAPHICS,
-        HOUSEHOLD_COMPOSITION,
-        HOUSING_STOCK,
-        HOUSING_FINANCIALS,
-        HOUSING_TENURE_OCCUPANCY,
-        HOUSING_COST_BURDEN,
-        HOUSING_AGE_CONDITION,
-        VACANCY,
-        INCOME,
-        POVERTY,
-        EMPLOYMENT,
-        INDUSTRY,
-        TRANSPORTATION,
-        GEOGRAPHIC_MOBILITY,
-        EDUCATION
+    ACS_RELEASE {
+        string acs_release_id PK
+        string acs_table_id FK
+        int year
+        string dataset
+        string vintage
     }
 
     ACS_VARIABLE {
@@ -64,7 +55,7 @@ erDiagram
     ACS_VALUE {
         int acs_value_id PK
         string geoid FK
-        int year
+        string acs_release_id FK
         string variable_id FK
         float value
         datetime ingested_at

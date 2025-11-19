@@ -32,7 +32,7 @@ erDiagram
     ACS_TABLE {
         string acs_table_id PK
         string title
-        topic topic //enum type
+        topic topic
         string description
     }
 

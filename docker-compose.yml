@@ -43,6 +43,7 @@ services:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/processor:/app # This will mount our ./data/processor as /app in the container
+      - ./llm:/app/llm:ro # Mount llm directory for NER predictor imports
 
   label-studio:
     image: heartexlabs/label-studio:latest

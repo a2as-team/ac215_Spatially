@@ -55,6 +55,6 @@ class DevelopmentPlansProcessor:
                 f"Please run the NER pipeline first."
             )
 
-    def process(self, test_mode: bool = False):
+    def process(self, test_mode: bool = False, save_interval: int = 100):
         processor = self.choose_processor_based_on_metadata()
-        return processor.process(test_mode=test_mode)
+        return processor.process(test_mode=test_mode, save_interval=save_interval)

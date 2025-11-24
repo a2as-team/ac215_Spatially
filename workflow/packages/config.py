@@ -26,7 +26,7 @@ class PackageConfig:
     @staticmethod
     def ner_trainer_package():
         """NER trainer package configuration."""
-        project_root = Path(__file__).parent.parent
+        project_root = Path(__file__).parent.parent.parent  # Go up to ac215_Spatially root
         package_dir = project_root / "llm" / "development_plans" / "NER" / "package"
 
         return {

@@ -3,6 +3,15 @@ from .base import DevelopmentPlansBaseProcessor
 import os
 import json
 import pandas as pd
+import sys
+from pathlib import Path
+
+# Add llm/development_plans/NER/package to path for importing predictor
+ner_package_path = Path(__file__).parent.parent / "llm" / "development_plans" / "NER" / "package"
+if str(ner_package_path) not in sys.path:
+    sys.path.insert(0, str(ner_package_path))
+
+from predictor import NERPredictor
 
 
 class NerJsonProcessor(DevelopmentPlansBaseProcessor):
@@ -18,6 +27,7 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
         gcp_project: str,
         gcp_region: str,
         gcp_storage_source_directory: str,
+        enable_ner: bool = True,
     ):
         super().__init__(city, gcp_project, gcp_region, gcp_storage_source_directory)
         self.logger.info(
@@ -26,6 +36,40 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
         self.storage = storage
         self.gcp_project = gcp_project
         self.gcp_region = gcp_region
+        self.enable_ner = enable_ner
+
+        # Initialize NER predictor
+        self.ner_predictor = None
+        if self.enable_ner:
+            self._init_ner_predictor()
+
+    def _init_ner_predictor(self):
+        """Initialize the NER predictor with the trained model from GCS."""
+        try:
+            self.logger.info("Initializing NER predictor...")
+
+            # Get model bucket from environment, default to finetune bucket
+            model_bucket = os.environ.get(
+                "FINETUNE_GCS_BUCKET", "spatially-us-central-1-model-training"
+            )
+
+            self.ner_predictor = NERPredictor(
+                gcp_storage=self.storage,
+                gcp_project=self.gcp_project,
+                model_gcs_path="ner_model_output/model/ner_model",
+                tokenizer_gcs_path="ner_model_output/model/ner_tokenizer",
+                model_bucket=model_bucket,
+                device=None,  # Auto-detect device
+            )
+
+            self.logger.info("✓ NER predictor initialized successfully")
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to initialize NER predictor: {e}. "
+                f"Will proceed without NER extraction."
+            )
+            self.ner_predictor = None
+            self.enable_ner = False
 
     def load_ner_json_files_from_gcp(self, test_mode: bool = False):
         """
@@ -116,7 +160,7 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
         source_gcs_path: str,
     ):
         """
-        Create chunks from text content.
+        Create chunks from text content and extract NER entities.
 
         Args:
             all_chunk_data: List to append chunk data to
@@ -139,13 +183,45 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
         }
 
         for chunk_text in chunk_texts:
+            # Extract NER entities from this chunk if predictor is available
+            zoning_codes = []
+            article_reference = []
+            location_context = ""
+            ner_entities = {}
+
+            if self.ner_predictor and self.enable_ner:
+                try:
+                    # Run NER prediction on chunk
+                    entities = self.ner_predictor.predict_entities(chunk_text)
+                    grouped_entities = self.ner_predictor.group_entities_by_type(entities)
+
+                    # Extract specific entity types
+                    zoning_codes = grouped_entities.get("ZONING_DISTRICT", [])
+                    article_reference = grouped_entities.get("ARTICLE_REFERENCE", [])
+
+                    # Concatenate location context entities
+                    location_contexts = grouped_entities.get("LOCATION_CONTEXT", [])
+                    location_context = " | ".join(location_contexts) if location_contexts else ""
+
+                    # Store all entities in metadata for full visibility
+                    ner_entities = grouped_entities
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"NER extraction failed for chunk in {project_name}/{file_name}: {e}"
+                    )
+
+            # Add NER entities to enhanced metadata
+            if ner_entities:
+                enhanced_metadata["ner_entities"] = ner_entities
+
             chunk_data = {
                 "text_chunk": chunk_text,
                 "project_name": project_name,
                 "file_name": file_name,
-                "zoning_codes": [],  # Empty for now - NER model not integrated
-                "article_reference": [],  # Empty for now - NER model not integrated
-                "location_context": "",  # Empty for now - NER model not integrated
+                "zoning_codes": zoning_codes,
+                "article_reference": article_reference,
+                "location_context": location_context,
                 "metadata": enhanced_metadata,
             }
             all_chunk_data.append(chunk_data)
@@ -169,21 +245,30 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
         data_df["embedding"] = embeddings
         return data_df
 
-    def process(self, test_mode: bool = False):
+    def process(self, test_mode: bool = False, save_interval: int = 100):
         """
         Main processing method: loads .ner.json files from GCS, extracts text and metadata,
         creates chunks, generates embeddings, and uploads results.
 
         Args:
             test_mode: If True, only process the first few files for testing
+            save_interval: Save to database every N files (default: 100)
         """
         self.logger.info(
-            f"Starting {self.__class__.__name__} processor (test_mode={test_mode})"
+            f"Starting {self.__class__.__name__} processor (test_mode={test_mode}, save_interval={save_interval})"
         )
         ner_json_blobs = self.load_ner_json_files_from_gcp(test_mode=test_mode)
         total_files = len(ner_json_blobs)
         self.logger.info(f"Found {total_files} .ner.json file(s) to process")
+
+        # Track progress across all batches
         all_chunk_data = []
+        total_chunks_created = 0
+        total_embeddings_generated = 0
+        total_db_inserted = 0
+        total_db_skipped = 0
+        files_processed = 0
+        all_embeddings_data = []  # For final JSONL output
 
         for idx, (json_blob, project_name) in enumerate(ner_json_blobs, 1):
             self.logger.info(f"\n[{idx}/{total_files}] Processing: {json_blob.name}")
@@ -204,26 +289,58 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
                 metadata,
                 source_gcs_path,
             )
+            files_processed += 1
             self.logger.info(
-                f"[{idx}/{total_files}] Created {len(all_chunk_data)} chunks so far"
+                f"[{idx}/{total_files}] Batch has {len(all_chunk_data)} chunks (total: {total_chunks_created + len(all_chunk_data)})"
             )
 
-        if not all_chunk_data:
+            # Save to database every save_interval files
+            if files_processed % save_interval == 0 or idx == len(ner_json_blobs):
+                if all_chunk_data:
+                    self.logger.info(f"\n{'='*60}")
+                    self.logger.info(f"BATCH SAVE: Processing {len(all_chunk_data)} chunks from {files_processed} files")
+                    self.logger.info(f"{'='*60}")
+
+                    # Generate embeddings for this batch
+                    self.logger.info(f"Generating embeddings for batch...")
+                    data_df = self.generate_embedding_table(all_chunk_data)
+                    self.logger.info(f"✓ Generated {len(data_df)} embeddings")
+
+                    # Save to database
+                    embeddings_with_data = data_df.to_dict("records")
+                    self.logger.info("Saving batch to database...")
+                    inserted, skipped = self._insert_embeddings_to_db(embeddings_with_data)
+
+                    # Update totals
+                    total_chunks_created += len(all_chunk_data)
+                    total_embeddings_generated += len(data_df)
+                    total_db_inserted += inserted
+                    total_db_skipped += skipped
+
+                    # Keep for final JSONL output
+                    all_embeddings_data.extend(embeddings_with_data)
+
+                    # Progress update
+                    self.logger.info(f"✓ Batch saved: {inserted} inserted, {skipped} skipped")
+                    self.logger.info(f"Overall progress: {files_processed}/{total_files} files, {total_chunks_created} chunks, {total_db_inserted} DB records")
+                    self.logger.info(f"{'='*60}\n")
+
+                    # Clear memory
+                    all_chunk_data = []
+
+        if total_chunks_created == 0:
             self.logger.error("No chunks were created. Exiting.")
             return
 
-        # Generate embeddings
-        self.logger.info(f"\nGenerating embeddings for {len(all_chunk_data)} chunks...")
-        data_df = self.generate_embedding_table(all_chunk_data)
-        self.logger.info(f"✓ Generated {len(data_df)} embeddings")
-
-        # Save to JSONL in GCS
+        # Save final JSONL to GCS
+        self.logger.info(f"\nSaving final output to GCS...")
+        data_df = pd.DataFrame(all_embeddings_data)
         jsonl_content = data_df.to_json(orient="records", lines=True)
         self.storage.upload_string_to_blob(
             jsonl_content, f"{self.gcp_storage_output_directory()}/embeddings.jsonl"
         )
         self.logger.info(
-            f"Uploaded embeddings to: {self.gcp_storage_output_directory()}/embeddings.jsonl"
+            f"✓ Uploaded embeddings to: {self.gcp_storage_output_directory()}/embeddings.jsonl"
         )
 
         # Save internally as JSON for better readability
@@ -233,18 +350,12 @@ class NerJsonProcessor(DevelopmentPlansBaseProcessor):
             indent=2,
         )
 
-        # Save embeddings to PostgreSQL database
-        # Convert dataframe back to list of dicts with embeddings
-        embeddings_with_data = data_df.to_dict("records")
-        self.logger.info("\nSaving embeddings to database...")
-        inserted, skipped = self._insert_embeddings_to_db(embeddings_with_data)
-
         # Final summary
         self.logger.info("\n" + "=" * 60)
         self.logger.info("PROCESSING COMPLETE")
         self.logger.info("=" * 60)
-        self.logger.info(f"Files processed:     {len([r for r in ner_json_blobs if self.process_single_ner_json_file(r[0], r[1])[0] is not None])}/{total_files}")
-        self.logger.info(f"Chunks created:      {len(all_chunk_data)}")
-        self.logger.info(f"Embeddings generated: {len(data_df)}")
-        self.logger.info(f"Database records:    {inserted} inserted, {skipped} skipped")
+        self.logger.info(f"Files processed:      {files_processed}/{total_files}")
+        self.logger.info(f"Chunks created:       {total_chunks_created}")
+        self.logger.info(f"Embeddings generated: {total_embeddings_generated}")
+        self.logger.info(f"Database records:     {total_db_inserted} inserted, {total_db_skipped} skipped")
         self.logger.info("=" * 60)

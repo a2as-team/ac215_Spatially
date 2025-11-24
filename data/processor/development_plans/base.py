@@ -84,9 +84,11 @@ class DevelopmentPlansBaseProcessor(BaseProcessor, ABC):
     ):
         """Generate embeddings using Vertex AI text-embedding-004"""
         all_embeddings = []
+        current_batch_size = batch_size
 
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i : i + batch_size]
+        i = 0
+        while i < len(chunks):
+            batch = chunks[i : i + current_batch_size]
 
             retry_count = 0
             while retry_count <= max_retries:
@@ -101,9 +103,31 @@ class DevelopmentPlansBaseProcessor(BaseProcessor, ABC):
                     all_embeddings.extend(
                         [embedding.values for embedding in response.embeddings]
                     )
+                    i += current_batch_size
                     break
 
                 except errors.APIError as e:
+                    # Check if it's a token limit error
+                    if e.code == 400 and "input token count" in str(e.message):
+                        # Reduce batch size and retry immediately
+                        new_batch_size = max(1, current_batch_size // 2)
+                        if new_batch_size < current_batch_size:
+                            self.logger.warning(
+                                f"Token limit exceeded with batch size {current_batch_size}. "
+                                f"Reducing to {new_batch_size} and retrying..."
+                            )
+                            current_batch_size = new_batch_size
+                            batch = chunks[i : i + current_batch_size]
+                            retry_count = 0  # Reset retry count for new batch size
+                            continue
+                        else:
+                            # If batch_size is already 1, we can't reduce further
+                            self.logger.error(
+                                f"Token limit exceeded even with batch_size=1. "
+                                f"Individual chunk is too large: {len(batch[0])} characters"
+                            )
+                            raise
+
                     retry_count += 1
                     if retry_count > max_retries:
                         self.logger.error(

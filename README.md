@@ -9,6 +9,7 @@ erDiagram
     cities ||--o{ zoning_maps : "has many"
     census_tracts ||--|| census_data : "has one"
     cities ||--o{ zoning_ordinance_embed : "has many"
+    cities ||--o{ development_plans_embed : "has many"
 
     cities {
         int id PK
@@ -50,6 +51,21 @@ erDiagram
         text[] zoning_codes "Zoning codes mentioned in text"
         vector(768) embedding "Vector(768) for semantic search"
         jsonb metadata "Flexible metadata (source_url, tokens, etc.)"
+        timestamp created_at
+    }
+
+    development_plans_embed {
+        int id PK
+        int city_id FK "References cities(id)"
+        text chunk_hash "SHA256 hash for deduplication (unique)"
+        text text_chunk "Development plans text chunk"
+        varchar project_name "e.g. 100 Hood Park Drive"
+        varchar file_name "e.g. Letter_of_Intent__LOI"
+        text[] zoning_codes "Zoning codes mentioned in text (extracted by the NER model)"
+        vector(768) embedding "Embedding vector for semantic search"
+        text[] article_reference "Articles referenced by the text (extracted by the NER model)"
+        text location_context "Contextual details about a site (extracted by the NER model)"
+        jsonb metadata "Flexible metadata (source_url, land_area, etc.)"
         timestamp created_at
     }
 ```

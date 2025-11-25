@@ -177,6 +177,25 @@ services:
       - ./secrets:/secrets:ro
     command: ["uv", "run", "fastapi", "dev", "--host", "0.0.0.0", "--port", "8000", "app/main.py"]
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spatially_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - SERVER_API_BASE_URL=http://backend:8000
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)
   development_plans_label_studio_data:

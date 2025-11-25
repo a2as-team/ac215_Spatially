@@ -1,0 +1,183 @@
+📊 B:
+  - Batch size: 4
+  - Device: cuda
+Epoch 1/5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: 100%|██████████| 88/88 [00:36<00:00,  2.40it/s]
+Average training loss: 1.7818
+Evaluating: 100%|██████████| 10/10 [00:01<00:00,  6.84it/s]
+============================================================
+EPOCH 1/5 VALIDATION RESULTS
+============================================================
+Loss:              1.4783
+Entity F1:         0.0000 ⭐ (seqeval - BEST metric)
+Entity Precision:  0.0000
+Entity Recall:     0.0000
+Macro F1:          0.0000
+Weighted F1:       0.0000
+Token Accuracy:    0.9236
+Per-Entity F1 Scores:
+============================================================
+Epoch 2/5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: 100%|██████████| 88/88 [00:40<00:00,  2.18it/s]
+Average training loss: 1.3811
+Evaluating: 100%|██████████| 10/10 [00:01<00:00,  6.09it/s]
+============================================================
+EPOCH 2/5 VALIDATION RESULTS
+============================================================
+Loss:              1.2144
+Entity F1:         0.0103 ⭐ (seqeval - BEST metric)
+Entity Precision:  0.0057
+Entity Recall:     0.0531
+Macro F1:          0.0063
+Weighted F1:       0.0077
+Token Accuracy:    0.6785
+Per-Entity F1 Scores:
+============================================================
+Epoch 3/5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: 100%|██████████| 88/88 [00:41<00:00,  2.12it/s]
+Average training loss: 0.9750
+Evaluating: 100%|██████████| 10/10 [00:01<00:00,  6.57it/s]
+============================================================
+EPOCH 3/5 VALIDATION RESULTS
+============================================================
+Loss:              1.0558
+Entity F1:         0.0501 ⭐ (seqeval - BEST metric)
+Entity Precision:  0.0328
+Entity Recall:     0.1062
+Macro F1:          0.0292
+Weighted F1:       0.0523
+Token Accuracy:    0.8248
+Per-Entity F1 Scores:
+============================================================
+Epoch 4/5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: 100%|██████████| 88/88 [00:40<00:00,  2.17it/s]
+Average training loss: 0.7537
+Evaluating: 100%|██████████| 10/10 [00:01<00:00,  6.37it/s]
+============================================================
+EPOCH 4/5 VALIDATION RESULTS
+============================================================
+Loss:              0.8159
+Entity F1:         0.0901 ⭐ (seqeval - BEST metric)
+Entity Precision:  0.0604
+Entity Recall:     0.1770
+Macro F1:          0.0543
+Weighted F1:       0.0879
+Token Accuracy:    0.8745
+Per-Entity F1 Scores:
+============================================================
+Epoch 5/5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: 100%|██████████| 88/88 [00:41<00:00,  2.14it/s]
+Average training loss: 0.5907
+Evaluating: 100%|██████████| 10/10 [00:01<00:00,  6.41it/s]
+============================================================
+EPOCH 5/5 VALIDATION RESULTS
+============================================================
+Loss:              0.8698
+Entity F1:         0.0485 ⭐ (seqeval - BEST metric)
+Entity Precision:  0.0293
+Entity Recall:     0.1416
+Macro F1:          0.0360
+Weighted F1:       0.0502
+Token Accuracy:    0.7851
+Per-Entity F1 Scores:
+============================================================
+💾 Saving model to local directory: tmp/ner_model
+✅ Model saved locally
+☁️  Uploading to GCS: gs://spatially-us-central-1-model-training/ner_model_output/model/
+✅ Model uploaded to: gs://spatially-us-central-1-model-training/ner_model_output/model/ner_model
+✅ Tokenizer uploaded to: gs://spatially-us-central-1-model-training/ner_model_output/model/ner_tokenizer
+
+wandb: Adding directory to artifact (./tmp/ner_model)... Done. 2.6s

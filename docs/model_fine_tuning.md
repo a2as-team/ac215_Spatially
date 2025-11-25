@@ -1,227 +1,186 @@
-# Model Fine-Tuning Summary
+# Development Plans NER Model - Training & Deployment Summary
 
-## Overview
+## Location of Training Artifacts
 
-Spatially fine-tunes a Named Entity Recognition (NER) model to extract structured information from development plan documents. The model identifies key entities such as construction details, property usage, zoning districts, and regulatory information.
+### 1. Training Scripts & Configuration Files
 
-## Model Architecture
+**Main Training Script:**
 
-### Base Model
+- `llm/development_plans/NER/package/trainer/train.py` (784 lines)
+  - Main `Trainer` class with full training loop
+  - Handles Label Studio annotation import from GCS
+  - Implements smart text chunking for long documents
+  - Uses class-weighted loss to handle imbalanced entity distribution
 
-- **Model**: `nlpaueb/legal-bert-base-uncased`
-- **Rationale**: Pre-trained on legal domain text, making it well-suited for zoning and development plan documents
-- **Task**: Token classification with BIO tagging scheme
-- **Framework**: HuggingFace Transformers + PyTorch
+**Entry Point:**
 
-### Entity Types
+- `llm/development_plans/NER/package/run/__main__.py`
+  - CLI interface for training with arguments: `--batch-size`, `--epochs`, `--learning-rate`, `--model-name`
 
-The model extracts the following 7 entity types:
+**Configuration Files:**
 
-| Entity                 | Description                                    | Example                                 |
-| ---------------------- | ---------------------------------------------- | --------------------------------------- |
-| `CONSTRUCTION_DETAILS` | Building specifications, dimensions, materials | "5-story building with 20 units"        |
-| `PROPERTY_USAGE`       | Intended use of property                       | "mixed-use residential and commercial"  |
-| `ZONING_DISTRICT`      | Zoning classification                          | "RS-1", "Commercial District"           |
-| `ZONING_RELIEF`        | Variances, special permits, zoning relief      | "variance for height", "special permit" |
-| `ARTICLE_REFERENCE`    | References to zoning articles/ordinances       | "Article 9, Section 3.2"                |
-| `EXPECTED_IMPACT`      | Anticipated effects on neighborhood            | "increased traffic", "shadow impact"    |
-| `LOCATION_CONTEXT`     | Geographic context and location                | "corner of Main St and Oak Ave"         |
+- `llm/development_plans/NER/package/config/labels.py`
+  - Defines 7 base entity types: `CONSTRUCTION_DETAILS`, `PROPERTY_USAGE`, `ZONING_DISTRICT`, `ZONING_RELIEF`, `ARTICLE_REFERENCE`, `EXPECTED_IMPACT`, `LOCATION_CONTEXT`
+  - Generates BIO tags (14 total labels + "O" for outside)
+- `llm/development_plans/NER/pyproject.toml` & `package/setup.py`
 
-## Training Process
+**Vertex AI Job Configuration:**
 
-### Data Collection and Annotation
+- `workflow/jobs/finetune/development_plans_ner.py` - Defines Vertex AI training job
+- `workflow/jobs/run_development_plans_ner.py` - CLI to submit training jobs
+- `workflow/packages/config.py` - Package configuration for GCS upload
 
-1. **Source Data**: Development plan documents (PDFs) collected from municipal websites
-2. **Annotation Tool**: Label Studio with custom NER configuration
-3. **Annotation Format**: JSON export compatible with HuggingFace datasets
-4. **Storage**: Annotations stored in GCS at `gs://{bucket}/development_plans/{city}/ner_training_data/annotations.json`
+**Docker Configuration:**
+
+- `llm/development_plans/NER/Dockerfile` - Local development image
+- `docker-compose.yml` (lines 149-162) - Service definition for `llm_development_plans_trainer`
+
+### 2. Dataset References (Versioned)
+
+**Training Data Location:**
+
+```
+GCS Bucket: spatially-us-east1 (main data bucket)
+Path: gs://{bucket}/development_plans/ner_training_data/
+Format: Label Studio JSON exports (multiple files combined during training)
+```
+
+**Data Versioning Strategy:**
+
+- Annotations are exported from Label Studio as JSON files
+- Files are uploaded to GCS path: `development_plans/ner_training_data/`
+- Each training run pulls all files from this path and combines them
+- Versioning is implicit through GCS object versioning and WandB run tracking
+
+### 3. Experiment Logs
+
+**Weights & Biases (WandB) Tracking:**
+
+- Project: `spatially-development-plans-ner`
+- Dashboard: https://wandb.ai
+- Framework: HuggingFace Transformers
+- Model artifacts logged to WandB + saved to GCS
+
+**Model Storage:**
+
+- GCS Bucket: `spatially-us-central-1-model-training`
+- Path: `gs://{bucket}/ner_model_output/model/`
+- Local: `tmp/ner_model/` and `tmp/ner_tokenizer/`
+
+## Key Results & Model Performance
 
 ### Training Configuration
 
-#### Default Hyperparameters
-
-- **Batch Size**: 8
-- **Epochs**: 3 (configurable)
-- **Learning Rate**: 2e-5 (standard for BERT fine-tuning)
-- **Optimizer**: AdamW
-- **Train/Validation Split**: 90/10
-- **Device**: CUDA (GPU) when available, CPU fallback
-
-#### Training Infrastructure
-
-- **Platform**: Google Cloud Vertex AI
-- **Machine Type**: ??
-- **Accelerator**: ??
-- **Experiment Tracking**: Weights & Biases (W&B)
-
-### Training Scripts and Configuration
-
-#### Main Training Script
-
-Location: `llm/development_plans/NER/package/trainer/train.py`
-
-Key components:
-
-- `Trainer` class: Handles model initialization, data preparation, and training loop
-- Automatic W&B integration for experiment tracking
-- Support for both local JSON files and GCS-stored data
-- Dynamic padding with `DataCollatorForTokenClassification`
-
-#### Job Submission Script
-
-Location: `workflow/jobs/run_development_plans_ner.py`
-
-Usage:
-
-```bash
-python workflow/jobs/run_development_plans_ner.py \
-    --epochs 5 \
-    --batch-size 8 \
-    --learning-rate 2e-5 \
-    --model-name nlpaueb/legal-bert-base-uncased
+```yaml
+Model: nlpaueb/legal-bert-base-uncased
+Batch Size: 4
+Epochs: 5
+Learning Rate: 2e-5 (0.00002)
+Device: CUDA (GPU)
+Optimizer: AdamW
+Loss: Class-weighted CrossEntropyLoss (O=0.1, entities=1.0)
 ```
 
-#### Vertex AI Job Definition
+### Dataset
 
-Location: `workflow/jobs/finetune/development_plans_ner.py`
+```yaml
+Data Source: GCS (development_plans/ner_training_data/)
+Total Examples: 390 (after downsampling)
+Training Set: 351 examples (90%)
+Validation Set: 39 examples (10%)
+Downsampling: 15% of NO_ENTITIES chunks kept
+Labels: 15 classes (7 entity types × 2 BIO tags + "O")
+```
 
-- Packages training code as a Python package
-- Uploads to GCS for Vertex AI execution
-- Configures machine type, accelerators, and environment variables
+### Training Results
 
-### Dataset References
+```yaml
+Training Time: 224 seconds (~3.7 minutes)
+Total Steps: 440
+Final Train Loss: 0.5907
+Final Validation Loss: 0.8698
+Token Val Accuracy: 78.5%
+```
 
-Training data is versioned in GCS:
+### Framework & Infrastructure
 
-- **Path**: `gs://{bucket}/development_plans/{city}/ner_training_data/annotations.json`
-- **Format**: Label Studio JSON export
-- **Versioning**: Managed through GCS object versioning (see Data Versioning documentation)
+```yaml
+Python: 3.10.15
+HuggingFace Transformers: 4.39.3
+WandB: 0.15.11
+Platform: linux-x86_64
+Model Size: ~420MB
+Memory: ~2GB RAM
+Inference: 20-50ms (GPU), 100-200ms (CPU)
+```
 
-### Experiment Logs
+## Deployment Strategy & Integration
 
-All training runs are logged to Weights & Biases:
+### Deployment Architecture
 
-- **Project**: `spatially-development-plans-ner`
-- **Metrics Tracked**:
-  - Training loss (per epoch and per step)
-  - Validation loss
-  - F1 score (per entity type and overall)
-  - Precision and recall
-  - Learning rate schedule
-- **Artifacts**: Model checkpoints saved to GCS
+**Model Serving:**
 
-Example W&B run name: `legal-bert-base-uncased-e3-bs4-20240115-103000`
+```
+GCS Storage → Local Cache → PyTorch Inference (CPU/GPU/MPS)
+```
 
-## Key Results
+**Integration Point:**
 
-### Model Performance
+- `data/processor/development_plans/ner_json_processor.py`
+  - Loads model from GCS on initialization
+  - Caches locally for faster subsequent loads
+  - Uses `NERPredictor` class for inference
 
-(Note: Actual results will vary based on training data size and quality. This section should be updated with real metrics after training runs.)
+### Inference Pipeline
 
-#### Typical Performance Metrics ??????
+**1. Model Loading (data/processor initialization):**
 
-- **Overall F1 Score**: [To be updated with actual results]
-- **Per-Entity F1 Scores**:
-  - CONSTRUCTION_DETAILS: [TBD]
-  - PROPERTY_USAGE: [TBD]
-  - ZONING_DISTRICT: [TBD]
-  - ZONING_RELIEF: [TBD]
-  - ARTICLE_REFERENCE: [TBD]
-  - EXPECTED_IMPACT: [TBD]
-  - LOCATION_CONTEXT: [TBD]
+```python
+from predictor import NERPredictor
 
-#### Training Observations
+predictor = NERPredictor(
+    gcp_storage=storage,
+    gcp_project=project_id,
+    model_gcs_path="ner_model_output/model/ner_model",
+    tokenizer_gcs_path="ner_model_output/model/ner_tokenizer",
+    model_bucket="spatially-us-central-1-model-training",
+    device=None  # Auto-detect (CUDA > MPS > CPU)
+)
+```
 
-- Legal-BERT base model provides strong initialization for legal/regulatory text
-- Fine-tuning improves entity recognition accuracy significantly over baseline
-- Some entity types (e.g., ZONING_DISTRICT) achieve higher accuracy due to consistent formatting
-- Location context extraction benefits from spatial awareness in training data
+**2. Entity Extraction (per chunk):**
 
-### Model Artifacts
+```python
+entities = predictor.predict_entities(text)
+# Returns: [{"text": "...", "label": "ZONING_RELIEF", "start": 42, "end": 58, "confidence": 0.95}, ...]
+```
 
-Trained models are stored in GCS:
+**3. Database Storage:**
 
-- **Path**: `gs://{bucket}/models/development_plans/ner/{run_id}/`
-- **Contents**:
-  - `pytorch_model.bin`: Model weights
-  - `config.json`: Model configuration
-  - `tokenizer_config.json`: Tokenizer configuration
-  - `vocab.txt`: Vocabulary file
+- Extracted entities are stored in `development_plans_embed` table:
+  - `zoning_codes`: Extracted from ZONING_DISTRICT entities
+  - `article_reference`: From ARTICLE_REFERENCE entities
+  - `location_context`: From LOCATION_CONTEXT entities
+  - All entities stored in JSONB metadata for RAG retrieval
 
-## Deployment Strategy
+### Deployment Workflow
 
-### Integration with Label Studio
+```mermaid
+graph LR
+    A[Label Studio<br/>Annotations] --> B[GCS<br/>ner_training_data/]
+    B --> C[Vertex AI<br/>Training Job]
+    C --> D[Trained Model<br/>GCS Storage]
+    D --> E[Processor<br/>Downloads Model]
+    E --> F[NER Extraction<br/>on Dev Plans]
+    F --> G[PostgreSQL<br/>with pgvector]
+    G --> H[RAG<br/>Retrieval]
+```
 
-The fine-tuned model is deployed as a Label Studio ML backend:
+**Steps:**
 
-1. **Model Loading**: `label_studio/label_studio_development_plans_backend/model.py`
-
-   - Loads fine-tuned model from GCS or local directory
-   - Falls back to baseline model if fine-tuned model unavailable
-   - Provides predictions for active learning
-
-2. **Deployment Process**:
-
-   ```bash
-   # 1. Train model (saves to GCS)
-   python workflow/jobs/run_development_plans_ner.py --epochs 3
-
-   # 2. Download model to Label Studio backend
-   gsutil -m cp -r gs://bucket/models/development_plans/ner/{run_id}/* \
-       ./label_studio/label_studio_development_plans_backend/models/
-
-   # 3. Restart Label Studio ML backend
-   docker compose restart label-studio-ml-backend
-   ```
-
-3. **Active Learning**: Model provides predictions during annotation, improving annotation speed and consistency
-
-### API Integration
-
-The fine-tuned model can be integrated into the backend API for real-time entity extraction:
-
-1. **Model Service**: Create a service that loads the fine-tuned model
-2. **API Endpoint**: `/api/v1/development_plans/extract_entities`
-3. **Input**: Development plan text or document
-4. **Output**: Extracted entities with confidence scores
-
-### Performance Considerations
-
-- **Inference Speed**: ~100-200 tokens/second on GPU, ~10-20 tokens/second on CPU
-- **Memory Requirements**: ~500MB for model weights + tokenizer
-- **Batch Processing**: Supports batch inference for multiple documents
-- **Caching**: Consider caching predictions for frequently accessed documents
-
-## Future Improvements
-
-1. **Data Augmentation**: Increase training data diversity through synthetic examples
-2. **Multi-Task Learning**: Joint training with related tasks (e.g., relation extraction)
-3. **Domain Adaptation**: Fine-tune on city-specific development plans
-4. **Model Compression**: Distillation or quantization for faster inference
-5. **Active Learning**: Improve model with human feedback loop
-6. **Evaluation Metrics**: Add more detailed per-entity metrics and confusion matrices
-
-## Reproducibility
-
-To reproduce a training run:
-
-1. **Check W&B Run**: Identify the run ID and hyperparameters
-2. **Retrieve Training Data**: Download annotations from GCS
-   ```bash
-   gsutil cp gs://bucket/development_plans/{city}/ner_training_data/annotations.json ./
-   ```
-3. **Run Training**:
-   ```bash
-   python llm/development_plans/NER/package/run/__main__.py \
-       --json-path ./annotations.json \
-       --epochs 3 \
-       --batch-size 4 \
-       --learning-rate 2e-5
-   ```
-
-## References
-
-- **Base Model**: https://huggingface.co/nlpaueb/legal-bert-base-uncased
-- **HuggingFace Transformers**: https://huggingface.co/docs/transformers
-- **Label Studio**: https://labelstud.io/
-- **Weights & Biases**: https://wandb.ai/
+1. **Annotation:** Label data in Label Studio (http://localhost:8080)
+2. **Export:** Export annotations to GCS (`development_plans/ner_training_data/`)
+3. **Package:** Upload trainer package: `python packages/run.py --packages ner-trainer`
+4. **Train:** Submit Vertex AI job: `python jobs/run_development_plans_ner.py --epochs 5`
+5. **Deploy:** Model automatically available at GCS path
+6. **Process:** Run processor: `python data/processor/development_plans/run.py --city boston`

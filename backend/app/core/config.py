@@ -51,11 +51,36 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "Spatially API"
     SENTRY_DSN: HttpUrl | None = None
-    POSTGRES_SERVER: str = ""
+
+    # Database Configuration (using same env vars as data processing)
+    POSTGRES_SERVER: str = ""  # Fallback for standard naming
     POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str = ""
-    POSTGRES_PASSWORD: str = ""
-    POSTGRES_DB: str = ""
+    POSTGRES_USER: str = ""  # Fallback for standard naming
+    POSTGRES_PASSWORD: str = ""  # Fallback for standard naming
+    POSTGRES_DB: str = ""  # Fallback for standard naming
+
+    # GCP Configuration for Vertex AI (matching data processing env vars)
+    GCP_PROJECT: str = ""
+    GCP_REGION: str = ""
+
+    @model_validator(mode="after")
+    def set_defaults_from_env(self) -> Self:
+        """Load environment variables using same names as data processing code."""
+        import os
+
+        # Use data processing env var names if available
+        # POSTGRE_* names (from data processing) take precedence over POSTGRES_*
+        self.POSTGRES_SERVER = os.environ.get("POSTGRE_HOST") or self.POSTGRES_SERVER
+        self.POSTGRES_USER = os.environ.get("POSTGRE_USER") or self.POSTGRES_USER
+        self.POSTGRES_PASSWORD = os.environ.get("POSTGRE_PASSWORD") or self.POSTGRES_PASSWORD
+        self.POSTGRES_DB = os.environ.get("APP_DB_NAME") or self.POSTGRES_DB
+        self.POSTGRES_PORT = int(os.environ.get("POSTGRE_PORT", self.POSTGRES_PORT))
+
+        # GCP settings from environment
+        self.GCP_PROJECT = os.environ.get("GCP_PROJECT") or self.GCP_PROJECT
+        self.GCP_REGION = os.environ.get("GCP_REGION") or self.GCP_REGION
+
+        return self
 
     # @computed_field  # type: ignore[prop-decorator]
     # @property

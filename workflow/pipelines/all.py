@@ -8,6 +8,7 @@ from pipelines.collector.census import CensusCollectorComponent
 
 # Import all processor components
 from pipelines.processor.development_plans_label_studio import DevelopmentPlansLabelStudioProcessorComponent
+from pipelines.processor.census import CensusProcessorComponent
 
 
 class AllPipeline(BasePipeline):
@@ -25,10 +26,10 @@ class AllPipeline(BasePipeline):
         # Initialize all collector components
         dev_plans_collector = DevelopmentPlansCollectorComponent(city=city).get_component()
         census_collector = CensusCollectorComponent(city=city).get_component()
-    
 
         # Initialize processor components
         dev_plans_label_studio_processor = DevelopmentPlansLabelStudioProcessorComponent(city=city).get_component()
+        census_processor = CensusProcessorComponent(city=city).get_component()
 
         @dsl.pipeline(name=f"{self.pipeline_name}-pipeline-{city}")
         def all_pipeline():
@@ -46,14 +47,22 @@ class AllPipeline(BasePipeline):
                 .set_cpu_limit("1000m")  # API calls, moderate resources
                 .set_memory_limit("4G")
             )
-            
-            # Processor runs after development plans collector completes
+
+            # Processors run after their respective collectors complete
             dev_plans_processor_task = (
                 dev_plans_label_studio_processor()
                 .set_display_name(f"processor-development-plans-label-studio-{city}")
                 .set_cpu_limit("1000m")  # Data processing, moderate resources
                 .set_memory_limit("4G")
                 .after(dev_plans_collector_task)  # Wait for collector to finish
+            )
+
+            census_processor_task = (
+                census_processor()
+                .set_display_name(f"processor-census-{city}")
+                .set_cpu_limit("2000m")  # Database operations, more resources
+                .set_memory_limit("8G")
+                .after(census_collector_task)  # Wait for collector to finish
             )
 
         return all_pipeline

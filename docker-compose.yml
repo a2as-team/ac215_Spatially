@@ -1,5 +1,4 @@
-version: '3.8'
-
+version: "3.8"
 
 services:
   collector:
@@ -10,8 +9,8 @@ services:
       additional_contexts:
         shared_config: ./shared_config
     container_name: spatially_collector
-    stdin_open: true  # Keep stdin open (docker run -i)
-    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-aws-postgres-db.env
@@ -22,7 +21,7 @@ services:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/collector:/app # This will mount our ./data/collector as /app in the container
-  
+
   processor:
     platform: linux/amd64
     build:
@@ -31,8 +30,8 @@ services:
       additional_contexts:
         shared_config: ./shared_config
     container_name: spatially_processor
-    stdin_open: true  # Keep stdin open (docker run -i)
-    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-aws-postgres-db.env
@@ -70,7 +69,6 @@ services:
     networks:
       - development_plans_label_studio_network
     command: label-studio --host 0.0.0.0
-  
 
   label-studio-ml-backend:
     container_name: label-studio-ml-backend
@@ -131,7 +129,7 @@ services:
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
-      - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
+      # - ./secrets/ac215-spatially-finetune.env # this is for the finetune job (optional)
       # - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
@@ -160,6 +158,24 @@ services:
     volumes:
       - ./llm/development_plans/NER:/app
       - ./secrets:/secrets:ro
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spatially_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
+    environment:
+      PYTHONPATH: /app
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
+    volumes:
+      - ./backend:/app
+      - ./secrets:/secrets:ro
+    command: ["uv", "run", "fastapi", "dev", "--host", "0.0.0.0", "--port", "8000", "app/main.py"]
 
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)

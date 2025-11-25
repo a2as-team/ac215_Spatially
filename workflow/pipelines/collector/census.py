@@ -32,7 +32,7 @@ class CensusCollectorComponent(BaseComponent):
                 f"export GCS_BUCKET_NAME={self.GCS_BUCKET_NAME} && "
                 f"export GCP_PROJECT={gcp_project} && "
                 f"/home/app/.venv/bin/python /app/census/run.py "
-                f"--city '{city}' --type population --level tract --year 2020"
+                f"--city '{city}'"
             )
             container_spec = dsl.ContainerSpec(
                 image=RegistryConfig.data_collector_image(gcp_region, gcp_project)["image_uri"],

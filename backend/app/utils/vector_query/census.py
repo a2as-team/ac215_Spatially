@@ -17,19 +17,16 @@ class CensusQuery:
         self._init_text2sql_client()
 
     def _init_text2sql_client(self):
-        """Initialize text-to-SQL client."""
-        gcp_project = os.environ.get("GCP_PROJECT")
-        gcp_region = os.environ.get("GCP_REGION")
-        if not gcp_project or not gcp_region:
-            raise ValueError("GCP_PROJECT and GCP_REGION must be set")
-        self.text2sql = CensusText2SQL(
-            gcp_project=gcp_project, gcp_region=gcp_region
-        )
+        """Initialize text-to-SQL client using Together AI (Llama model)."""
+        # Optionally allow model name to be configured via environment variable
+        model_name = os.environ.get("TEXT2SQL_MODEL", "meta-llama/Llama-3.3-70B-Instruct-Turbo")
+        self.text2sql = CensusText2SQL(model_name=model_name)
 
     def query(
         self,
         user_query: str,
         city: Optional[str] = None,
+        year: Optional[int] = None,
         limit: int = 100,
     ) -> Dict[str, Any]:
         """
@@ -38,6 +35,7 @@ class CensusQuery:
         Args:
             user_query: Natural language question about census data
             city: Optional city name to filter results by location
+            year: Optional census year to scope the query
             limit: Maximum number of results to return (default: 100)
 
         Returns:
@@ -53,7 +51,7 @@ class CensusQuery:
         """
         try:
             # Generate SQL from natural language query
-            sql_query = self.text2sql.generate_sql(user_query)
+            sql_query = self.text2sql.generate_sql(user_query, year=year)
 
             # If city is provided, try to add city-based filtering
             # This is a simple approach - in production, you might want more sophisticated
@@ -105,6 +103,7 @@ class CensusQuery:
         user_query: str,
         latitude: float,
         longitude: float,
+        year: Optional[int] = None,
         limit: int = 100,
     ) -> Dict[str, Any]:
         """
@@ -114,6 +113,7 @@ class CensusQuery:
             user_query: Natural language question about census data
             latitude: Latitude of the location
             longitude: Longitude of the location
+            year: Optional census year to scope the query
             limit: Maximum number of results to return (default: 100)
 
         Returns:
@@ -121,7 +121,7 @@ class CensusQuery:
         """
         try:
             # Generate base SQL query
-            sql_query = self.text2sql.generate_sql(user_query)
+            sql_query = self.text2sql.generate_sql(user_query, year=year)
 
             # Add spatial filtering to find census tracts containing the point
             # This modifies the query to include a spatial join

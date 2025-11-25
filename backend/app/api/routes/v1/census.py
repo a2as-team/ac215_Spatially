@@ -12,6 +12,12 @@ def search_census(
     city: Optional[str] = Query(None, description="Optional: City name to filter results (e.g., 'boston', 'cambridge')"),
     latitude: Optional[float] = Query(None, description="Optional: Latitude to search at specific location", ge=-90, le=90),
     longitude: Optional[float] = Query(None, description="Optional: Longitude to search at specific location", ge=-180, le=180),
+    year: Optional[int] = Query(
+        None,
+        ge=2000,
+        le=2100,
+        description="Optional: Census year to focus on (e.g., 2020)",
+    ),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results to return"),
 ) -> Dict[str, Any]:
     """
@@ -45,6 +51,7 @@ def search_census(
         city: Optional city name to filter results
         latitude: Optional latitude for location-based search
         longitude: Optional longitude for location-based search
+        year: Optional census year to scope the results
         limit: Maximum number of results to return (1-1000, default: 100)
 
     Returns:
@@ -65,6 +72,7 @@ def search_census(
                 user_query=question,
                 latitude=latitude,
                 longitude=longitude,
+                year=year,
                 limit=limit,
             )
             return results
@@ -73,6 +81,7 @@ def search_census(
         results = query_client.query(
             user_query=question,
             city=city,
+            year=year,
             limit=limit,
         )
 

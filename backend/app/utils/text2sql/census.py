@@ -1,32 +1,42 @@
 from typing import Optional
 import os
 import logging
-from google import genai
-from google.genai import types, errors
 import time
+from langchain_together import ChatTogether
 
 
 class CensusText2SQL:
     """
     Converts natural language queries about census data into SQL queries.
-    Uses Google's Gemini model to generate SQL from natural language.
+    Uses LangChain with Together AI (Llama model) for text-to-SQL generation.
     """
 
-    def __init__(self, gcp_project: str, gcp_region: str):
-        self.gcp_project = gcp_project
-        self.gcp_region = gcp_region
+    def __init__(self, model_name: Optional[str] = None):
+        """
+        Initialize Together AI LLM client for text-to-SQL generation.
+
+        Args:
+            model_name: Optional model name (default: meta-llama/Llama-3.3-70B-Instruct-Turbo)
+        """
         self.logger = logging.getLogger(__name__)
-        if not self.gcp_project or not self.gcp_region:
-            raise ValueError("GCP_PROJECT and GCP_REGION must be set")
+        self.model_name = model_name or "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         self._init_llm_client()
 
     def _init_llm_client(self):
-        """Initialize Google LLM client for text-to-SQL generation."""
-        self.llm_client = genai.Client(
-            vertexai=True, project=self.gcp_project, location=self.gcp_region
+        """Initialize Together AI LLM client."""
+        together_api_key = os.environ.get("TOGETHER_API_KEY")
+        if not together_api_key:
+            raise ValueError(
+                "TOGETHER_API_KEY environment variable must be set. "
+                "Add it to secrets/ac215-spatially-project.env"
+            )
+
+        self.llm = ChatTogether(
+            model=self.model_name,
+            temperature=0,  # Lower temperature for more deterministic SQL
+            api_key=together_api_key,
         )
-        # Use Gemini model for text-to-SQL
-        self.model = "gemini-1.5-flash"
+        self.logger.info(f"Initialized Together AI LLM with model: {self.model_name}")
 
     def _get_schema_context(self) -> str:
         """
@@ -37,7 +47,7 @@ class CensusText2SQL:
         Census Database Schema:
         
         Tables:
-        1. census_tracts
+        1. census_tract
            - geoid (VARCHAR, PRIMARY KEY): Census tract geographic identifier
            - geom (GEOMETRY): PostGIS geometry of the tract
            - created_at (TIMESTAMP)
@@ -45,42 +55,42 @@ class CensusText2SQL:
         2. acs_table
            - acs_table_id (STRING, PRIMARY KEY): Table identifier (e.g., 'DP04', 'S1901')
            - title (STRING): Table title
-           - topic (STRING): Topic category
+           - topic (ENUM): Topic category (DEMOGRAPHICS, HOUSEHOLD_COMPOSITION, HOUSING_STOCK, etc.)
            - table_type (STRING): Type of table
            - description (STRING): Table description
         
-        3. acs_release
-           - acs_release_id (STRING, PRIMARY KEY): Release identifier
-           - acs_table_id (STRING, FOREIGN KEY): References acs_table.acs_table_id
-           - year (INT): Year of the data
-           - dataset (STRING): Dataset name (e.g., 'acs/acs5/profile')
-           - vintage (STRING): Data vintage
-        
-        4. acs_variable
+        3. acs_variable
            - variable_id (STRING, PRIMARY KEY): Variable identifier
            - acs_table_id (STRING, FOREIGN KEY): References acs_table.acs_table_id
            - name (STRING): Variable name
            - concept (STRING): Variable concept/description
         
-        5. acs_value
+        4. acs_value
            - acs_value_id (INT, PRIMARY KEY): Value identifier
-           - geoid (VARCHAR, FOREIGN KEY): References census_tracts.geoid
-           - acs_release_id (STRING, FOREIGN KEY): References acs_release.acs_release_id
+           - geoid (VARCHAR, FOREIGN KEY): References census_tract.geoid
            - variable_id (STRING, FOREIGN KEY): References acs_variable.variable_id
+           - year (INT): Survey year
            - value (FLOAT): The actual census value
            - ingested_at (DATETIME): When the data was ingested
         
+        Alias Conventions (always use these exact aliases):
+        - acs_value AS av
+        - acs_variable AS avar
+        - acs_table AS at
+        - census_tract AS ct
+        
         Common Query Patterns:
-        - To get census values: JOIN acs_value with acs_variable, acs_release, and census_tracts
-        - To filter by year: Use acs_release.year
+        - To get census values: JOIN acs_value with acs_variable and census_tract
+        - To filter by year: Use acs_value.year
         - To filter by table: Use acs_table.acs_table_id or acs_variable.acs_table_id
-        - To filter by location: Use census_tracts.geoid or spatial queries with geom
+        - To filter by location: Use census_tract.geoid or spatial queries with geom
         - Always use proper JOINs to connect related tables
         """
 
     def generate_sql(
         self,
         user_query: str,
+        year: Optional[int] = None,
         max_retries: int = 3,
         retry_delay: int = 2,
     ) -> str:
@@ -100,45 +110,33 @@ class CensusText2SQL:
         """
         schema_context = self._get_schema_context()
 
-        prompt = f"""You are a SQL expert. Convert the following natural language query about census data into a valid PostgreSQL SQL query.
+        # Format prompt similar to the example provided
+        # Include year context if provided
+        question_with_year = (
+            f"{user_query} (Focus on ACS year {year})" if year is not None else user_query
+        )
 
+        prompt = f"""Based on the table schema below, write a SQL query that would answer the user's question; just return the SQL query and nothing else.
+
+Schema:
 {schema_context}
 
-Rules:
-1. Generate ONLY the SQL query, no explanations or markdown formatting
-2. Use proper JOINs to connect related tables
-3. Use meaningful column aliases for clarity
-4. Include relevant filters (e.g., year, table type) when appropriate
-5. Use proper SQL syntax for PostgreSQL
-6. For spatial queries, use PostGIS functions like ST_Contains, ST_Intersects
-7. Return results in a readable format with appropriate column names
-
-User Query: {user_query}
+Question: {question_with_year}
 
 SQL Query:"""
 
         retry_count = 0
         while retry_count <= max_retries:
             try:
-                # Generate content using the model
-                # The API pattern matches embed_content, so we use generate_content similarly
-                response = self.llm_client.models.generate_content(
-                    model=self.model,
-                    contents=[prompt],  # Contents should be a list
-                    config=types.GenerateContentConfig(
-                        temperature=0.1,  # Lower temperature for more deterministic SQL
-                        max_output_tokens=2048,
-                    ),
-                )
-
+                # Generate SQL using LangChain's invoke method
+                response = self.llm.invoke(prompt)
+                
                 # Extract SQL from response
-                # Response structure may vary, try common patterns
-                if hasattr(response, 'text'):
-                    sql_query = response.text.strip()
-                elif hasattr(response, 'candidates') and response.candidates:
-                    sql_query = response.candidates[0].content.parts[0].text.strip()
+                # LangChain ChatTogether returns a message with content attribute
+                if hasattr(response, 'content'):
+                    sql_query = response.content.strip()
                 else:
-                    # Fallback: convert response to string
+                    # Fallback: convert to string
                     sql_query = str(response).strip()
 
                 # Remove markdown code blocks if present
@@ -150,10 +148,13 @@ SQL Query:"""
                     sql_query = sql_query[:-3]
                 sql_query = sql_query.strip()
 
+                if not sql_query:
+                    raise ValueError("Generated SQL query is empty")
+
                 self.logger.info(f"Generated SQL query: {sql_query[:200]}...")
                 return sql_query
 
-            except errors.APIError as e:
+            except Exception as e:
                 retry_count += 1
                 if retry_count > max_retries:
                     error_msg = (
@@ -166,14 +167,9 @@ SQL Query:"""
                 # Exponential backoff
                 wait_time = retry_delay * (2 ** (retry_count - 1))
                 self.logger.warning(
-                    f"API error (code: {e.code}): {e.message}. "
+                    f"Error generating SQL: {str(e)}. "
                     f"Retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})..."
                 )
                 time.sleep(wait_time)
-            except Exception as e:
-                error_msg = f"Unexpected error generating SQL: {str(e)}"
-                self.logger.error(error_msg)
-                raise ValueError(error_msg)
 
         raise ValueError("Failed to generate SQL query")
-

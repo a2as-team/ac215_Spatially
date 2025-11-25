@@ -1,4 +1,12 @@
 import os
+import sys
+from pathlib import Path
+
+# Add project root to path for shared_config imports
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from shared_config.cities import City
 
@@ -12,17 +20,20 @@ from pipelines.processor.development_plans_label_studio import (
     DevelopmentPlansLabelStudioProcessorComponent,
 )
 from pipelines.processor.zoning_ordinance import ZoningOrdinanceProcessorComponent
+from pipelines.processor.census import CensusProcessorComponent
 from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
 
 # Import full pipelines
 from pipelines.all import AllPipeline
 from pipelines.zoning_ordinance import ZoningOrdinancePipeline
+from pipelines.census import CensusPipeline
 
 # Map to classes
 available = {
     # Full pipelines
     "all": AllPipeline,
     "zoning-ordinance": ZoningOrdinancePipeline,
+    "census": CensusPipeline,
     # Individual collectors
     "collector-development-plans": DevelopmentPlansCollectorComponent,
     "collector-census": CensusCollectorComponent,
@@ -31,6 +42,7 @@ available = {
     # Individual processors
     "processor-development-plans-label-studio": DevelopmentPlansLabelStudioProcessorComponent,
     "processor-zoning-ordinance": ZoningOrdinanceProcessorComponent,
+    "processor-census": CensusProcessorComponent,
 }
 
 
@@ -45,6 +57,7 @@ def run(city: str, pipeline_type: str = "all"):
             Pipelines (multiple components):
             - "all": All collectors + processors (default)
             - "zoning-ordinance": Zoning ordinance & maps collector + processor (DOCX→MD, chunk, embed, save to PostgreSQL)
+            - "census": Census collector + processor (API→CSV→Database)
 
             Individual Components:
             - "collector-development-plans": Just development plans collector
@@ -53,6 +66,7 @@ def run(city: str, pipeline_type: str = "all"):
             - "collector-zoning-maps": Just zoning maps collector
             - "processor-development-plans-label-studio": Just development plans processor
             - "processor-zoning-ordinance": Zoning ordinance processor (DOCX→MD, chunk, embed, save to PostgreSQL)
+            - "processor-census": Census processor (CSV→Database)
     """
     print(f"Running {pipeline_type} for {city}...")
 

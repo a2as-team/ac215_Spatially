@@ -5,13 +5,29 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 ## Database Schema
 
 ```mermaid
+%% Enum: topic
+%% Values:
+%% - DEMOGRAPHICS
+%% - HOUSEHOLD_COMPOSITION
+%% - HOUSING_STOCK
+%% - HOUSING_FINANCIALS
+%% - HOUSING_TENURE_OCCUPANCY
+%% - HOUSING_COST_BURDEN
+%% - HOUSING_AGE_CONDITION
+%% - VACANCY
+%% - INCOME
+%% - POVERTY
+%% - EMPLOYMENT
+%% - INDUSTRY
+%% - TRANSPORTATION
+%% - GEOGRAPHIC_MOBILITY
+%% - EDUCATION
+
 erDiagram
     cities ||--o{ zoning_maps : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
     CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
-    ACS_TABLE ||--o{ ACS_RELEASE : "defines releases"
     ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
-    ACS_RELEASE ||--o{ ACS_VALUE : "provides release context"
     ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
 
     cities {
@@ -32,17 +48,8 @@ erDiagram
     ACS_TABLE {
         string acs_table_id PK
         string title
-        string topic
-        string table_type
+        topic topic
         string description
-    }
-
-    ACS_RELEASE {
-        string acs_release_id PK
-        string acs_table_id FK
-        int year
-        string dataset
-        string vintage
     }
 
     ACS_VARIABLE {
@@ -55,10 +62,9 @@ erDiagram
     ACS_VALUE {
         int acs_value_id PK
         string geoid FK
-        string acs_release_id FK
         string variable_id FK
+        int year
         float value
-        datetime ingested_at
     }
 
     zoning_maps {

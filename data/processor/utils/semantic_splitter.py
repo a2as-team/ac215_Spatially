@@ -151,7 +151,7 @@ class SemanticChunker(BaseDocumentTransformer):
         sentences = combine_sentences(_sentences, self.buffer_size)
 
         embeddings = self.embedding_function(
-            [x["combined_sentence"] for x in sentences], batch_size=10
+            [x["combined_sentence"] for x in sentences], batch_size=5
         )
         for i, sentence in enumerate(sentences):
             sentence["combined_sentence_embedding"] = embeddings[i]

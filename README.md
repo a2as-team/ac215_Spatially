@@ -26,6 +26,7 @@ This is a project that will leverage LLM to create a spatially intelligent agent
 erDiagram
     cities ||--o{ zoning_maps : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
+    cities ||--o{ development_plans_embed : "has many"
     CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
     ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
     ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
@@ -90,7 +91,20 @@ erDiagram
         timestamp created_at
     }
 
-
+    development_plans_embed {
+        int id PK
+        int city_id FK "References cities(id)"
+        text chunk_hash "SHA256 hash for deduplication (unique)"
+        text text_chunk "Development plans text chunk"
+        varchar project_name "e.g. 100 Hood Park Drive"
+        varchar file_name "e.g. Letter_of_Intent__LOI"
+        text[] zoning_codes "Zoning codes mentioned in text (extracted by the NER model)"
+        vector(768) embedding "Embedding vector for semantic search"
+        text[] article_reference "Articles referenced by the text (extracted by the NER model)"
+        text location_context "Contextual details about a site (extracted by the NER model)"
+        jsonb metadata "Flexible metadata (source_url, land_area, etc.)"
+        timestamp created_at
+    }
 ```
 
 > **Note:** The `census_data` table schema is a placeholder. Please define the appropriate fields based on the census data requirements (e.g., demographics, housing statistics, economic indicators, etc.).

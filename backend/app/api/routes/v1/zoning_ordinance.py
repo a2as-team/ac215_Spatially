@@ -158,3 +158,34 @@ def get_zoning_at_location(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/{city}")
+def get_zoning_map(city: str):
+    """
+    Get all zoning data for a city.
+
+    Returns all zoning polygons with their geometries for visualization on a map.
+
+    Args:
+        city: City name
+
+    Returns:
+        Dictionary with:
+        - city: The city name
+        - zoning_data: List of all zoning areas with geometries
+        - count: Number of zoning areas
+    """
+    try:
+        zoning_query = ZoningMapSpatialQuery(db_name=settings.POSTGRES_DB)
+        zoning_data = zoning_query.get_all_zoning_for_city(city)
+
+        return {
+            "city": city,
+            "zoning_data": zoning_data,
+            "count": len(zoning_data)
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve zoning data: {str(e)}")

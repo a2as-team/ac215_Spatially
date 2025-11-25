@@ -2,6 +2,20 @@
 
 This is a project that will leverage LLM to create a spatially intelligent agent that can help real estate decisions.
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs/) directory:
+
+- **[Application Design Document](./docs/application_design.md)**: System architecture, technical design, and code organization
+- **[Data Versioning](./docs/data_versioning.md)**: GCS-based data versioning methodology and usage instructions
+- **[Model Fine-Tuning](./docs/model_fine_tuning.md)**: NER model training process, results, and deployment strategy
+
+## Quick Links
+
+- [Backend API README](./backend/README.md): Setup and usage instructions for the FastAPI backend
+- [Census Data Collector README](./data/collector/census/README.md): Census data collection documentation
+- [Zoning Ordinance Collector README](./data/collector/zoning_ordinance/README.md): Zoning ordinance collection documentation
+
 ## Database Schema
 
 ```mermaid

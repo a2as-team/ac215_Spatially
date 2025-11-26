@@ -2,7 +2,7 @@
 
 ## Overview
 
-Spatially uses **Google Cloud Storage (GCS)** as the primary data versioning system for large datasets, including zoning ordinances, zoning maps, census tract boundaries, and development plans. This approach provides scalable, cost-effective storage with built-in versioning capabilities and easy integration with our data processing pipelines.
+Spatially uses **Google Cloud Storage (GCS)** as the primary data storage system for large datasets, including census ACS table data, zoning ordinances, zoning maps, census tract boundaries, and development plans. This approach provides scalable, cost-effective storage with easy integration with our data processing pipelines.
 
 ## Methodology
 
@@ -10,7 +10,7 @@ Spatially uses **Google Cloud Storage (GCS)** as the primary data versioning sys
 
 We chose GCS over alternatives like DVC (Data Version Control) for the following reasons:
 
-1. **Scale**: Zoning documents, maps, and development plans are large (hundreds of MBs to GBs), making Git-based solutions impractical
+1. **Scale**: Census data, zoning documents, maps, and development plans are large (hundreds of MBs to GBs), making Git-based solutions impractical
 2. **Integration**: Our data processing pipelines already run on Google Cloud Platform (Vertex AI), making GCS a natural fit
 3. **Accessibility**: GCS integrates seamlessly with our collectors, processors, and training jobs
 4. **Versioning**: GCS object versioning and organized directory structures enable data lineage tracking
@@ -23,11 +23,12 @@ Data in GCS is organized by data type and city, following a consistent directory
 gs://{bucket-name}/
 ├── census/
 │   └── {city}/
-│       └── {table_code}_{year}.csv
+│       ├── {city}_{state}_{table_code}_{year}.csv
+│       └── manifest.csv
 │
 ├── zoning_ordinance/
 │   └── {city}/
-│       ├── {document_name}.xlsx
+│       ├── {document_name}.docx
 │       ├── {document_name}.pdf
 │       └── metadata.json
 │
@@ -46,8 +47,9 @@ gs://{bucket-name}/
     └── {city}/
         ├── {project_name}/
         │   └── {document_type}.pdf
+        │   └── {document_type}.json
         └── ner_training_data/
-            └── annotations.json
+            └── {annotations}.json (label studio json export)
 ```
 
 ### Versioning Strategy
@@ -56,38 +58,48 @@ gs://{bucket-name}/
 
 Each data collection run creates files in city-specific directories. When data is updated:
 
-- New files are uploaded with the same name (overwriting old versions)
-- Metadata files track collection timestamps and source URLs
+- Metadata files track source URLs (zoning ordinance)
+- Manifest files track collected tables and years (census data)
 - Historical versions can be preserved by using dated subdirectories if needed
 
 #### 2. Metadata Tracking
 
-Some collectors generate a `metadata.json` file that includes basic collection information:
+Different collectors use different metadata approaches:
 
-- **Zoning Ordinance**: Stores `resource_url` (source URL of the zoning ordinance)
+- **Zoning Ordinance**: Generates `metadata.json` file storing `resource_url` (source URL of the zoning ordinance)
+- **Census Data**: Generates `manifest.csv` file listing all collected tables with city, state, table code, year, and row counts
 - **Development Plans**: Uses file hashes (MD5) for duplicate detection during upload, but not stored in metadata
 
-Current metadata structure for zoning ordinance:
+Census manifest structure (CSV):
 
-```json
-{
-  "resource_url": "https://library.municode.com/ma/boston/codes/redevelopment_authority"
-}
+```csv
+city,state,table,year,rows
+boston,ma,DP04,2023,1234
+boston,ma,S1901,2023,567
+...
 ```
-
-**Note**: The current implementation stores minimal metadata. Enhanced versioning features (collection timestamps, file hashes, file lists) are not yet implemented but could be added for better data lineage tracking.
 
 #### 3. Census Data Versioning
 
-Census data is versioned by:
+Census ACS table data is versioned by:
 
-- **Year**: Each ACS release year is stored separately
+- **City**: Each city has its own directory
+- **Year**: Each ACS release year is stored separately (2009-2023)
 - **Table**: Each ACS table (DP04, S1901, etc.) is stored as a separate file
-- **State**: Data is organized by state FIPS code
+- **State**: State abbreviation is included in filename
 
-File naming convention: `{CITY}_{STATE}_{TABLE_CODE}_{YEAR}.csv`
+File naming convention: `{city}_{state}_{table_code}_{year}.csv`
 
-Example: `25_DP04_2023.csv` (Massachusetts, Housing Characteristics, 2023)
+Example: `boston_ma_DP04_2023.csv` (Boston, Massachusetts, Housing Characteristics, 2023)
+
+GCS storage path: `census/{city}/{city}_{state}_{table_code}_{year}.csv`
+
+The collector also generates a `manifest.csv` file listing all collected tables:
+
+- GCS path: `census/{city}/manifest.csv`
+- Contains: city, state, table, year, and row count for each file
+
+**Note**: Files are saved both locally (`data/collector/census/downloads/`) and uploaded to GCS. If GCS upload fails, files remain available locally.
 
 ## Implementation
 
@@ -105,14 +117,14 @@ storage = GCPStorage(
 
 # Upload file
 storage.upload_file(
-    file_path="local_file.xlsx",
-    destination_path="zoning_ordinance/boston/article_1.xlsx"
+    file_path="local_file.docx",
+    destination_path="zoning_ordinance/boston/article_1.docx"
 )
 
 # Download file
 storage.download_file(
-    source_path="zoning_ordinance/boston/article_1.xlsx",
-    destination_path="local_file.xlsx"
+    source_path="zoning_ordinance/boston/article_1.docx",
+    destination_path="local_file.docx"
 )
 
 # List files
@@ -164,13 +176,49 @@ storage = GCPStorage(
     gcp_project=os.environ.get("GCP_PROJECT"),
     bucket_name=os.environ.get("GCS_BUCKET_NAME")
 )
+# Example 1: List files in a directory
+city = "boston"
+files = storage.list_files(prefix=f"zoning_ordinance/{city}/", recursive=True)
+print(f"Found {len(files)} files for {city}")
+
+# Example 2: Download a specific file
+storage.download_file(
+    source_path="zoning_ordinance/boston/article_1.docx",
+    destination_path="./local/article_1.docx"
+)
+
+# Example 3: Download an entire directory
+storage.download_dir(
+    source_path="zoning_ordinance/boston/",
+    destination_path="./local/zoning_ordinance/boston/"
+)
+
+# Example 4: List blob objects and filter by file type
 blobs = storage.list_blobs(prefix="zoning_ordinance/boston/")
 for blob in blobs:
     if blob.name.endswith(".docx"):
         print(f"Found DOCX file: {blob.name}")
         # Download using blob object
         storage.download_blob_to_file(blob.name, f"./local/{os.path.basename(blob.name)}")
+
+# Example 5: List directories (cities)
+cities = storage.list_dirs(prefix="zoning_ordinance/")
+print(f"Available cities: {cities}")
+
+# Example 6: Download census data
+storage.download_file(
+    source_path="census/boston/boston_ma_DP04_2023.csv",
+    destination_path="./local/boston_ma_DP04_2023.csv"
+)
+
+# Example 7: Download census manifest
+storage.download_file(
+    source_path="census/boston/manifest.csv",
+    destination_path="./local/manifest.csv"
+)
 ```
+
+**Note**: Census ACS table data is stored in GCS at `census/{city}/` with files named `{city}_{state}_{table_code}_{year}.csv`. The collector also generates a `manifest.csv` file listing all collected tables. Files are saved both locally (`data/collector/census/downloads/`) and uploaded to GCS. If GCS credentials are not configured, files remain available locally only.
 
 ## Version History
 
@@ -208,14 +256,14 @@ client = storage.Client(project=os.environ.get("GCP_PROJECT"))
 bucket = client.bucket(os.environ.get("GCS_BUCKET_NAME"))
 
 # List all versions of a specific file
-blob_name = "zoning_ordinance/boston/article_1.xlsx"
+blob_name = "zoning_ordinance/boston/article_1.docx"
 all_versions = list(bucket.list_blobs(prefix=blob_name, versions=True))
 print(f"Found {len(all_versions)} versions of {blob_name}")
 
 # Download a specific version by generation number
 target_generation = 1234567890000000  # Example generation number
 blob_with_version = bucket.blob(blob_name, generation=target_generation)
-blob_with_version.download_to_filename("./local/article_1_v1.xlsx")
+blob_with_version.download_to_filename("./local/article_1_v1.docx")
 ```
 
 **Alternative: Accessing GCS Object Timestamps**
@@ -232,7 +280,7 @@ storage = GCPStorage(
 )
 
 # Get blob metadata including timestamps
-blob = storage.get_blob("zoning_ordinance/boston/article_1.xlsx")
+blob = storage.get_blob("zoning_ordinance/boston/article_1.docx")
 if blob:
     blob.reload()  # Fetch metadata
     print(f"Created: {blob.time_created}")
@@ -241,57 +289,10 @@ if blob:
 
 ## Reproducibility
 
-### Data Collection Reproducibility
+### Data Processing Reproducibility
 
-To reproduce a data collection run:
-
-1. **Check Git Commit**: Identify the commit hash of the collector code
-
-   ```bash
-   git log --oneline data/collector/census/
-   ```
-
-2. **Check Metadata**: Review the metadata file for collection parameters
-
-   ```python
-   import json
-   from utils.gcp_storage import GCPStorage
-   import os
-
-   storage = GCPStorage(
-       gcp_project=os.environ.get("GCP_PROJECT"),
-       bucket_name=os.environ.get("GCS_BUCKET_NAME")
-   )
-
-   # Download and read metadata
-   storage.download_file(
-       source_path="zoning_ordinance/boston/metadata.json",
-       destination_path="./tmp/metadata.json"
-   )
-   with open("./tmp/metadata.json", "r") as f:
-       metadata = json.load(f)
-   print(f"Resource URL: {metadata.get('resource_url')}")
-
-   # Note: Collection timestamps are not currently stored in metadata.
-   # Check GCS blob timestamps or Git commit history for collection dates.
-
-   # For census tract data, list files
-   census_tract_files = storage.list_files(prefix="census_tracts/boston/", recursive=True)
-   print(f"Census tract files: {census_tract_files}")
-   ```
-
-3. **Re-run Collector**: Execute the collector with the same parameters
-   ```bash
-   python data/collector/zoning_ordinance/run.py --city boston
-   ```
-
-### Processing Reproducibility
-
-Processing steps are reproducible because:
-
-- Processors download data from GCS (versioned source)
+- Data Processors download data from GCS (organized by city and data type)
 - Processing code is versioned in Git
-- Processing parameters can be specified via command-line arguments
 
 ### Model Training Reproducibility
 
@@ -300,4 +301,4 @@ Model training uses versioned data from GCS:
 1. Training data is stored in GCS: `gs://bucket/development_plans/{city}/ner_training_data`
 2. Training scripts are versioned in Git
 3. Training parameters are logged to Weights & Biases
-4. Model checkpoints are saved to GCS with versioned paths
+4. Model checkpoints are saved to GCS with timestamps

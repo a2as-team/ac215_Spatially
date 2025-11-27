@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+# Deployment will take care of creating and updating the pods
+kind: Deployment
+# This metadata is metadata on the deployment itself, not the pods
+metadata:
+  # We can later do kubectl get deployment spatially-backend to get this specific deployment
+  name: spatially-backend
+  labels:
+    # any Pods with this label will be managed by this Deployment
+    app: spatially-backend
+
+spec:
+  # This spec is for the deployment itself, not the pods
+  # It tells how the deployment behaves and how many replicas to run
+  # This deployment should keep 2 pods running at all times
+  replicas: 2
+  # The replicas can be scaled with this command
+  # `kubectl scale deployment spatially-backend --replicas=3`
+  # Selector is used to tell Kubernetes which pods to manage with this deployment
+  selector:
+    matchLabels:
+      app: spatially-backend
+  # This tempmlate is for the pods that will be managed by this deployment
+  # any pod that is created by this deployment will have the labels specified in the template
+  template:
+    metadata:
+      labels:
+        app: spatially-backend
+    # Now this is the spec for the pods that will be managed by this deployment
+    spec:
+      containers:
+      # You can have multiple containers inside a single pod,
+      # however, it is common to have only one container per pod
+        - name: backend-container
+          image: ${BACKEND_IMAGE}
+          ports:
+            - containerPort: 8000
+          # =============================
+          #   HEALTH CHECK PROBES
+          # =============================
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /readiness
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # =============================
+          #   RESOURCE LIMITS (required for HPA)
+          # =============================
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 CPU cores (minimum guaranteed)
+              memory: "256Mi"  # 256 MB RAM (minimum guaranteed)
+            limits:
+              cpu: "500m"      # 0.5 CPU cores (maximum allowed)
+              memory: "512Mi"  # 512 MB RAM (maximum allowed)
+
+          envFrom:
+            - secretRef:
+                name: spatially-gcp-secrets
+            - secretRef:
+                name: spatially-db-secrets

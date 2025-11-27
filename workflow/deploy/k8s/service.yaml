@@ -1,0 +1,26 @@
+apiVersion: v1
+# Service is used to expose the deployment to the outside world
+# It will have a singel static IP address that outside world can use to access the deployment
+# The service will manage the traffic to the pods
+# Essentially, it is a load balancer for the pods
+kind: Service
+metadata:
+  # Any pods with matching labels will be managed by this service
+  name: spatially-backend
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  # ClusterIP: Internal only, nginx-ingress handles external traffic + HTTPS
+  type: ClusterIP
+  # if you want nginx to handle the external traffic, you can use LoadBalancer
+  # type: LoadBalancer
+  # ports:
+  # - name: https
+  #   port: 443
+  #   targetPort: 8443
+  #   protocol: TCP
+  selector:
+    app: spatially-backend

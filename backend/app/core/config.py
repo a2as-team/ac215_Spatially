@@ -72,7 +72,9 @@ class Settings(BaseSettings):
         # POSTGRE_* names (from data processing) take precedence over POSTGRES_*
         self.POSTGRES_SERVER = os.environ.get("POSTGRE_HOST") or self.POSTGRES_SERVER
         self.POSTGRES_USER = os.environ.get("POSTGRE_USER") or self.POSTGRES_USER
-        self.POSTGRES_PASSWORD = os.environ.get("POSTGRE_PASSWORD") or self.POSTGRES_PASSWORD
+        self.POSTGRES_PASSWORD = (
+            os.environ.get("POSTGRE_PASSWORD") or self.POSTGRES_PASSWORD
+        )
         self.POSTGRES_DB = os.environ.get("APP_DB_NAME") or self.POSTGRES_DB
         self.POSTGRES_PORT = int(os.environ.get("POSTGRE_PORT", self.POSTGRES_PORT))
 

@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { GetStaticProps, GetStaticPaths } from "next";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   AppShell,
@@ -31,10 +32,15 @@ import maplibregl from "maplibre-gl";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useStartChat, useContinueChat, useChats } from "@/hooks/useChat";
-import { useZoningAtLocation, useCityZoning } from "@/hooks/useZoningSearch";
-import { ZoningData } from "@/services/zoningApi";
+import { useZoningAtLocation } from "@/hooks/useZoningSearch";
+import { ZoningData, CityZoningResponse, getCityZoningServerSide } from "@/services/zoningApi";
+import { getCitiesServerSide } from "@/services/citiesApi";
 
-export default function CityPage() {
+interface CityPageProps {
+  cityZoningData: CityZoningResponse;
+}
+
+export default function CityPage({ cityZoningData }: CityPageProps) {
   const router = useRouter();
   const { id } = router.query;
   const [opened, { toggle }] = useDisclosure();
@@ -54,9 +60,6 @@ export default function CityPage() {
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
   const { mutate: fetchZoning, isPending: isLoadingZoning } =
     useZoningAtLocation();
-  const { data: cityZoningData, isLoading: isCityZoningLoading } = useCityZoning(
-    typeof id === "string" ? id : undefined
-  );
 
   const isPending = isStarting || isContinuing;
 
@@ -643,3 +646,39 @@ export default function CityPage() {
     </AppShell>
   );
 }
+
+// Generate paths for all cities at build time
+export const getStaticPaths: GetStaticPaths = async () => {
+  const { cities } = await getCitiesServerSide();
+
+  const paths = cities.map((city) => ({
+    params: { id: city.name },
+  }));
+
+  return {
+    paths,
+    // fallback: 'blocking' allows new cities to be rendered on-demand
+    fallback: "blocking",
+  };
+};
+
+// Pre-fetch GeoJSON data at build time (or on-demand with ISR)
+export const getStaticProps: GetStaticProps<CityPageProps> = async ({
+  params,
+}) => {
+  const cityId = params?.id as string;
+
+  if (!cityId) {
+    return { notFound: true };
+  }
+
+  const cityZoningData = await getCityZoningServerSide(cityId);
+
+  return {
+    props: {
+      cityZoningData,
+    },
+    // Revalidate every hour - GeoJSON data doesn't change often
+    revalidate: 3600,
+  };
+};

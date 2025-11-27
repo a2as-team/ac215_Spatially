@@ -112,7 +112,7 @@ class GKEDeploy:
             ["kubectl", "rollout", "restart", f"deployment/{deployment_name}"]
         )
 
-    def deploy(self, skip_ingress: bool = True):
+    def deploy(self, skip_ingress: bool = False):
         """
         Full deployment pipeline:
         1. Create GKE cluster (gke/)

@@ -129,11 +129,13 @@ services:
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-deploy.env
       # - ./secrets/ac215-spatially-finetune.env # this is for the finetune job (optional)
       # - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
+      DOCKER_API_VERSION: "1.43"  # Match Docker socket API version
     volumes:
       - ./secrets:/secrets:ro
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
@@ -143,6 +145,7 @@ services:
       # Mount Docker socket to allow publishing images from within container
       - /var/run/docker.sock:/var/run/docker.sock
       - ./llm:/app/llm
+      - ./backend:/backend:ro  # For building backend image
 
   llm_development_plans_trainer:
     build:

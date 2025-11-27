@@ -36,6 +36,12 @@ RUN echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/d
 RUN apt-get update && \
     apt-get install -y google-cloud-sdk google-cloud-sdk-gke-gcloud-auth-plugin jq docker-ce
 
+# Install kubectl directly (apt package not available)
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/kubectl
+
+
 # Install UV (Python package installer)
 RUN pip install uv
 ENV PATH="$PATH:/root/.local/bin"

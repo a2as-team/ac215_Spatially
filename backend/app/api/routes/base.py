@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from app.core.config import settings
+from app.utils.db_accessor import DBConnector
 
 router = APIRouter(tags=["base"])
 
@@ -17,3 +19,15 @@ def root():
 def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@router.get("/readiness")
+async def readiness_check():
+    try:
+        db = DBConnector(db_name=settings.POSTGRES_DB)
+        cities = db.get_all_cities()
+        print("cities", cities)
+        db.close()
+        return {"status": "ready"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="db_unavailable")

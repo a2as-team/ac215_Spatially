@@ -58,7 +58,7 @@ jobs:
         echo '${{ secrets.GCP_SA_KEY }}' > /tmp/gcp-key.json
 
         # Run deployment in container with unbuffered output
-        docker run --rm \
+        docker run --rm -it \
           -e PYTHONUNBUFFERED=1 \
           -e GCP_PROJECT="${GCP_PROJECT}" \
           -e GCP_REGION="${GCP_REGION}" \
@@ -90,9 +90,8 @@ jobs:
 
             echo 'Starting deployment...'
             cd /app/deploy
-            python -u run.py --action deploy
+            stdbuf -oL python -u deploy/run.py --action deploy
 
-            echo 'Deployment complete!'
           "
 
         # Cleanup

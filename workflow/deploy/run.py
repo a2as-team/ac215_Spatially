@@ -24,7 +24,7 @@ if __name__ == "__main__":
     if args["action"] == "deploy":
         # GKEDeploy handles cluster creation internally
         deploy = GKEDeploy()
-        deploy.deploy()
+        deploy.deploy(skip_ingress=False)
     elif args["action"] == "delete":
         cluster = GKECluster()
         cluster.delete_cluster()

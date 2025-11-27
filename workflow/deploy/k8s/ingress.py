@@ -19,8 +19,11 @@ from pathlib import Path
 class IngressSetup:
     """Handles HTTPS/Ingress setup for Kubernetes."""
 
-    # Official manifest URLs
-    NGINX_MANIFEST_URL = "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml"
+    # Official manifest URLs for cloud providers (GKE, EKS, AKS)
+    NGINX_MANIFEST_URL = (
+        "https://raw.githubusercontent.com/kubernetes/ingress-nginx/"
+        "controller-v1.9.4/deploy/static/provider/cloud/deploy.yaml"
+    )
     CERT_MANAGER_URL = (
         "https://github.com/cert-manager/cert-manager/releases/download/"
         "v1.13.2/cert-manager.yaml"
@@ -33,6 +36,14 @@ class IngressSetup:
         self.cert_email = os.environ.get("CERT_EMAIL")
         if not self.cert_email:
             raise ValueError("CERT_EMAIL environment variable is required")
+
+        # Domain for ExternalDNS filtering and ingress host
+        self.domain_filter = os.environ.get("DOMAIN_FILTER")
+        if not self.domain_filter:
+            raise ValueError("DOMAIN_FILTER environment variable is required")
+
+        # Construct ingress host from domain filter
+        self.ingress_host = f"zoning-api.{self.domain_filter}"
 
     def run_command(
         self,
@@ -118,20 +129,43 @@ class IngressSetup:
             ignore_error=True,
         )
 
+        print("\n✓ cert-manager installed!")
+
+    def install_external_dns(self):
+        """
+        Install ExternalDNS for automatic DNS record management.
+
+        ExternalDNS:
+        - Watches Ingress resources for hostnames
+        - Automatically creates/updates DNS records in Cloudflare
+        - Uses the Cloudflare API token from Kubernetes secret
+        """
+        print("\n" + "=" * 60)
+        print("  Installing ExternalDNS (Cloudflare)")
+        print("=" * 60)
+
+        # Read and substitute domain filter
+        external_dns_yaml = (self.k8s_dir / "external-dns.yaml").read_text()
+        external_dns_yaml = external_dns_yaml.replace(
+            "${DOMAIN_FILTER}", self.domain_filter
+        )
+
+        print(f"\nConfiguring ExternalDNS for domain: {self.domain_filter}")
+        self.run_command(["kubectl", "apply", "-f", "-"], input=external_dns_yaml)
+
+        print("\nWaiting for ExternalDNS to be ready...")
         self.run_command(
             [
                 "kubectl",
                 "wait",
-                "--namespace",
-                "cert-manager",
                 "--for=condition=available",
-                "deployment/cert-manager-webhook",
+                "deployment/external-dns",
                 "--timeout=120s",
             ],
             ignore_error=True,
         )
 
-        print("\n✓ cert-manager installed!")
+        print("\n✓ ExternalDNS installed!")
 
     def setup_cluster_issuer(self):
         """
@@ -156,10 +190,10 @@ class IngressSetup:
 
     def deploy_ingress(self):
         """
-        Deploy the Ingress resource for zoning-api.teamspatially.com.
+        Deploy the Ingress resource.
 
         The Ingress:
-        - Routes traffic from zoning-api.teamspatially.com to backend
+        - Routes traffic from the configured host to backend
         - Requests TLS certificate from Let's Encrypt automatically
         - Redirects HTTP to HTTPS
         """
@@ -167,7 +201,12 @@ class IngressSetup:
         print("  Deploying Ingress")
         print("=" * 60)
 
-        self.run_command(["kubectl", "apply", "-f", str(self.k8s_dir / "ingress.yaml")])
+        # Read and substitute ingress host
+        ingress_yaml = (self.k8s_dir / "ingress.yaml").read_text()
+        ingress_yaml = ingress_yaml.replace("${INGRESS_HOST}", self.ingress_host)
+
+        print(f"\nConfiguring Ingress for host: {self.ingress_host}")
+        self.run_command(["kubectl", "apply", "-f", "-"], input=ingress_yaml)
         print("\n✓ Ingress deployed!")
 
     def get_ingress_ip(self, max_attempts: int = 30) -> str | None:
@@ -198,13 +237,14 @@ class IngressSetup:
         return None
 
     def setup(self):
-        """Complete ingress setup: nginx + cert-manager + issuer + ingress."""
+        """Complete ingress setup: nginx + cert-manager + external-dns + issuer + ingress."""
         print("\n" + "=" * 60)
         print("  HTTPS/INGRESS SETUP")
         print("=" * 60)
 
         self.install_nginx_ingress()
         self.install_cert_manager()
+        self.install_external_dns()
         self.setup_cluster_issuer()
         self.deploy_ingress()
 
@@ -212,7 +252,7 @@ class IngressSetup:
         self._print_summary(external_ip)
 
     def _print_summary(self, external_ip: str | None):
-        """Print setup summary with DNS instructions."""
+        """Print setup summary."""
         print("\n" + "=" * 60)
         print("  HTTPS SETUP COMPLETE!")
         print("=" * 60)
@@ -222,17 +262,15 @@ class IngressSetup:
                 f"""
   External IP: {external_ip}
 
-  NEXT STEP - Configure DNS:
-  ─────────────────────────────────────────
-  Add an A record in your DNS provider:
+  ExternalDNS will automatically create DNS records in Cloudflare.
 
-    Name:  zoning-api
-    Type:  A
-    Value: {external_ip}
+  Your site will be available at:
+    https://{self.ingress_host}
 
-  After DNS propagates (5-30 minutes):
-    https://zoning-api.teamspatially.com
-  ─────────────────────────────────────────
+  DNS propagation may take 1-5 minutes.
+
+  To check ExternalDNS logs:
+    kubectl logs -l app=external-dns
 """
             )
         else:
@@ -262,28 +300,3 @@ class IngressSetup:
 
         print("\n--- Certificate ---")
         self.run_command(["kubectl", "get", "certificate"], ignore_error=True)
-
-
-if __name__ == "__main__":
-    import sys
-
-    ingress = IngressSetup()
-
-    if len(sys.argv) > 1:
-        action = sys.argv[1]
-        actions = {
-            "setup": ingress.setup,
-            "status": ingress.status,
-            "nginx": ingress.install_nginx_ingress,
-            "certmanager": ingress.install_cert_manager,
-            "issuer": ingress.setup_cluster_issuer,
-            "ingress": ingress.deploy_ingress,
-        }
-        if action in actions:
-            actions[action]()
-        else:
-            print(f"Unknown action: {action}")
-    else:
-        print(
-            "Usage: python ingress.py [setup|status|nginx|certmanager|issuer|ingress]"
-        )

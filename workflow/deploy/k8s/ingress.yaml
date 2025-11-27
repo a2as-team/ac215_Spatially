@@ -6,12 +6,13 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
-        - zoning-api.teamspatially.com
-      secretName: zoning-api-tls
+        - ${INGRESS_HOST}
+      secretName: spatially-tls
   rules:
-    - host: zoning-api.teamspatially.com
+    - host: ${INGRESS_HOST}
       http:
         paths:
           - path: /

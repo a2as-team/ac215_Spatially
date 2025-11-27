@@ -13,9 +13,10 @@ class SecretsManager:
     """Manages Kubernetes Secrets for the application."""
 
     def __init__(self):
-        # Database configuration
+        # Secret names
         self.db_secret_name = "spatially-db-secrets"
         self.gcp_secret_name = "spatially-gcp-secrets"
+        self.cloudflare_secret_name = "cloudflare-api-token"
 
     def run_command(
         self,
@@ -64,6 +65,7 @@ class SecretsManager:
         print("\n--- Removing existing secrets ---")
         self.delete_secret(self.db_secret_name)
         self.delete_secret(self.gcp_secret_name)
+        self.delete_secret(self.cloudflare_secret_name)
 
     def setup_db_secrets(self):
         """
@@ -131,11 +133,36 @@ class SecretsManager:
         )
         print(f"✓ Secret '{self.gcp_secret_name}' configured")
 
+    def setup_cloudflare_secrets(self):
+        """
+        Setup Cloudflare secrets for ExternalDNS.
+
+        Required env vars:
+        - CLOUDFLARE_API_TOKEN
+        """
+        print("\n--- Setting up Cloudflare secrets ---")
+
+        cf_token = os.environ.get("CLOUDFLARE_API_TOKEN")
+
+        if not cf_token:
+            raise ValueError(
+                "Missing required environment variable: CLOUDFLARE_API_TOKEN"
+            )
+
+        self.create_or_update_secret(
+            self.cloudflare_secret_name,
+            {
+                "api-token": cf_token,
+            },
+        )
+        print(f"✓ Secret '{self.cloudflare_secret_name}' configured")
+
     def setup_all(self):
         """Setup all application secrets."""
         self.remove_existing_secrets()
         self.setup_db_secrets()
         self.setup_gcp_secrets()
+        self.setup_cloudflare_secrets()
 
     def status(self):
         """Show status of all secrets."""

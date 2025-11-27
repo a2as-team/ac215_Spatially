@@ -7,7 +7,7 @@ on:
     paths:
       - 'backend/**'
       - 'workflow/deploy/**'
-      - '.github/workflows/deploy.yml'
+      - '.github/workflows/deploy_gke.yml'
   # Manual trigger
   workflow_dispatch:
     inputs:

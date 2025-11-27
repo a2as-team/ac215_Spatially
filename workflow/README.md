@@ -54,6 +54,22 @@ python /app/cli.py --city boston --pipeline collector-development-plans
 python /app/cli.py --city boston --pipeline processor-development-plans-label-studio
 ```
 
+## Vertex AI Jobs
+
+Run training jobs on Vertex AI:
+
+```bash
+# Train NER model for development plans
+python jobs/run_development_plans_ner.py --epochs 5
+
+# With custom parameters
+python jobs/run_development_plans_ner.py --epochs 10 --batch-size 8 --learning-rate 2e-5
+```
+
+Prerequisites:
+1. Upload trainer package: `python packages/run.py --packages ner-trainer`
+2. Ensure labeled data exists in GCS
+
 ## Kubernetes Deployment
 
 Deploy the backend to GKE with auto-scaling, HTTPS, and automatic DNS.

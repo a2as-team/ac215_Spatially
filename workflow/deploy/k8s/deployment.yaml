@@ -67,6 +67,8 @@ spec:
               cpu: "500m"      # 0.5 CPU cores (maximum allowed)
               memory: "512Mi"  # 512 MB RAM (maximum allowed)
 
+          # Environment variables loaded from secrets
+          # CORS settings (BACKEND_CORS_ORIGINS) come from spatially-gcp-secrets
           envFrom:
             - secretRef:
                 name: spatially-gcp-secrets

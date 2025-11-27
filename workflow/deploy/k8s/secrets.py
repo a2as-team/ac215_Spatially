@@ -55,10 +55,7 @@ class SecretsManager:
 
     def delete_secret(self, name: str):
         """Delete a Kubernetes Secret (ignores if not exists)."""
-        self.run_command(
-            ["kubectl", "delete", "secret", name],
-            ignore_error=True
-        )
+        self.run_command(["kubectl", "delete", "secret", name], ignore_error=True)
 
     def remove_existing_secrets(self):
         """Remove all application secrets (for clean redeployment)."""
@@ -113,6 +110,10 @@ class SecretsManager:
         Required env vars:
         - GCP_PROJECT
         - GCP_REGION
+
+        Optional env vars:
+        - FRONTEND_HOST (for CORS, defaults to http://localhost:3000)
+        - BACKEND_CORS_ORIGINS (comma-separated list of additional origins)
         """
         print("\n--- Setting up GCP secrets ---")
 
@@ -124,13 +125,18 @@ class SecretsManager:
                 "Missing required environment variables: GCP_PROJECT, GCP_REGION"
             )
 
-        self.create_or_update_secret(
-            self.gcp_secret_name,
-            {
-                "GCP_PROJECT": gcp_project,
-                "GCP_REGION": gcp_region,
-            },
-        )
+        secrets_data = {
+            "GCP_PROJECT": gcp_project,
+            "GCP_REGION": gcp_region,
+        }
+
+        # Add CORS settings if provided
+        cors_origins = os.environ.get("BACKEND_CORS_ORIGINS")
+
+        if cors_origins:
+            secrets_data["BACKEND_CORS_ORIGINS"] = cors_origins
+
+        self.create_or_update_secret(self.gcp_secret_name, secrets_data)
         print(f"✓ Secret '{self.gcp_secret_name}' configured")
 
     def setup_cloudflare_secrets(self):

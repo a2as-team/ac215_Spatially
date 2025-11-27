@@ -57,8 +57,9 @@ jobs:
         # Write GCP credentials to temp file
         echo '${{ secrets.GCP_SA_KEY }}' > /tmp/gcp-key.json
 
-        # Run deployment in container
+        # Run deployment in container with unbuffered output
         docker run --rm \
+          -e PYTHONUNBUFFERED=1 \
           -e GCP_PROJECT="${GCP_PROJECT}" \
           -e GCP_REGION="${GCP_REGION}" \
           -e GKE_ZONE="${GKE_ZONE}" \
@@ -75,14 +76,23 @@ jobs:
           -v ${{ github.workspace }}/backend:/backend:ro \
           workflow:latest \
           bash -c "
-            # Authenticate with GCP
+            set -e
+            echo 'Container is running!'
+
+            echo 'Authenticating with GCP using service account...'
             gcloud auth activate-service-account --key-file=/secrets/gcp-key.json
+
+            echo 'Setting GCP project to: '\${GCP_PROJECT}
             gcloud config set project \${GCP_PROJECT}
+
+            echo 'Configuring Docker for Artifact Registry...'
             gcloud auth configure-docker \${GCP_REGION}-docker.pkg.dev --quiet
 
-            # Run deploy
+            echo 'Starting deployment...'
             cd /app/deploy
-            python run.py --action deploy
+            python -u run.py --action deploy
+
+            echo 'Deployment complete!'
           "
 
         # Cleanup

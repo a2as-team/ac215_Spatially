@@ -1,6 +1,5 @@
 from utils.selenium import SeleniumUtil
 from .base import ZoningMapsBaseCollector
-from shared_config.cities import City
 import time
 from pathlib import Path
 import geopandas as gpd
@@ -11,9 +10,8 @@ class BostonZoningMapsCollector(ZoningMapsBaseCollector):
         super().__init__()
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
 
-
     def city(self) -> str:
-        return City.boston
+        return "boston"
     
     def zoning_static_resource_url(self) -> list[str]:
         """This has the list of zoning map static resources."""

@@ -22,6 +22,27 @@ services:
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/collector:/app # This will mount our ./data/collector as /app in the container
 
+  collector-playwright:
+    platform: linux/amd64
+    build:
+      context: ./data/collector
+      dockerfile: Dockerfile.playwright
+      additional_contexts:
+        shared_config: ./shared_config
+    container_name: spatially_collector_playwright
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+      PYTHONPATH: /app:/
+    volumes:
+      - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./shared_config:/app/shared_config:ro # Shared configuration across all services
+      - ./data/collector:/app # This will mount our ./data/collector as /app in the container
+
   processor:
     platform: linux/amd64
     build:

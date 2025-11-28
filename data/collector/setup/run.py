@@ -2,12 +2,12 @@
 Setup orchestrator for the collector.
 
 This script runs all setup tasks in the correct order:
-1. Database initialization
-2. (Future: Add more setup tasks here)
+1. Database initialization (creates tables and populates cities from Zoneomics)
 """
 
 import sys
 import logging
+import argparse
 from init_db import DatabaseInitializer
 
 
@@ -20,9 +20,13 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
-def run_setup():
+def run_setup(populate: bool = True, test_mode: bool = False):
     """
     Run all setup tasks.
+
+    Args:
+        populate: If True, populate cities from Zoneomics.
+        test_mode: If True, only process first state when populating.
 
     Returns:
         int: Exit code (0 for success, 1 for failure)
@@ -40,7 +44,7 @@ def run_setup():
     logger.info("\n[Task 1/1] Initializing Database...")
     try:
         db_initializer = DatabaseInitializer(logger=logger)
-        if db_initializer.run():
+        if db_initializer.run(populate=populate, test_mode=test_mode):
             logger.info("✓ Database initialization completed")
         else:
             logger.error("✗ Database initialization failed")
@@ -48,11 +52,6 @@ def run_setup():
     except Exception as e:
         logger.error(f"✗ Database initialization failed with exception: {e}")
         all_success = False
-
-    # Future tasks can be added here:
-    # Task 2: Initialize other resources
-    # Task 3: Run migrations
-    # etc.
 
     # Summary
     logger.info("\n" + "=" * 50)
@@ -67,5 +66,19 @@ def run_setup():
 
 
 if __name__ == "__main__":
-    exit_code = run_setup()
+    parser = argparse.ArgumentParser(description="Database setup for collector")
+    parser.add_argument(
+        "--populate",
+        action="store_true",
+        default=False,
+        help="Populate cities from Zoneomics"
+    )
+    parser.add_argument(
+        "--test-mode",
+        action="store_true",
+        help="Only process first state (for testing)"
+    )
+    args = parser.parse_args()
+
+    exit_code = run_setup(populate=args.populate, test_mode=args.test_mode)
     sys.exit(exit_code)

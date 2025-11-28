@@ -1,4 +1,3 @@
-
 from utils.selenium import SeleniumUtil
 from utils.db_accessor import DBAccessor
 from .base import CensusTractBaseCollector
@@ -6,7 +5,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from shared_config.cities import City
 import geopandas as gpd
 import time
 from pathlib import Path
@@ -18,7 +16,7 @@ class BostonCensusTractCollector(CensusTractBaseCollector):
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.boston
+        return "boston"
 
     def resource_url(self) -> str:
         return "https://gis.bostonplans.org/hosting/rest/services/Hosted/Census_2020_Tracts/FeatureServer"

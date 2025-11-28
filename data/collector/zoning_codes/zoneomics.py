@@ -4,6 +4,8 @@ import os
 import time
 import re
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 
 class ZoneomicsCollector(ZoningCodesBaseCollector):
@@ -63,10 +65,12 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
         ("Wyoming", "wyoming"),
     ]
 
-    def __init__(self):
+    def __init__(self, max_workers: int = 4):
         super().__init__()
         # Use Playwright for better Next.js compatibility
         self.browser_util = PlaywrightUtil(headless=True, logger=self.logger)
+        self.max_workers = max_workers
+        self._save_lock = Lock()  # Thread-safe file saving
 
     def resource_url(self) -> str:
         """Return the resource URL for this collector."""
@@ -98,6 +102,25 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
 
         self.logger.info(f"Using {len(states)} predefined US states")
         return states
+
+    def get_state_by_slug(self, state_slug: str) -> dict | None:
+        """
+        Get a specific state by its URL slug.
+
+        Args:
+            state_slug: The state's URL slug (e.g., "california", "new-york")
+
+        Returns:
+            dict with 'name', 'slug', and 'url' keys, or None if not found.
+        """
+        for name, slug in self.US_STATES:
+            if slug == state_slug:
+                return {
+                    "name": name,
+                    "slug": slug,
+                    "url": f"{self.BASE_URL}/all-cities/usa/{slug}",
+                }
+        return None
 
     def find_cities(self, state_url: str) -> list[dict]:
         """
@@ -313,6 +336,183 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
         self.logger.info(f"Found {len(zones)} zones for {city_url}")
         return {"city_url": city_url, "zones": zones}
 
+    def _process_city_worker(self, city: dict) -> dict:
+        """
+        Process a single city with its own browser instance.
+        Used for concurrent processing.
+
+        Args:
+            city: Dict with city info including 'url', 'name', 'slug', 'state_slug', 'state_name'
+
+        Returns:
+            dict: Result with 'success', 'city_name', and optionally 'error'
+        """
+        browser_util = None
+        try:
+            # Create a new browser instance for this worker
+            browser_util = PlaywrightUtil(headless=True, logger=self.logger)
+
+            city_url = city["url"]
+            city_name = city["name"]
+            city_slug = city.get("slug", "")
+            state_slug = city.get("state_slug", "")
+            state_name = city.get("state_name", "")
+
+            self.logger.info(f"[Worker] Processing: {city_name}, {state_name}")
+
+            # Process the city using this worker's browser
+            zoning_data = self._process_city_zoning_with_browser(browser_util, city_url)
+            zoning_data["city_name"] = city_name
+            zoning_data["city_slug"] = city_slug
+            zoning_data["state_name"] = state_name
+            zoning_data["state_slug"] = state_slug
+
+            # Thread-safe save
+            with self._save_lock:
+                self.save_city_zoning(zoning_data)
+
+            return {"success": True, "city_name": city_name}
+
+        except Exception as e:
+            self.logger.error(f"[Worker] Error processing {city.get('name', 'unknown')}: {e}")
+            return {"success": False, "city_name": city.get("name", "unknown"), "error": str(e)}
+        finally:
+            if browser_util:
+                browser_util.quit()
+
+    def _process_city_zoning_with_browser(
+        self, browser_util: PlaywrightUtil, city_url: str, max_retries: int = 3
+    ) -> dict:
+        """
+        Process city zoning using a specific browser instance.
+        Similar to process_city_zoning but accepts browser as parameter.
+
+        Args:
+            browser_util: The PlaywrightUtil instance to use
+            city_url: The full URL to the city's zoning map page.
+            max_retries: Number of retry attempts if table not found.
+
+        Returns:
+            dict: Contains 'city_url' and 'zones' list with zone data.
+        """
+        zones = []
+
+        # Retry loop
+        table = None
+        for attempt in range(max_retries):
+            table = self._load_and_find_table_with_browser(browser_util, city_url)
+            if table:
+                break
+            else:
+                self.logger.warning(
+                    f"Attempt {attempt + 1}/{max_retries}: No table found, retrying..."
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(2 * (attempt + 1))
+                    browser_util.reinitialize()
+
+        if not table:
+            return {"city_url": city_url, "zones": zones}
+
+        # Parse table rows (same logic as process_city_zoning)
+        try:
+            rows = table.query_selector_all("tr")
+
+            for row in rows:
+                try:
+                    cells = row.query_selector_all("td")
+                    if len(cells) >= 3:
+                        zone_cell = cells[0]
+                        zone_code = ""
+                        zone_subtype = ""
+
+                        strong = zone_cell.query_selector("strong")
+                        if strong:
+                            zone_code = strong.text_content().strip()
+
+                        inner_divs = zone_cell.query_selector_all("div.h-full > div")
+                        for div in inner_divs:
+                            text = div.text_content().strip() if div.text_content() else ""
+                            if text and text != zone_code:
+                                zone_subtype = text
+                                break
+
+                        if not zone_subtype:
+                            divs = zone_cell.query_selector_all("div")
+                            for div in divs:
+                                if div.query_selector("strong"):
+                                    continue
+                                text = div.text_content().strip() if div.text_content() else ""
+                                if text and zone_code and not text.startswith(zone_code):
+                                    zone_subtype = text
+                                    break
+
+                        area_acres = cells[1].text_content().strip() if cells[1].text_content() else ""
+                        description = cells[2].text_content().strip() if cells[2].text_content() else ""
+
+                        if zone_code:
+                            zones.append(
+                                {
+                                    "zone_code": zone_code,
+                                    "zone_subtype": zone_subtype,
+                                    "area_acres": area_acres,
+                                    "description": description,
+                                }
+                            )
+
+                except Exception as e:
+                    self.logger.debug(f"Error parsing row: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Error processing city zoning: {e}")
+
+        return {"city_url": city_url, "zones": zones}
+
+    def _load_and_find_table_with_browser(self, browser_util: PlaywrightUtil, city_url: str):
+        """
+        Load page and find zoning table using specific browser instance.
+
+        Args:
+            browser_util: The PlaywrightUtil instance to use
+            city_url: URL to load
+
+        Returns:
+            table element or None
+        """
+        browser_util.goto(city_url, wait_until="networkidle")
+
+        page_title = browser_util.title
+        if "Application error" in page_title or "error" in page_title.lower():
+            self.logger.warning(f"Page error detected: {page_title}")
+            return None
+
+        time.sleep(2)
+
+        browser_util.page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+        time.sleep(1)
+
+        try:
+            expand_button = browser_util.page.query_selector(
+                "button[class*='address-explanation__content--expand']"
+            )
+            if expand_button:
+                button_text = expand_button.text_content().strip().lower()
+                if "expand" in button_text:
+                    expand_button.scroll_into_view_if_needed()
+                    expand_button.click()
+                    time.sleep(2)
+        except Exception:
+            pass
+
+        tables = browser_util.query_selector_all("tbody[class*='RowTable_table-body-container']")
+
+        for table in tables:
+            first_strong = table.query_selector("tr td strong")
+            if first_strong:
+                return table
+
+        return None
+
     def save_city_zoning(self, zoning_data: dict) -> str:
         """
         Save a city's zoning data to a CSV file using pandas.
@@ -484,7 +684,7 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
             f"Database upload complete. Cities uploaded: {uploaded_count}, Errors: {error_count}"
         )
 
-    def collect(self, test_mode: bool = False):
+    def collect(self, test_mode: bool = False, state_slug: str = None, use_concurrent: bool = True):
         """
         Main collection method to gather all zoning code data.
 
@@ -493,20 +693,35 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
 
         Args:
             test_mode: If True, only process the first state (Alabama) to test the scraper.
+            state_slug: If provided, only process this specific state (e.g., "california").
+                       Use this for parallel processing across multiple Vertex AI jobs.
+            use_concurrent: If True, process cities concurrently within each state.
+                           Set to False for sequential processing.
         """
         try:
             self.logger.info("Starting Zoneomics zoning codes collection")
             if test_mode:
                 self.logger.info("TEST MODE: Only processing first state")
+            if state_slug:
+                self.logger.info(f"SINGLE STATE MODE: Only processing {state_slug}")
+            if use_concurrent:
+                self.logger.info(f"CONCURRENT MODE: Using {self.max_workers} workers")
 
             # Step 1: Get states to process
-            states = self.find_states()
-            if test_mode:
-                states = states[:1]  # Only first state in test mode
+            if state_slug:
+                state = self.get_state_by_slug(state_slug)
+                if not state:
+                    raise ValueError(f"Unknown state slug: {state_slug}. Valid slugs: {[s[1] for s in self.US_STATES]}")
+                states = [state]
+            else:
+                states = self.find_states()
+                if test_mode:
+                    states = states[:1]  # Only first state in test mode
 
             # Step 2: Process each state and its cities
             processed_count = 0
             skipped_count = 0
+            error_count = 0
             total_cities = 0
 
             for state_idx, state in enumerate(states):
@@ -520,47 +735,59 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
                         city["state_name"] = state["name"]
 
                     if test_mode:
-                        cities = cities[:1]  # Only first city in test mode
-                        self.logger.info(f"TEST MODE: Only processing first city")
+                        cities = cities[:3]  # Only first 3 cities in test mode
+                        self.logger.info(f"TEST MODE: Only processing first 3 cities")
 
                     self.logger.info(f"Found {len(cities)} cities in {state['name']}")
 
-                    # Process each city in this state
-                    for city_idx, city in enumerate(cities):
+                    # Filter out already processed cities
+                    cities_to_process = []
+                    for city in cities:
                         total_cities += 1
-                        state_slug = city.get("state_slug", "")
+                        state_slug_city = city.get("state_slug", "")
                         city_slug = city.get("slug", "")
 
-                        # Skip if already processed
-                        if self.is_city_processed(state_slug, city_slug):
+                        if self.is_city_processed(state_slug_city, city_slug):
                             self.logger.debug(
                                 f"Skipping already processed: {city['name']}, {state['name']}"
                             )
                             skipped_count += 1
-                            continue
+                        else:
+                            cities_to_process.append(city)
 
-                        self.logger.info(
-                            f"Processing city {city_idx + 1}/{len(cities)} in {state['name']}: {city['name']}"
-                        )
+                    self.logger.info(
+                        f"Cities to process: {len(cities_to_process)} (skipped {skipped_count} already processed)"
+                    )
 
-                        try:
-                            zoning_data = self.process_city_zoning(city["url"])
-                            zoning_data["city_name"] = city["name"]
-                            zoning_data["city_slug"] = city_slug
-                            zoning_data["state_name"] = city.get("state_name", "")
-                            zoning_data["state_slug"] = state_slug
-
-                            # Save immediately after processing
-                            self.save_city_zoning(zoning_data)
-                            processed_count += 1
-
-                            # Be polite to the server
-                            time.sleep(1)
-                        except Exception as e:
-                            self.logger.error(
-                                f"Error processing city {city['name']}: {e}"
+                    if use_concurrent and len(cities_to_process) > 1:
+                        # Concurrent processing
+                        processed, errors = self._process_cities_concurrent(cities_to_process)
+                        processed_count += processed
+                        error_count += errors
+                    else:
+                        # Sequential processing (original method)
+                        for city_idx, city in enumerate(cities_to_process):
+                            self.logger.info(
+                                f"Processing city {city_idx + 1}/{len(cities_to_process)} in {state['name']}: {city['name']}"
                             )
-                            continue
+
+                            try:
+                                zoning_data = self.process_city_zoning(city["url"])
+                                zoning_data["city_name"] = city["name"]
+                                zoning_data["city_slug"] = city.get("slug", "")
+                                zoning_data["state_name"] = city.get("state_name", "")
+                                zoning_data["state_slug"] = city.get("state_slug", "")
+
+                                self.save_city_zoning(zoning_data)
+                                processed_count += 1
+
+                                time.sleep(1)
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Error processing city {city['name']}: {e}"
+                                )
+                                error_count += 1
+                                continue
 
                     # Be polite between states
                     time.sleep(1)
@@ -570,7 +797,8 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
                     continue
 
             self.logger.info(
-                f"Collection complete. Processed: {processed_count}, Skipped: {skipped_count}, Total cities: {total_cities}"
+                f"Collection complete. Processed: {processed_count}, Skipped: {skipped_count}, "
+                f"Errors: {error_count}, Total cities: {total_cities}"
             )
 
             # Step 3: Upload all CSV files to GCS
@@ -579,10 +807,50 @@ class ZoneomicsCollector(ZoningCodesBaseCollector):
             # Step 4: Upload to database
             self.upload_to_db()
 
-            return {"processed": processed_count, "skipped": skipped_count}
+            return {"processed": processed_count, "skipped": skipped_count, "errors": error_count}
 
         except Exception as e:
             self.logger.error(f"Collection failed: {e}")
             raise
         finally:
             self.browser_util.quit()
+
+    def _process_cities_concurrent(self, cities: list[dict]) -> tuple[int, int]:
+        """
+        Process multiple cities concurrently using ThreadPoolExecutor.
+
+        Args:
+            cities: List of city dicts to process
+
+        Returns:
+            Tuple of (processed_count, error_count)
+        """
+        processed_count = 0
+        error_count = 0
+
+        self.logger.info(f"Starting concurrent processing of {len(cities)} cities with {self.max_workers} workers")
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all cities for processing
+            future_to_city = {
+                executor.submit(self._process_city_worker, city): city
+                for city in cities
+            }
+
+            # Process results as they complete
+            for future in as_completed(future_to_city):
+                city = future_to_city[future]
+                try:
+                    result = future.result()
+                    if result["success"]:
+                        processed_count += 1
+                        self.logger.info(f"✓ Completed: {result['city_name']}")
+                    else:
+                        error_count += 1
+                        self.logger.error(f"✗ Failed: {result['city_name']} - {result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    error_count += 1
+                    self.logger.error(f"✗ Exception for {city.get('name', 'unknown')}: {e}")
+
+        self.logger.info(f"Concurrent processing complete. Processed: {processed_count}, Errors: {error_count}")
+        return processed_count, error_count

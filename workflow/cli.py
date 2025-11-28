@@ -28,6 +28,7 @@ from pipelines.collector.zoning_maps import ZoningMapsCollectorComponent
 from pipelines.all import AllPipeline
 from pipelines.zoning_ordinance import ZoningOrdinancePipeline
 from pipelines.census import CensusPipeline
+from pipelines.zoning_codes_parallel import ZoningCodesParallelPipeline
 
 # Map to classes
 available = {
@@ -35,6 +36,7 @@ available = {
     "all": AllPipeline,
     "zoning-ordinance": ZoningOrdinancePipeline,
     "census": CensusPipeline,
+    "zoning-codes-parallel": ZoningCodesParallelPipeline,
     # Individual collectors
     "collector-development-plans": DevelopmentPlansCollectorComponent,
     "collector-census": CensusCollectorComponent,
@@ -48,7 +50,7 @@ available = {
 }
 
 # Components that don't require a city parameter
-no_city_required = {"collector-zoning-codes"}
+no_city_required = {"collector-zoning-codes", "zoning-codes-parallel"}
 
 
 def run(city: str = None, pipeline_type: str = "all", test_mode: bool = False):
@@ -63,17 +65,18 @@ def run(city: str = None, pipeline_type: str = "all", test_mode: bool = False):
             - "all": All collectors + processors (default)
             - "zoning-ordinance": Zoning ordinance & maps collector + processor (DOCX→MD, chunk, embed, save to PostgreSQL)
             - "census": Census collector + processor (API→CSV→Database)
+            - "zoning-codes-parallel": Zoning codes collector for ALL 50 states in parallel (fastest)
 
             Individual Components:
             - "collector-development-plans": Just development plans collector
             - "collector-census": Just census collector
             - "collector-zoning-ordinance": Just zoning ordinance collector
             - "collector-zoning-maps": Just zoning maps collector
-            - "collector-zoning-codes": Zoning codes collector (all US cities from Zoneomics)
+            - "collector-zoning-codes": Zoning codes collector (single job, sequential states)
             - "processor-development-plans-label-studio": Just development plans processor
             - "processor-zoning-ordinance": Zoning ordinance processor (DOCX→MD, chunk, embed, save to PostgreSQL)
             - "processor-census": Census processor (CSV→Database)
-        test_mode: If True, run in test mode (for zoning-codes: only first state)
+        test_mode: If True, run in test mode (for zoning-codes: only first state with limited cities)
     """
     if pipeline_type not in available:
         raise ValueError(

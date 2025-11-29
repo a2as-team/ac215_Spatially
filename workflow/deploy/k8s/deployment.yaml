@@ -74,3 +74,14 @@ spec:
                 name: spatially-gcp-secrets
             - secretRef:
                 name: spatially-db-secrets
+
+          # Volume mounts for persistent storage
+          volumeMounts:
+            - name: chat-history-storage
+              mountPath: /persistent
+
+      # Volumes definition
+      volumes:
+        - name: chat-history-storage
+          persistentVolumeClaim:
+            claimName: backend-chat-history-pvc

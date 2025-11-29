@@ -17,12 +17,15 @@ export interface Chat {
 
 export interface StartChatRequest {
   content: string;
-  image?: string;
+  city: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface ContinueChatRequest {
   content: string;
-  image?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 const SESSION_ID_KEY = 'spatially_session_id';

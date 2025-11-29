@@ -31,7 +31,7 @@ import {
 import maplibregl from "maplibre-gl";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useStartChat, useContinueChat, useChats } from "@/hooks/useChat";
+import { useStartChat, useContinueChat, useChats, useChat } from "@/hooks/useChat";
 import { useZoningAtLocation } from "@/hooks/useZoningSearch";
 import { ZoningData, CityZoningResponse, getCityZoningServerSide } from "@/services/zoningApi";
 import { getCitiesServerSide } from "@/services/citiesApi";
@@ -49,6 +49,10 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const [selectedZoning, setSelectedZoning] = useState<ZoningData[] | null>(
     null
   );
+  const [selectedLocation, setSelectedLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -56,6 +60,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
   const { data: chats } = useChats(10);
+  const { data: currentChatData } = useChat(currentChatId);
   const { mutate: startChat, isPending: isStarting } = useStartChat();
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
   const { mutate: fetchZoning, isPending: isLoadingZoning } =
@@ -63,9 +68,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
 
   const isPending = isStarting || isContinuing;
 
-  // Get current chat messages
-  const currentChat = chats?.find((chat) => chat.chat_id === currentChatId);
-  const messages = currentChat?.messages || [];
+  // Get current chat messages from the dedicated query (updates immediately on mutation)
+  const messages = currentChatData?.messages || [];
 
   // Add zoning polygons to map
   const addZoningLayer = useCallback((zoningData: ZoningData[]) => {
@@ -200,6 +204,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
           .setLngLat([lng, lat])
           .addTo(map.current!);
 
+        // Save selected location for chat context
+        setSelectedLocation({ latitude: lat, longitude: lng });
+
         // Fetch zoning data
         if (id && typeof id === "string") {
           fetchZoning(
@@ -237,15 +244,20 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   }, [id, fetchZoning, addZoningLayer]);
 
   const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !id || typeof id !== "string") return;
 
     const content = inputValue;
     setInputValue("");
 
     if (!currentChatId) {
-      // Start a new chat
+      // Start a new chat with city and optional location
       startChat(
-        { content },
+        {
+          content,
+          city: id,
+          latitude: selectedLocation?.latitude,
+          longitude: selectedLocation?.longitude,
+        },
         {
           onSuccess: (data) => {
             setCurrentChatId(data.chat_id);
@@ -256,9 +268,16 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         }
       );
     } else {
-      // Continue existing chat
+      // Continue existing chat with optional new location
       continueChat(
-        { chatId: currentChatId, request: { content } },
+        {
+          chatId: currentChatId,
+          request: {
+            content,
+            latitude: selectedLocation?.latitude,
+            longitude: selectedLocation?.longitude,
+          },
+        },
         {
           onError: (error) => {
             console.error("Error continuing chat:", error);
@@ -274,8 +293,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   };
 
   const handleClearSelection = () => {
-    // Clear selected zoning
+    // Clear selected zoning and location
     setSelectedZoning(null);
+    setSelectedLocation(null);
 
     // Remove marker from map
     if (markerRef.current) {
@@ -319,7 +339,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     <AppShell
       header={{ height: 60 }}
       navbar={{
-        width: 400,
+        width: 500,
         breakpoint: "sm",
         collapsed: { mobile: !opened },
       }}

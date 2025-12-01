@@ -1,5 +1,4 @@
 from .base import ZoningMapsBaseCollector
-from shared_config.cities import City
 from utils.selenium import SeleniumUtil
 import requests
 import time
@@ -13,7 +12,7 @@ class CambridgeZoningMapsCollector(ZoningMapsBaseCollector):
         self.selenium_util = SeleniumUtil(headless=True, download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.cambridge
+        return "cambridge"
 
     def zoning_static_resource_url(self) -> str:
         """Base page URL containing zoning map PDFs."""

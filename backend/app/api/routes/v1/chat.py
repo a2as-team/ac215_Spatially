@@ -1,30 +1,49 @@
+"""Chat API routes using SmartDataAgentRunner."""
+
 import time
-from app.utils.chat.history_manager import ChatHistoryManager, ChatMessage
-from app.utils.chat.llm_chat_client import LLMChatClient
-from app.utils.chat.model_config import LLM_GENERIC_MODEL
 import uuid
-from app.utils.chat.system_config import ZONING_CHAT_SYSTEM_INSTRUCTIONS
-from fastapi import APIRouter, HTTPException, Query, Header
-from typing import List, Dict, Any, Optional
-from app.utils.vector_query.zoning_ordinance import ZoningOrdinanceVectorQuery
-from app.utils.spatial_query.zoning_map import ZoningMapSpatialQuery
-from app.core.config import settings
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel, Field
+
+from app.agents import ChatHistoryManager, SmartDataAgentRunner
+
+
+class ChatMessage(BaseModel):
+    """Chat message for API requests."""
+    content: str = Field(..., description="The message content")
+
+
+class StartChatRequest(BaseModel):
+    """Request to start a new chat."""
+    content: str = Field(..., description="The message content")
+    city: str = Field(default="boston", description="City name")
+    latitude: Optional[float] = Field(None, description="Latitude coordinate")
+    longitude: Optional[float] = Field(None, description="Longitude coordinate")
+
+
+class ContinueChatRequest(BaseModel):
+    """Request to continue an existing chat."""
+    content: str = Field(..., description="The message content")
+    latitude: Optional[float] = Field(None, description="New latitude (for mode switch)")
+    longitude: Optional[float] = Field(None, description="New longitude (for mode switch)")
+
 
 router = APIRouter(prefix="/chats", tags=["chat"])
 
-chat_manager = ChatHistoryManager(model=LLM_GENERIC_MODEL)
-
-DEFAULT_SESSION_ID = "default"
+# Use gemini-2.0-flash as the model name for history manager
+AGENT_MODEL = "gemini-2.0-flash"
+chat_manager = ChatHistoryManager(model=AGENT_MODEL)
 
 
 @router.get("/")
 async def get_chats(
-    x_session_id: str = Header(None, alias="X-Session-ID"), limit: Optional[int] = None
+    x_session_id: str = Header(None, alias="X-Session-ID"),
+    limit: Optional[int] = None,
 ):
-    """Get all chats for a session"""
-    # Use default session if none provided
+    """Get all chats for a session."""
     session_id = x_session_id or "default"
-    print(f"Getting chats for session {session_id}")
     return chat_manager.get_recent_chats(session_id=session_id, limit=limit)
 
 
@@ -33,10 +52,8 @@ async def get_chat(
     chat_id: str,
     x_session_id: str = Header(None, alias="X-Session-ID"),
 ):
-    """Get a chat by id"""
-    # Use default session if none provided
+    """Get a chat by id."""
     session_id = x_session_id or "default"
-    print(f"Getting chat {chat_id} for session {session_id}")
     chat = chat_manager.get_chat(chat_id=chat_id, session_id=session_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -45,97 +62,134 @@ async def get_chat(
 
 @router.post("/")
 async def start_chat(
-    message: ChatMessage,
+    request: StartChatRequest,
     x_session_id: str = Header(None, alias="X-Session-ID"),
 ):
-    # Use default session if none provided
+    """Start a new chat with the SmartDataAgent."""
     session_id = x_session_id or "default"
-    message_dict = message.model_dump()
-    print("content:", message_dict["content"])
-    print("session_id:", session_id)
     chat_id = str(uuid.uuid4())
-    current_time = int(time.time())
 
-    chat_client = LLMChatClient(
-        model=LLM_GENERIC_MODEL, system_instructions=ZONING_CHAT_SYSTEM_INSTRUCTIONS
-    )
-    # create a new chat session
-    chat_session = chat_client.create_chat_session()
-
-    # Add id and role to the user message
-    message_dict["message_id"] = str(uuid.uuid4())
-    message_dict["role"] = "user"
-
-    assistant_response = chat_client.generate_response(
-        chat_session=chat_session, message=message_dict
+    # Create the agent runner
+    runner = SmartDataAgentRunner(
+        city=request.city,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        model=AGENT_MODEL,
+        session_id=session_id,
+        chat_id=chat_id,
+        history_manager=chat_manager,
     )
 
-    # Create a chat response
-    title = message_dict.get("content")
-    if title == "":
-        title = "Image chat"
-    title = title[:50] + "..." if len(title) > 50 else title
+    # Run the agent
+    response = await runner.run(request.content)
+
+    # Generate title from first message
+    title = request.content[:50]
+    if len(request.content) > 50:
+        title += "..."
+
+    # Save to disk
+    runner.save_to_disk(title=title)
+
+    # Build response
     chat_response = {
         "chat_id": chat_id,
         "title": title,
-        "dts": current_time,
-        "messages": [
-            message_dict,
-            {
-                "message_id": str(uuid.uuid4()),
-                "role": "assistant",
-                "content": assistant_response,
-            },
-        ],
+        "dts": int(time.time()),
+        "messages": runner.get_history(),
+        "context": {
+            "city": runner.city,
+            "latitude": runner.latitude,
+            "longitude": runner.longitude,
+            "agent_type": runner.agent_type,
+        },
     }
 
-    # Save the chat response
-    chat_manager.save_chat(chat_to_save=chat_response, session_id=session_id)
     return chat_response
 
 
 @router.post("/{chat_id}")
 async def continue_chat(
     chat_id: str,
-    message: ChatMessage,
+    request: ContinueChatRequest,
     x_session_id: str = Header(None, alias="X-Session-ID"),
 ):
-    """Continue a chat"""
-    # Use default session if none provided
+    """Continue an existing chat."""
     session_id = x_session_id or "default"
-    message_dict = message.model_dump()
-    print("content:", message_dict["content"])
-    print("session_id:", session_id)
+
+    # Load existing chat
     chat = chat_manager.get_chat(chat_id=chat_id, session_id=session_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    chat_client = LLMChatClient(
-        model=LLM_GENERIC_MODEL, system_instructions=ZONING_CHAT_SYSTEM_INSTRUCTIONS
+
+    # Get context from saved chat
+    context = chat.get("context", {})
+    city = context.get("city", "boston")
+    saved_latitude = context.get("latitude")
+    saved_longitude = context.get("longitude")
+
+    # Check if user wants to switch modes
+    new_latitude = request.latitude
+    new_longitude = request.longitude
+
+    # Create runner with saved context
+    runner = SmartDataAgentRunner(
+        city=city,
+        latitude=saved_latitude,
+        longitude=saved_longitude,
+        model=AGENT_MODEL,
+        session_id=session_id,
+        chat_id=chat_id,
+        history_manager=chat_manager,
     )
 
-    chat_session = chat_client.rebuild_chat_session(chat_history=chat["messages"])
+    # Restore history
+    runner.set_history(chat.get("messages", []))
 
-    # Update timestamp
-    current_time = int(time.time())
-    chat["dts"] = current_time
+    # Handle mode switching
+    if new_latitude is not None and new_longitude is not None:
+        # User selected a new location
+        if saved_latitude != new_latitude or saved_longitude != new_longitude:
+            await runner.switch_to_location_mode(
+                latitude=new_latitude,
+                longitude=new_longitude,
+            )
+    elif new_latitude is None and new_longitude is None and saved_latitude is not None:
+        # User deselected location - but only if explicitly requested
+        # For now, keep the same mode unless coordinates are explicitly changed
+        pass
 
-    # Add message Id and role
-    message_dict["message_id"] = str(uuid.uuid4())
-    message_dict["role"] = "user"
+    # Run the agent
+    response = await runner.run(request.content)
 
-    # Generate response
-    assistant_response = chat_client.generate_response(
-        chat_session=chat_session, message=message_dict
-    )
+    # Save to disk
+    runner.save_to_disk(title=chat.get("title"))
 
-    # Add assistant response to chat
-    chat["messages"].append(message_dict)
-    chat["messages"].append(
-        {
-            "message_id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": assistant_response,
-        }
-    )
-    chat_manager.save_chat(chat_to_save=chat, session_id=session_id)
-    return chat
+    # Build response
+    chat_response = {
+        "chat_id": chat_id,
+        "title": chat.get("title"),
+        "dts": int(time.time()),
+        "messages": runner.get_history(),
+        "context": {
+            "city": runner.city,
+            "latitude": runner.latitude,
+            "longitude": runner.longitude,
+            "agent_type": runner.agent_type,
+        },
+    }
+
+    return chat_response
+
+
+@router.delete("/{chat_id}")
+async def delete_chat(
+    chat_id: str,
+    x_session_id: str = Header(None, alias="X-Session-ID"),
+):
+    """Delete a chat."""
+    session_id = x_session_id or "default"
+    success = chat_manager.delete_chat(chat_id=chat_id, session_id=session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return {"status": "deleted", "chat_id": chat_id}

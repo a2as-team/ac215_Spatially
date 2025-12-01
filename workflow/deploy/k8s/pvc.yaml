@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-chat-history-pvc
+  labels:
+    app: spatially-backend
+spec:
+  accessModes:
+    - ReadWriteOnce  # Can be mounted by a single node
+  resources:
+    requests:
+      storage: 10Gi  # 10GB for chat history storage
+  storageClassName: standard  # GKE default storage class (GCE Persistent Disk)

@@ -1,14 +1,13 @@
 from .boston import BostonZoningMapsCollector
 from .cambridge import CambridgeZoningMapsCollector
-from shared_config.cities import City
+
 
 class ZoningMapsCollector:
     # Map city to collector CLASS (not instance) - no instantiation yet!
     COLLECTOR_CLASSES = {
-        City.boston: BostonZoningMapsCollector,
-        City.cambridge: CambridgeZoningMapsCollector,
+        "boston": BostonZoningMapsCollector,
+        "cambridge": CambridgeZoningMapsCollector,
         # Add more cities here as they are implemented
-        # City.chicago: ChicagoZoningMapsCollector,
     }
 
     def __init__(self):

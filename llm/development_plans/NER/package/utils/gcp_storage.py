@@ -163,3 +163,26 @@ class GCPStorage:
         """
         # Return the public HTTPS URL
         return f"https://storage.googleapis.com/{self.bucket.name}/{blob_path}"
+
+    def list_blobs(self, prefix: str = ""):
+        """
+        List blob objects in the GCS bucket.
+
+        Args:
+            prefix (str, optional): Prefix path to filter blobs. Defaults to "".
+
+        Returns:
+            Iterator of google.cloud.storage.Blob objects.
+        """
+        return self.bucket.list_blobs(prefix=prefix)
+
+    def download_blob_to_file(self, blob_path: str, local_path: str):
+        """
+        Download a blob to a local file.
+
+        Args:
+            blob_path (str): Path to the blob in the GCS bucket.
+            local_path (str): Local file path where the blob will be saved.
+        """
+        blob = self.bucket.blob(blob_path)
+        blob.download_to_filename(local_path)

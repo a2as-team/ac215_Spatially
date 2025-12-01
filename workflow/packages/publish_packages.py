@@ -41,13 +41,14 @@ def package_and_upload(
 
             # Create tar archive
             print(f"Creating tar archive...")
-            # We want to tar the contents of package_dir, not package_dir itself
-            # So we use -C to change to parent dir and tar the folder name
+            # We want to tar the CONTENTS of package_dir (not the dir itself)
+            # so setup.py/pyproject.toml are at root of archive
+            # Use -C to cd into package_dir and tar . (current directory contents)
             subprocess.run(
                 [
                     "tar", "cvf", str(tar_file),
-                    "-C", str(package_dir.parent),
-                    package_dir.name
+                    "-C", str(package_dir),
+                    "."
                 ],
                 check=True,
                 capture_output=True  # Suppress verbose tar output

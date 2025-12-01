@@ -1,5 +1,4 @@
-version: '3.8'
-
+version: "3.8"
 
 services:
   collector:
@@ -10,8 +9,8 @@ services:
       additional_contexts:
         shared_config: ./shared_config
     container_name: spatially_collector
-    stdin_open: true  # Keep stdin open (docker run -i)
-    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-aws-postgres-db.env
@@ -22,7 +21,28 @@ services:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/collector:/app # This will mount our ./data/collector as /app in the container
-  
+
+  collector-playwright:
+    platform: linux/amd64
+    build:
+      context: ./data/collector
+      dockerfile: Dockerfile.playwright
+      additional_contexts:
+        shared_config: ./shared_config
+    container_name: spatially_collector_playwright
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
+    env_file:
+      - ./secrets/ac215-spatially-project.env
+      - ./secrets/ac215-spatially-aws-postgres-db.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-storage-accessor-keys.json
+      PYTHONPATH: /app:/
+    volumes:
+      - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
+      - ./shared_config:/app/shared_config:ro # Shared configuration across all services
+      - ./data/collector:/app # This will mount our ./data/collector as /app in the container
+
   processor:
     platform: linux/amd64
     build:
@@ -31,8 +51,8 @@ services:
       additional_contexts:
         shared_config: ./shared_config
     container_name: spatially_processor
-    stdin_open: true  # Keep stdin open (docker run -i)
-    tty: true         # Allocate a pseudo-TTY (docker run -t)
+    stdin_open: true # Keep stdin open (docker run -i)
+    tty: true # Allocate a pseudo-TTY (docker run -t)
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-aws-postgres-db.env
@@ -43,6 +63,7 @@ services:
       - ./secrets:/secrets:ro # This will mount our ./secrets as /secrets in the container
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
       - ./data/processor:/app # This will mount our ./data/processor as /app in the container
+      - ./llm:/app/llm:ro # Mount llm directory for NER predictor imports
 
   label-studio:
     image: heartexlabs/label-studio:latest
@@ -69,7 +90,6 @@ services:
     networks:
       - development_plans_label_studio_network
     command: label-studio --host 0.0.0.0
-  
 
   label-studio-ml-backend:
     container_name: label-studio-ml-backend
@@ -130,11 +150,13 @@ services:
     tty: true
     env_file:
       - ./secrets/ac215-spatially-project.env
-      - ./secrets/ac215-spatially-finetune.env # this is for the finetune job
+      - ./secrets/ac215-deploy.env
+      # - ./secrets/ac215-spatially-finetune.env # this is for the finetune job (optional)
       # - ./secrets/ac215-spatially-milvus-vectordb.env # Milvus credentials
       - ./secrets/ac215-spatially-aws-postgres-db.env
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
+      DOCKER_API_VERSION: "1.43"  # Match Docker socket API version
     volumes:
       - ./secrets:/secrets:ro
       - ./shared_config:/app/shared_config:ro # Shared configuration across all services
@@ -144,6 +166,7 @@ services:
       # Mount Docker socket to allow publishing images from within container
       - /var/run/docker.sock:/var/run/docker.sock
       - ./llm:/app/llm
+      - ./backend:/backend:ro  # For building backend image
 
   llm_development_plans_trainer:
     build:
@@ -176,11 +199,34 @@ services:
     volumes:
       - ./backend:/app
       - ./secrets:/secrets:ro
+      - backend_persistent_data:/persistent
     command: ["uv", "run", "fastapi", "dev", "--host", "0.0.0.0", "--port", "8000", "app/main.py"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spatially_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - SERVER_API_BASE_URL=http://backend:8000
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   # This is a volume that is stored in the host machine (It is managed by Docker, not the user local machine)
   development_plans_label_studio_data:
+    driver: local
+  # Backend persistent storage for chat history
+  backend_persistent_data:
     driver: local
 
 networks:

@@ -79,5 +79,19 @@ class DBConnector:
             self.logger.error(f"Error getting city ID: {e}")
             raise
 
+    def get_all_cities(self) -> List[dict]:
+        """Get all cities that have zoning maps from the database."""
+        try:
+            results = self.execute("""
+                SELECT DISTINCT c.id, c.name, c.display_name, c.state, c.created_at
+                FROM cities c
+                INNER JOIN zoning_maps zm ON c.id = zm.city_id
+                ORDER BY c.state, c.display_name
+            """)
+            return results if results else []
+        except Exception as e:
+            self.logger.error(f"Error getting cities: {e}")
+            raise
+
     def embedding_to_pgvector(self, embedding: List[float]) -> str:
         return "[" + ",".join(str(x) for x in embedding) + "]"

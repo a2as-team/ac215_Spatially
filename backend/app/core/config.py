@@ -1,5 +1,6 @@
 import secrets
 import warnings
+import os
 from typing import Annotated, Any, Literal
 
 from pydantic import (
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = secrets.token_urlsafe(32)
     # 60 minutes * 24 hours * 8 days = 8 days
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    FRONTEND_HOST: str = "http://localhost:5173"
+    FRONTEND_HOST: str = "http://localhost:3000"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
     BACKEND_CORS_ORIGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = (
@@ -72,7 +73,9 @@ class Settings(BaseSettings):
         # POSTGRE_* names (from data processing) take precedence over POSTGRES_*
         self.POSTGRES_SERVER = os.environ.get("POSTGRE_HOST") or self.POSTGRES_SERVER
         self.POSTGRES_USER = os.environ.get("POSTGRE_USER") or self.POSTGRES_USER
-        self.POSTGRES_PASSWORD = os.environ.get("POSTGRE_PASSWORD") or self.POSTGRES_PASSWORD
+        self.POSTGRES_PASSWORD = (
+            os.environ.get("POSTGRE_PASSWORD") or self.POSTGRES_PASSWORD
+        )
         self.POSTGRES_DB = os.environ.get("APP_DB_NAME") or self.POSTGRES_DB
         self.POSTGRES_PORT = int(os.environ.get("POSTGRE_PORT", self.POSTGRES_PORT))
 

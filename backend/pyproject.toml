@@ -23,11 +23,15 @@ dependencies = [
     "pyjwt<3.0.0,>=2.8.0",
     "langchain-together>=0.1.0",
     "langchain-community>=0.3.0",
+    "google-cloud-storage>=2.19.0",
+    "google-genai>=1.0.0",
+    "google-adk[all]>=1.8.0",
 ]
 
 [tool.uv]
 dev-dependencies = [
     "pytest<8.0.0,>=7.4.3",
+    "pytest-asyncio>=0.23.0",
     "mypy<2.0.0,>=1.8.0",
     "ruff<1.0.0,>=0.2.2",
     "pre-commit<4.0.0,>=3.6.2",
@@ -83,3 +87,6 @@ sort = "-Cover"
 
 [tool.coverage.html]
 show_contexts = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

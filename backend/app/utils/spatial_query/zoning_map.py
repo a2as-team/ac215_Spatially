@@ -66,6 +66,50 @@ class ZoningMapSpatialQuery:
         finally:
             self.db.close()
 
+    def get_all_zoning_for_city(self, city: str) -> List[Dict[str, Any]]:
+        """Get all zoning data for a city"""
+        try:
+            city_id = self.db.get_city_id(city)
+            if city_id is None:
+                raise ValueError(f"City '{city}' not found in database")
+
+            query = """
+                SELECT
+                    id,
+                    code,
+                    article,
+                    usage,
+                    ST_AsGeoJSON(geom) as geometry,
+                    created_at
+                FROM zoning_maps
+                WHERE city_id = %s
+                ORDER BY code;
+            """
+            results = self.db.execute(query, (city_id,))
+
+            if not results:
+                self.logger.warning(f"No zoning data found for city: {city}")
+                return []
+
+            zoning_data = []
+            for row in results:
+                data = dict(row)
+                data["geometry"] = (
+                    json.loads(data["geometry"]) if data["geometry"] else None
+                )
+                # Convert datetime to ISO format string for JSON serialization
+                if data.get("created_at"):
+                    data["created_at"] = data["created_at"].isoformat()
+                zoning_data.append(data)
+
+            self.logger.info(f"Found {len(zoning_data)} zoning areas in {city}")
+            return zoning_data
+        except Exception as e:
+            self.logger.error(f"Error querying all zoning data for city: {e}")
+            raise
+        finally:
+            self.db.close()
+
     def get_city_id(self, city_name: str) -> Optional[int]:
         try:
             query = "SELECT id FROM cities WHERE name = %s"

@@ -25,15 +25,21 @@ class Trainer:
         self, device=None, model_name: str = "nlpaueb/legal-bert-base-uncased"
     ):
         self.model_name = model_name
+        # Build consistent label mappings:
+        # - BIO labels from config.NER_LABELS
+        # - Add "O" (outside) label as the last class
         self.label_to_id = {v: i for i, v in enumerate(NER_LABELS)}
-        self.id_to_label = {i: v for v, i in self.label_to_id.items()}
+        # Add NULL / outside label
         self.label_to_id[self.NULL_LABEL] = len(self.label_to_id)
-        if self.NULL_LABEL not in self.label_to_id:
-            self.label_to_id[self.NULL_LABEL] = 0  # Make sure "O" = 0
-        # we also
+        # Mirror mapping for convenience (used in stratification, debugging, etc.)
+        self.id_to_label = {i: v for v, i in self.label_to_id.items()}
+
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForTokenClassification.from_pretrained(
-            self.model_name, num_labels=len(self.label_to_id)
+            self.model_name, 
+            num_labels=len(self.label_to_id),
+            id2label=self.id_to_label,
+            label2id=self.label_to_id
         )
         # Respect the input device if provided, else select 'mps' (Mac), then 'cuda', then cpu
         if device is not None:
@@ -360,15 +366,17 @@ class Trainer:
         tokenized["labels"] = all_label_ids
         return tokenized
 
-    def prepare_model_input_data(self, json_path: Path = None) -> Dataset:
+    def prepare_model_input_data(self, json_path: Path = None, downsample_no_entities: float = 0.15) -> Dataset:
         """
         Full preprocessing pipeline:
         1. Load and chunk long Label Studio JSONs (from GCS or local file)
         2. Tokenize and align BIO labels
+        3. Downsample chunks with no entities to reduce class imbalance
         Returns a model-ready Hugging Face Dataset with input_ids, attention_mask, and labels.
 
         Args:
             json_path: Optional path to a local JSON file. If None, loads from GCS storage.
+            downsample_no_entities: Keep this fraction of NO_ENTITIES chunks (default 0.15 = 15%)
         """
         print("🧩 Preparing model input data...")
 
@@ -380,13 +388,93 @@ class Trainer:
             print(f"📂 Loading data from local file: {json_path}")
             dataset = self.import_label_studio_data_from_single_json(json_path)
 
-        # Step 2. Tokenize and align labels
+        # Step 2. Downsample NO_ENTITIES chunks
+        if downsample_no_entities < 1.0:
+            print(f"🎲 Downsampling NO_ENTITIES chunks (keeping {downsample_no_entities*100:.0f}%)...")
+
+            # Identify which examples have no entities
+            has_entities = []
+            for example in dataset:
+                labels = example["labels"]
+                # Check if any label is not "O"
+                has_any_entity = any(label != self.NULL_LABEL for label in labels)
+                has_entities.append(has_any_entity)
+
+            # Count
+            num_with_entities = sum(has_entities)
+            num_without_entities = len(has_entities) - num_with_entities
+
+            print(f"   Before: {len(dataset)} chunks ({num_with_entities} with entities, {num_without_entities} without)")
+
+            # Keep all with entities, downsample those without
+            import random
+            random.seed(42)
+
+            indices_to_keep = []
+            for i, has_ent in enumerate(has_entities):
+                if has_ent:
+                    # Keep all chunks with entities
+                    indices_to_keep.append(i)
+                else:
+                    # Randomly keep downsample_no_entities fraction of chunks without entities
+                    if random.random() < downsample_no_entities:
+                        indices_to_keep.append(i)
+
+            dataset = dataset.select(indices_to_keep)
+
+            num_kept_without = len(indices_to_keep) - num_with_entities
+            print(f"   After:  {len(dataset)} chunks ({num_with_entities} with entities, {num_kept_without} without)")
+            print(f"   Removed {num_without_entities - num_kept_without} NO_ENTITIES chunks")
+
+        # Step 3. Tokenize and align labels
         tokenized_dataset = dataset.map(self.add_labels_in_model_format, batched=True)
 
         print(f"✅ Prepared {len(tokenized_dataset)} examples ready for training.")
         return tokenized_dataset
 
-    def train(self, batch_size=8, epochs=3, learning_rate=2e-5, json_path=None):
+    def _create_stratification_labels(self, dataset: Dataset) -> list:
+        """
+        Stratify based on the rarest entity type present in each example.
+        This ensures rare entities (like ZONING_RELIEF) are in both train/val sets.
+        """
+        from config.labels import BASE_ENTITY_TYPES
+
+        # Priority order: rarest first (based on actual data distribution)
+        entity_priority = {
+            "ZONING_RELIEF": 0,        # Rarest (2.1%)
+            "PROPERTY_USAGE": 1,       # (6.4%)
+            "ZONING_DISTRICT": 2,      # (6.3%)
+            "EXPECTED_IMPACT": 3,      # (10.7%)
+            "LOCATION_CONTEXT": 4,     # (18.3%)
+            "CONSTRUCTION_DETAILS": 5, # (25.3%)
+            "ARTICLE_REFERENCE": 6,    # Most common (28.7%)
+        }
+
+        stratification_labels = []
+
+        for example in dataset:
+            labels = example["labels"]
+            present_types = set()
+
+            for label_id in labels:
+                if label_id != -100:
+                    label_name = self.id_to_label.get(label_id, "O")
+                    if label_name != "O":
+                        entity_type = label_name.split("-")[1] if "-" in label_name else label_name
+                        present_types.add(entity_type)
+
+            # Use the rarest entity type as the stratification label
+            if present_types:
+                rarest = min(present_types, key=lambda x: entity_priority.get(x, 999))
+                strat_label = rarest
+            else:
+                strat_label = "NO_ENTITIES"
+
+            stratification_labels.append(strat_label)
+
+        return stratification_labels
+
+    def train(self, batch_size=8, epochs=3, learning_rate=2e-5, json_path=None, downsample_no_entities=0.15):
         """
         Train the NER model with automatic Weights & Biases tracking.
 
@@ -395,20 +483,61 @@ class Trainer:
             epochs: Number of training epochs
             learning_rate: Learning rate for optimizer
             json_path: Optional path to local JSON file. If None, loads from GCS storage.
+            downsample_no_entities: Fraction of NO_ENTITIES chunks to keep (0.15 = keep 15%, remove 85%)
         """
         # Split the dataset into training and validation sets
-        dataset = self.prepare_model_input_data(json_path=json_path)
-        dataset = dataset.remove_columns(
-            [
-                col
-                for col in dataset.column_names
-                if col not in ["input_ids", "attention_mask", "labels"]
-            ]
-        )
-        split = dataset.train_test_split(test_size=0.1)
+        dataset = self.prepare_model_input_data(json_path=json_path, downsample_no_entities=downsample_no_entities)
+
+        # Create stratification labels (one label per entity type, prioritizing rare entities)
+        print("🔀 Creating stratified split by rarest entity type...")
+        stratification_labels = self._create_stratification_labels(dataset)
+
+        from collections import Counter
+        from datasets import ClassLabel
+
+        strat_counts = Counter(stratification_labels)
+        print(f"📊 Stratification by entity type:")
+        for label, count in sorted(strat_counts.items(), key=lambda x: x[1]):
+            print(f"   - {label}: {count} examples")
+
+        # Convert to ClassLabel format (required by HuggingFace)
+        unique_labels = sorted(set(stratification_labels))
+        label_to_id = {label: i for i, label in enumerate(unique_labels)}
+        stratification_ids = [label_to_id[label] for label in stratification_labels]
+
+        dataset = dataset.add_column("_strat_label", stratification_ids)
+        new_features = dataset.features.copy()
+        new_features["_strat_label"] = ClassLabel(names=unique_labels)
+        dataset = dataset.cast(new_features)
+
+        # Perform stratified split (with fallback for edge cases)
+        try:
+            split = dataset.train_test_split(
+                test_size=0.1,
+                stratify_by_column="_strat_label"
+            )
+            print("✓ Stratified split complete")
+        except ValueError as e:
+            print(f"⚠️  Stratified split failed: {e}")
+            print(f"   Falling back to random split (dataset too small for stratification)")
+            dataset = dataset.remove_columns(["_strat_label"])
+            split = dataset.train_test_split(test_size=0.1)
+            print("✓ Random split complete")
 
         train_dataset = split["train"]
         val_dataset = split["test"]
+
+        # Remove stratification column and keep only model inputs
+        train_dataset = train_dataset.remove_columns(["_strat_label"])
+        val_dataset = val_dataset.remove_columns(["_strat_label"])
+
+        cols_to_remove = [
+            col for col in train_dataset.column_names
+            if col not in ["input_ids", "attention_mask", "labels"]
+        ]
+        if cols_to_remove:
+            train_dataset = train_dataset.remove_columns(cols_to_remove)
+            val_dataset = val_dataset.remove_columns(cols_to_remove)
 
         # ✅ Initialize wandb run with auto-generated name
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -429,6 +558,7 @@ class Trainer:
                 "labels": list(self.label_to_id.keys()),
                 "device": str(self.device),
                 "data_source": "gcs" if json_path is None else "local",
+                "downsample_no_entities": downsample_no_entities,
             },
             tags=["ner", "development-plans", "token-classification", "spatially"]
         )
@@ -446,10 +576,6 @@ class Trainer:
             "dataset/val_examples": len(val_dataset),
         })
 
-        # data loaders
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
         # ✅ Create a data collator for dynamic padding
         data_collator = DataCollatorForTokenClassification(tokenizer=self.tokenizer)
 
@@ -466,6 +592,30 @@ class Trainer:
 
         device = self.device
 
+        # ============================
+        # 🔧 Class-weighted loss
+        # ============================
+        #
+        # Even after downsampling NO_ENTITIES chunks, most tokens are still "O".
+        # This makes the model biased towards predicting "O" for everything.
+        #
+        # To counter this, we:
+        # - Use a class-weighted CrossEntropyLoss
+        # - Down-weight the "O" class so entity labels get higher gradient signal
+        #
+        # NOTE: We compute weights purely from label mappings here:
+        #  - All entity labels = weight 1.0
+        #  - "O" label         = weight 0.1 (configurable if needed)
+        num_labels = len(self.label_to_id)
+        class_weights = torch.ones(num_labels, device=device)
+        null_label_id = self.label_to_id[self.NULL_LABEL]
+        class_weights[null_label_id] = 0.1  # reduce impact of "O"
+
+        loss_fn = torch.nn.CrossEntropyLoss(
+            weight=class_weights,
+            ignore_index=-100,  # ignore padded / special-token positions
+        )
+
         # Track global step for detailed logging
         global_step = 0
 
@@ -481,8 +631,22 @@ class Trainer:
                     for k, v in batch.items()
                     if isinstance(v, torch.Tensor)
                 }
-                outputs = self.model(**batch)
-                loss = outputs.loss
+
+                # Forward pass (we'll compute loss manually with class weights)
+                outputs = self.model(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    labels=None,  # avoid built-in loss
+                )
+
+                logits = outputs.logits  # [batch, seq_len, num_labels]
+                labels = batch["labels"]  # [batch, seq_len]
+
+                # Flatten for CrossEntropyLoss: (N * T, C) vs (N * T)
+                loss = loss_fn(
+                    logits.view(-1, logits.size(-1)),
+                    labels.view(-1),
+                )
 
                 total_loss += loss.item()
 
@@ -521,6 +685,11 @@ class Trainer:
         tokenizer_path = f"{local_model_dir}/ner_tokenizer"
 
         print(f"\n💾 Saving model to local directory: {model_path}")
+        
+        # Set label mappings in model config before saving
+        self.model.config.label2id = self.label_to_id
+        self.model.config.id2label = self.id_to_label
+        
         self.model.save_pretrained(model_path)
         self.tokenizer.save_pretrained(tokenizer_path)
         print(f"✅ Model saved locally")
@@ -570,9 +739,25 @@ class Trainer:
         print("✅ Training completed and logged to Weights & Biases")
 
     def evaluate(self, loader: DataLoader, device: torch.device) -> float:
-        # the eval() would set the model to evaluation mode, making it not trainable
+        """
+        Evaluation loop that mirrors the training loss:
+        - Uses the same class-weighted CrossEntropyLoss
+        - Ignores padded positions (-100)
+        """
         self.model.eval()
         total_loss = 0
+
+        # Recreate the same class-weighted criterion used in training
+        num_labels = len(self.label_to_id)
+        class_weights = torch.ones(num_labels, device=device)
+        null_label_id = self.label_to_id[self.NULL_LABEL]
+        class_weights[null_label_id] = 0.1
+
+        loss_fn = torch.nn.CrossEntropyLoss(
+            weight=class_weights,
+            ignore_index=-100,
+        )
+
         with torch.no_grad():
             for batch in tqdm(loader, desc="Evaluating"):
                 batch = {
@@ -580,7 +765,19 @@ class Trainer:
                     for k, v in batch.items()
                     if isinstance(v, torch.Tensor)
                 }
-                outputs = self.model(**batch)
-                loss = outputs.loss
+
+                outputs = self.model(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    labels=None,
+                )
+                logits = outputs.logits
+                labels = batch["labels"]
+
+                loss = loss_fn(
+                    logits.view(-1, logits.size(-1)),
+                    labels.view(-1),
+                )
                 total_loss += loss.item()
+
         return total_loss / len(loader)

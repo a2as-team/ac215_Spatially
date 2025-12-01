@@ -1,6 +1,10 @@
 import os
 import subprocess
 from pathlib import Path
+import sys
+
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import RegistryConfig
 
 
@@ -49,19 +53,30 @@ def build_and_push_to_gcp(
         # Build the image for specified platform
         print(f"Building image: {image_name}...")
         build_cmd = [
-            "docker", "build",
-            "--platform", platform,
-            "--build-context", f"shared_config={project_root}/shared_config",
-            "-t", image_uri,
-            "-f", str(dockerfile_path),
-            str(context_path)
+            "docker",
+            "build",
+            "--platform",
+            platform,
+            "--build-context",
+            f"shared_config={project_root}/shared_config",
+            "-t",
+            image_uri,
+            "-f",
+            str(dockerfile_path),
+            str(context_path),
         ]
         subprocess.run(build_cmd, check=True)
         print(f"Successfully built: {image_uri}")
 
         # Configure docker to use gcloud as credential helper
         print(f"\nConfiguring Docker authentication for GCP...")
-        auth_cmd = ["gcloud", "auth", "configure-docker", f"{gcp_region}-docker.pkg.dev", "--quiet"]
+        auth_cmd = [
+            "gcloud",
+            "auth",
+            "configure-docker",
+            f"{gcp_region}-docker.pkg.dev",
+            "--quiet",
+        ]
         subprocess.run(auth_cmd, check=True)
 
         # Push the image
@@ -115,7 +130,9 @@ def publish_local_docker_images(
         if images:
             configs_to_build = [c for c in all_configs if c["name"] in images]
             if not configs_to_build:
-                raise ValueError(f"No matching images found. Available: {[c['name'] for c in all_configs]}")
+                raise ValueError(
+                    f"No matching images found. Available: {[c['name'] for c in all_configs]}"
+                )
         else:
             configs_to_build = all_configs
 

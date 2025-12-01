@@ -23,6 +23,18 @@ class RegistryConfig:
         }
 
     @staticmethod
+    def data_collector_playwright_image(gcp_region: str, gcp_project: str):
+        """Playwright-based collector for Next.js and bot-protected sites"""
+        project_root = Path(__file__).parent.parent
+        return {
+            "name": "data-collector-playwright",
+            "context": project_root / "data" / "collector",
+            "dockerfile": project_root / "data" / "collector" / "Dockerfile.playwright",
+            "image_uri": f"{gcp_region}-docker.pkg.dev/{gcp_project}/{RegistryConfig.repository_name()}/data-collector-playwright:latest",
+            "platform": RegistryConfig.platform(),
+        }
+
+    @staticmethod
     def data_processor_image(gcp_region: str, gcp_project: str):
         project_root = Path(__file__).parent.parent
         return {
@@ -34,8 +46,21 @@ class RegistryConfig:
         }
 
     @staticmethod
+    def backend_image(gcp_region: str, gcp_project: str):
+        project_root = Path(__file__).parent.parent.parent
+        return {
+            "name": "backend",
+            "context": project_root / "backend",
+            "dockerfile": project_root / "backend" / "Dockerfile",
+            "image_uri": f"{gcp_region}-docker.pkg.dev/{gcp_project}/{RegistryConfig.repository_name()}/backend:latest",
+            "platform": RegistryConfig.platform(),
+        }
+
+    @staticmethod
     def images(gcp_region: str, gcp_project: str):
         return [
             RegistryConfig.data_collector_image(gcp_region, gcp_project),
+            RegistryConfig.data_collector_playwright_image(gcp_region, gcp_project),
             RegistryConfig.data_processor_image(gcp_region, gcp_project),
+            RegistryConfig.backend_image(gcp_region, gcp_project),
         ]

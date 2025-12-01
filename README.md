@@ -15,17 +15,36 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 - [Backend API README](./backend/README.md): Setup and usage instructions for the FastAPI backend
 - [Census Data Collector README](./data/collector/census/README.md): Census data collection documentation
 - [Zoning Ordinance Collector README](./data/collector/zoning_ordinance/README.md): Zoning ordinance collection documentation
+- [Zoning Codes Collector README](./data/collector/zoning_codes/README.md): Zoning codes collection documentation
 
 ## Database Schema
 
 ```mermaid
+%% Enum: topic
+%% Values:
+%% - DEMOGRAPHICS
+%% - HOUSEHOLD_COMPOSITION
+%% - HOUSING_STOCK
+%% - HOUSING_FINANCIALS
+%% - HOUSING_TENURE_OCCUPANCY
+%% - HOUSING_COST_BURDEN
+%% - HOUSING_AGE_CONDITION
+%% - VACANCY
+%% - INCOME
+%% - POVERTY
+%% - EMPLOYMENT
+%% - INDUSTRY
+%% - TRANSPORTATION
+%% - GEOGRAPHIC_MOBILITY
+%% - EDUCATION
+
 erDiagram
     cities ||--o{ zoning_maps : "has many"
+    cities ||--o{ zoning_codes : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
+    cities ||--o{ development_plans_embed : "has many"
     CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
-    ACS_TABLE ||--o{ ACS_RELEASE : "defines releases"
     ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
-    ACS_RELEASE ||--o{ ACS_VALUE : "provides release context"
     ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
 
     cities {
@@ -46,17 +65,8 @@ erDiagram
     ACS_TABLE {
         string acs_table_id PK
         string title
-        string topic
-        string table_type
+        topic topic
         string description
-    }
-
-    ACS_RELEASE {
-        string acs_release_id PK
-        string acs_table_id FK
-        int year
-        string dataset
-        string vintage
     }
 
     ACS_VARIABLE {
@@ -69,10 +79,9 @@ erDiagram
     ACS_VALUE {
         int acs_value_id PK
         string geoid FK
-        string acs_release_id FK
         string variable_id FK
+        int year
         float value
-        datetime ingested_at
     }
 
     zoning_maps {
@@ -82,6 +91,16 @@ erDiagram
         varchar article "Zoning article"
         varchar usage "Zoning usage"
         geometry geom "PostGIS geometry"
+        timestamp created_at
+    }
+
+    zoning_codes {
+        int id PK
+        int city_id FK "References cities(id)"
+        varchar zone_code "Zone code identifier (e.g. R-1, B-2)"
+        varchar zone_subtype "Zone name (e.g. Single Family Residential)"
+        decimal area_acres "Area covered in acres"
+        text description "Full description of the zone"
         timestamp created_at
     }
 
@@ -98,7 +117,20 @@ erDiagram
         timestamp created_at
     }
 
-
+    development_plans_embed {
+        int id PK
+        int city_id FK "References cities(id)"
+        text chunk_hash "SHA256 hash for deduplication (unique)"
+        text text_chunk "Development plans text chunk"
+        varchar project_name "e.g. 100 Hood Park Drive"
+        varchar file_name "e.g. Letter_of_Intent__LOI"
+        text[] zoning_codes "Zoning codes mentioned in text (extracted by the NER model)"
+        vector(768) embedding "Embedding vector for semantic search"
+        text[] article_reference "Articles referenced by the text (extracted by the NER model)"
+        text location_context "Contextual details about a site (extracted by the NER model)"
+        jsonb metadata "Flexible metadata (source_url, land_area, etc.)"
+        timestamp created_at
+    }
 ```
 
 > **Note:** The `census_data` table schema is a placeholder. Please define the appropriate fields based on the census data requirements (e.g., demographics, housing statistics, economic indicators, etc.).

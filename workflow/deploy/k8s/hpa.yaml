@@ -1,0 +1,41 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: spatially-backend-hpa
+  labels:
+    app: spatially-backend
+spec:
+  # Target deployment to scale
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: spatially-backend
+
+  # Pod scaling limits (budget-friendly)
+  minReplicas: 1   # Save cost: only 1 pod when idle
+  maxReplicas: 4   # Cap at 4 pods to limit costs
+
+  # Scaling metrics (less aggressive)
+  metrics:
+    # Scale based on CPU usage
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80  # Scale at 80% CPU (not 70%)
+
+  # Scaling behavior (conservative for budget)
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 min before scaling down
+      policies:
+        - type: Pods
+          value: 1         # Scale down 1 pod at a time
+          periodSeconds: 30
+    scaleUp:
+      stabilizationWindowSeconds: 5   # Wait 30 sec before scaling up
+      policies:
+        - type: Pods
+          value: 1         # Add only 1 pod at a time
+          periodSeconds: 30

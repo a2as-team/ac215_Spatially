@@ -25,15 +25,52 @@ The NER model identifies and extracts the following entities from development pl
 
 ## Quick Start with Docker
 
+### Run Training
+
 ```bash
+# From project root
 docker compose run --rm llm_development_plans_trainer
 ```
 
+### Rebuild and Run (after code changes)
+
 ```bash
-cd llm/development_plans/NER
+# From project root
+docker compose build llm_development_plans_trainer && \
+  docker image prune -f && \
+  docker compose run --rm llm_development_plans_trainer
 ```
 
-# Rebuild and run the container
+## Using the Trained Model (Inference)
+
+Once trained, the model is automatically used by the development plans processor to extract entities.
+
+### Quick Test
+
+Test the NER predictor with sample text:
+
 ```bash
-docker compose build llm_development_plans_trainer && docker image prune -f && docker compose run --rm llm_development_plans_trainer
+cd llm/development_plans/NER
+python test_predictor.py
 ```
+
+### Integration
+
+The NER model is integrated into `data/processor/development_plans/ner_json_processor.py`:
+
+```bash
+cd data/processor/development_plans
+python run.py --city boston
+```
+
+This will:
+1. Load `.ner.json` files from GCS
+2. Download and cache the trained NER model
+3. Extract entities from each text chunk
+4. Store results in PostgreSQL with pgvector embeddings
+
+### Model Location
+
+- **GCS Bucket**: `spatially-us-central-1-model-training`
+- **Path**: `ner_model_output/model/`
+- **Files**: `ner_model/` (model weights) and `ner_tokenizer/` (tokenizer config)

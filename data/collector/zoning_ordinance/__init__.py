@@ -1,13 +1,12 @@
 from .cambridge import CambridgeZoningOrdinanceCollector
 from .boston import BostonZoningOrdinanceCollector
-from shared_config.cities import City
 
 
 class ZoningOrdinanceCollector:
     def __init__(self):
         self.collector_map = {
-            City.cambridge: CambridgeZoningOrdinanceCollector,
-            City.boston: BostonZoningOrdinanceCollector,
+            "cambridge": CambridgeZoningOrdinanceCollector,
+            "boston": BostonZoningOrdinanceCollector,
         }
     
     def collect(self, city: str):

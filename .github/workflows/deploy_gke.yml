@@ -1,0 +1,83 @@
+name: Build and Deploy to GKE
+
+on:
+  push:
+    branches:
+      - prod  # Deploy on push to prod
+    paths:
+      - 'backend/**'
+      - 'workflow/deploy/**'
+      - '.github/workflows/deploy_gke.yml'
+  # Manual trigger
+  workflow_dispatch:
+
+env:
+  GCP_REGION: us-central1
+  GKE_ZONE: us-central1-a
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Set up Docker Buildx (required for build-push-action)
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # Build the workflow Docker image
+    - name: Build Workflow Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./workflow
+        file: ./workflow/Dockerfile
+        build-contexts: shared_config=./shared_config
+        tags: workflow:latest
+        push: false
+        load: true  # Load image into Docker daemon
+
+    # Write GCP credentials to file
+    - name: Setup GCP Credentials
+      run: echo '${{ secrets.GCP_SA_KEY }}' > /tmp/gcp-key.json
+
+    # Run deployment using docker-run-action
+    - name: Deploy to GKE
+      uses: addnab/docker-run-action@v3
+      with:
+        image: workflow:latest
+        options: |
+          -e PYTHONUNBUFFERED=1
+          -e GCP_PROJECT=${{ secrets.GCP_PROJECT }}
+          -e GCP_REGION=${{ env.GCP_REGION }}
+          -e GKE_ZONE=${{ env.GKE_ZONE }}
+          -e POSTGRE_HOST=${{ secrets.POSTGRE_HOST }}
+          -e POSTGRE_USER=${{ secrets.POSTGRE_USER }}
+          -e POSTGRE_PASSWORD=${{ secrets.POSTGRE_PASSWORD }}
+          -e APP_DB_NAME=${{ secrets.APP_DB_NAME }}
+          -e CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN }}
+          -e CERT_EMAIL=${{ secrets.CERT_EMAIL }}
+          -e DOMAIN_FILTER=${{ secrets.DOMAIN_FILTER }}
+          -e FRONTEND_HOST=${{ secrets.FRONTEND_HOST }}
+          -e BACKEND_CORS_ORIGINS=${{ secrets.BACKEND_CORS_ORIGINS }}
+          -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/gcp-key.json
+          -v /tmp/gcp-key.json:/secrets/gcp-key.json:ro
+          -v /var/run/docker.sock:/var/run/docker.sock
+          -v ${{ github.workspace }}/backend:/backend:ro
+        run: |
+          echo "=== Authenticating with GCP ==="
+          gcloud auth activate-service-account --key-file=/secrets/gcp-key.json
+          gcloud config set project ${GCP_PROJECT}
+          gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+
+          echo "=== Starting Deployment ==="
+          cd /app/deploy
+          python -u run.py --action deploy
+
+          echo "=== Deployment Complete ==="
+
+    # Cleanup credentials
+    - name: Cleanup
+      if: always()
+      run: rm -f /tmp/gcp-key.json

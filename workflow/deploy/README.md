@@ -74,3 +74,11 @@ Push to `prod` branch or manually trigger the workflow.
 9. Deploy Ingress (triggers DNS + TLS certificate)
 
 Result: `https://zoning-api.teamspatially.com` is live with auto-scaling and auto-renewed TLS.
+
+For monitoring the capability of hpa,
+
+```bash
+python -c "from deploy.gke.cluster import GKECluster; GKECluster().get_credentials()"
+kubectl get hpa spatially-backend-hpa --watch
+kubectl get pods -l app=spatially-backend --watch
+```

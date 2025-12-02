@@ -5,7 +5,7 @@ import sys
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import RegistryConfig
+from registry.config import RegistryConfig
 
 
 def build_and_push_to_gcp(

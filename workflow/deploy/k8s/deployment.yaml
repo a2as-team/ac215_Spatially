@@ -75,13 +75,24 @@ spec:
             - secretRef:
                 name: spatially-db-secrets
 
-          # Volume mounts for persistent storage
+          # GCP service account credentials for Vertex AI
+          env:
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /secrets/gcp/key.json
+
+          # Volume mounts for persistent storage and secrets
           volumeMounts:
             - name: chat-history-storage
               mountPath: /persistent
+            - name: gcp-sa-key
+              mountPath: /secrets/gcp
+              readOnly: true
 
       # Volumes definition
       volumes:
         - name: chat-history-storage
           persistentVolumeClaim:
             claimName: backend-chat-history-pvc
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key

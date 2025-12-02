@@ -193,6 +193,7 @@ services:
     env_file:
       - ./secrets/ac215-spatially-project.env
       - ./secrets/ac215-spatially-aws-postgres-db.env
+      - ./secrets/ac215-deploy.env
     environment:
       PYTHONPATH: /app
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json

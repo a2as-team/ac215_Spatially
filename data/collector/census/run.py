@@ -68,9 +68,10 @@ if __name__ == "__main__":
         for year in years:
             print(f"Collecting: table={table_code} year={year}")
             try:
-                # Request tract-level data by passing county="*" and tract="*"
-                # This ensures we get state, county, and tract columns for proper geoid construction
-                df = collector.collect(table_code=table_code, year=year, state=args["state"], county="*", tract="*")
+                # Request tract-level data by passing tract="*"
+                # This fetches all tracts in the state and returns state, county, and tract columns
+                # for proper 11-digit geoid construction (state + county + tract)
+                df = collector.collect(table_code=table_code, year=year, state=args["state"], tract="*")
             except Exception as e:
                 print(f"Skipping {table_code} {year}: {e}")
                 continue

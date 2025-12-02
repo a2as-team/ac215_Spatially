@@ -16,7 +16,12 @@ class BaseCensusCaller:
 
         # Build geography parameter
         if tract:
-            geo = f"for=tract:*&in=state:{state_fips}+county:{county}"
+            # If tract="*", get all tracts in the state (or specific county if provided)
+            if county and county != "*":
+                geo = f"for=tract:*&in=state:{state_fips}+county:{county}"
+            else:
+                # Get all tracts in the entire state
+                geo = f"for=tract:*&in=state:{state_fips}"
         elif county:
             geo = f"for=county:*&in=state:{state_fips}"
         else:

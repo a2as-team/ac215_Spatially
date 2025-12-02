@@ -1,7 +1,11 @@
 import os
 import subprocess
 from pathlib import Path
-from .config import RegistryConfig
+import sys
+
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import RegistryConfig
 
 
 def build_and_push_to_gcp(

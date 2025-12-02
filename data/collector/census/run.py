@@ -16,7 +16,7 @@ if str(project_root) not in sys.path:
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from utils.gcp_storage import GCPStorage
 from census import CensusCollector
-from shared_config.cities import City
+from shared_config.city_service import CityService
 import pandas as pd
 
 if __name__ == "__main__":
@@ -27,15 +27,18 @@ if __name__ == "__main__":
     args = parser.parse()
 
     city_key = args["city"].strip().lower()
-    if City.is_valid(city_key):
-        state = City.get_state(city_key)
-        if state:
-            args["state"] = state
-            print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+    with CityService() as service:
+        city = service.get_city(city_key)
+        if city:
+            state = city.get("state")
+            if state:
+                args["state"] = state
+                print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+            else:
+                raise ValueError(f"City '{args['city']}' found but has no state defined.")
         else:
-            raise ValueError(f"City '{args['city']}' found but has no state defined.")
-    else:
-        raise ValueError(f"Unknown city: {args['city']}. Known cities: {City.get_all()}")
+            available = [c["name"] for c in service.get_all_cities()]
+            raise ValueError(f"Unknown city: {args['city']}. Known cities: {available[:10]}...")
 
     collector = CensusCollector()
     table_codes = list(collector.caller_map.keys())

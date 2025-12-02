@@ -1,4 +1,5 @@
 import { useRouter } from "next/router";
+import { GetStaticProps, GetStaticPaths } from "next";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   AppShell,
@@ -30,11 +31,16 @@ import {
 import maplibregl from "maplibre-gl";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useStartChat, useContinueChat, useChats } from "@/hooks/useChat";
-import { useZoningAtLocation, useCityZoning } from "@/hooks/useZoningSearch";
-import { ZoningData } from "@/services/zoningApi";
+import { useStartChat, useContinueChat, useChats, useChat } from "@/hooks/useChat";
+import { useZoningAtLocation } from "@/hooks/useZoningSearch";
+import { ZoningData, CityZoningResponse, getCityZoningServerSide } from "@/services/zoningApi";
+import { getCitiesServerSide } from "@/services/citiesApi";
 
-export default function CityPage() {
+interface CityPageProps {
+  cityZoningData: CityZoningResponse;
+}
+
+export default function CityPage({ cityZoningData }: CityPageProps) {
   const router = useRouter();
   const { id } = router.query;
   const [opened, { toggle }] = useDisclosure();
@@ -43,6 +49,10 @@ export default function CityPage() {
   const [selectedZoning, setSelectedZoning] = useState<ZoningData[] | null>(
     null
   );
+  const [selectedLocation, setSelectedLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -50,19 +60,16 @@ export default function CityPage() {
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
   const { data: chats } = useChats(10);
+  const { data: currentChatData } = useChat(currentChatId);
   const { mutate: startChat, isPending: isStarting } = useStartChat();
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
   const { mutate: fetchZoning, isPending: isLoadingZoning } =
     useZoningAtLocation();
-  const { data: cityZoningData, isLoading: isCityZoningLoading } = useCityZoning(
-    typeof id === "string" ? id : undefined
-  );
 
   const isPending = isStarting || isContinuing;
 
-  // Get current chat messages
-  const currentChat = chats?.find((chat) => chat.chat_id === currentChatId);
-  const messages = currentChat?.messages || [];
+  // Get current chat messages from the dedicated query (updates immediately on mutation)
+  const messages = currentChatData?.messages || [];
 
   // Add zoning polygons to map
   const addZoningLayer = useCallback((zoningData: ZoningData[]) => {
@@ -197,6 +204,9 @@ export default function CityPage() {
           .setLngLat([lng, lat])
           .addTo(map.current!);
 
+        // Save selected location for chat context
+        setSelectedLocation({ latitude: lat, longitude: lng });
+
         // Fetch zoning data
         if (id && typeof id === "string") {
           fetchZoning(
@@ -234,15 +244,20 @@ export default function CityPage() {
   }, [id, fetchZoning, addZoningLayer]);
 
   const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !id || typeof id !== "string") return;
 
     const content = inputValue;
     setInputValue("");
 
     if (!currentChatId) {
-      // Start a new chat
+      // Start a new chat with city and optional location
       startChat(
-        { content },
+        {
+          content,
+          city: id,
+          latitude: selectedLocation?.latitude,
+          longitude: selectedLocation?.longitude,
+        },
         {
           onSuccess: (data) => {
             setCurrentChatId(data.chat_id);
@@ -253,9 +268,16 @@ export default function CityPage() {
         }
       );
     } else {
-      // Continue existing chat
+      // Continue existing chat with optional new location
       continueChat(
-        { chatId: currentChatId, request: { content } },
+        {
+          chatId: currentChatId,
+          request: {
+            content,
+            latitude: selectedLocation?.latitude,
+            longitude: selectedLocation?.longitude,
+          },
+        },
         {
           onError: (error) => {
             console.error("Error continuing chat:", error);
@@ -271,8 +293,9 @@ export default function CityPage() {
   };
 
   const handleClearSelection = () => {
-    // Clear selected zoning
+    // Clear selected zoning and location
     setSelectedZoning(null);
+    setSelectedLocation(null);
 
     // Remove marker from map
     if (markerRef.current) {
@@ -316,7 +339,7 @@ export default function CityPage() {
     <AppShell
       header={{ height: 60 }}
       navbar={{
-        width: 400,
+        width: 500,
         breakpoint: "sm",
         collapsed: { mobile: !opened },
       }}
@@ -643,3 +666,39 @@ export default function CityPage() {
     </AppShell>
   );
 }
+
+// Generate paths for all cities at build time
+export const getStaticPaths: GetStaticPaths = async () => {
+  const { cities } = await getCitiesServerSide();
+
+  const paths = cities.map((city) => ({
+    params: { id: city.name },
+  }));
+
+  return {
+    paths,
+    // fallback: 'blocking' allows new cities to be rendered on-demand
+    fallback: "blocking",
+  };
+};
+
+// Pre-fetch GeoJSON data at build time (or on-demand with ISR)
+export const getStaticProps: GetStaticProps<CityPageProps> = async ({
+  params,
+}) => {
+  const cityId = params?.id as string;
+
+  if (!cityId) {
+    return { notFound: true };
+  }
+
+  const cityZoningData = await getCityZoningServerSide(cityId);
+
+  return {
+    props: {
+      cityZoningData,
+    },
+    // Revalidate every hour - GeoJSON data doesn't change often
+    revalidate: 3600,
+  };
+};

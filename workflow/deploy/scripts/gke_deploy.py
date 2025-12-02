@@ -57,6 +57,10 @@ class GKEDeploy:
             self.cluster.region, self.cluster.project
         )["image_uri"]
 
+        # Apply PVC for persistent storage (chat history)
+        print("\nApplying PersistentVolumeClaim for chat history...")
+        self.run_command(["kubectl", "apply", "-f", str(K8S_DIR / "pvc.yaml")])
+
         # Read deployment.yaml and substitute the image
         deployment_yaml = (K8S_DIR / "deployment.yaml").read_text()
         deployment_yaml = deployment_yaml.replace("${BACKEND_IMAGE}", backend_image)

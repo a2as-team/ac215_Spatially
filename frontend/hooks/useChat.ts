@@ -29,6 +29,7 @@ export const useChat = (chatId: string | null) => {
     queryKey: chatKeys.detail(chatId || ''),
     queryFn: () => chatApi.getChat(chatId!),
     enabled: !!chatId,
+    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
   });
 };
 

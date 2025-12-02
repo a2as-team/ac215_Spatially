@@ -1,8 +1,8 @@
 from .base import ZoningOrdinanceBaseCollector
-from shared_config.cities import City
 from utils.scrapers.municode_scraper import MunicodeScraper
 import time
 import json
+
 
 class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
     def __init__(self):
@@ -10,7 +10,7 @@ class BostonZoningOrdinanceCollector(ZoningOrdinanceBaseCollector):
         self.scraper = MunicodeScraper(url=self.resource_url(), download_dir=self.download_directory())
 
     def city(self) -> str:
-        return City.boston
+        return "boston"
 
     def resource_url(self) -> str:
         return "https://library.municode.com/ma/boston/codes/redevelopment_authority?nodeId=PRONZOCOBOMA"

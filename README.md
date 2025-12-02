@@ -15,6 +15,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 - [Backend API README](./backend/README.md): Setup and usage instructions for the FastAPI backend
 - [Census Data Collector README](./data/collector/census/README.md): Census data collection documentation
 - [Zoning Ordinance Collector README](./data/collector/zoning_ordinance/README.md): Zoning ordinance collection documentation
+- [Zoning Codes Collector README](./data/collector/zoning_codes/README.md): Zoning codes collection documentation
 
 ## Database Schema
 
@@ -39,6 +40,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 
 erDiagram
     cities ||--o{ zoning_maps : "has many"
+    cities ||--o{ zoning_codes : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
     cities ||--o{ development_plans_embed : "has many"
     CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
@@ -89,6 +91,16 @@ erDiagram
         varchar article "Zoning article"
         varchar usage "Zoning usage"
         geometry geom "PostGIS geometry"
+        timestamp created_at
+    }
+
+    zoning_codes {
+        int id PK
+        int city_id FK "References cities(id)"
+        varchar zone_code "Zone code identifier (e.g. R-1, B-2)"
+        varchar zone_subtype "Zone name (e.g. Single Family Residential)"
+        decimal area_acres "Area covered in acres"
+        text description "Full description of the zone"
         timestamp created_at
     }
 

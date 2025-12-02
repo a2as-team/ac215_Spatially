@@ -64,6 +64,25 @@ export interface CityZoningResponse {
   count: number;
 }
 
+// Server-side only function for getStaticProps (similar to citiesApi pattern)
+export const getCityZoningServerSide = async (city: string): Promise<CityZoningResponse> => {
+  const isServer = typeof window === 'undefined';
+  const API_BASE_URL = isServer
+    ? (process.env.SERVER_API_BASE_URL || 'http://backend:8000')
+    : (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000');
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/zoning_ordinance/${city}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch zoning for ${city}: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching zoning for ${city}:`, error);
+    return { city, zoning_data: [], count: 0 };
+  }
+};
+
 export const zoningApi = {
   searchZoningOrdinance: async (params: SearchZoningParams): Promise<ZoningSearchResponse> => {
     const { data } = await apiClient.get<ZoningSearchResponse>(

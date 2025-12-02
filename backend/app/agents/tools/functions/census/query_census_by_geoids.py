@@ -2,10 +2,7 @@
 
 from typing import Optional, List
 import logging
-from app.utils.text2sql.census import CensusText2SQL
-from app.utils.db_accessor import DBConnector
-from app.core.config import settings
-from app.agents.tools.formatters import format_census_results
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -39,33 +36,41 @@ def query_census_by_geoids(
         if not geoids:
             return "No geoids provided. Please specify census tract IDs."
 
-        # Generate SQL with geoid filter
-        text2sql = CensusText2SQL()
-        base_query = text2sql.generate_sql(user_query=question, year=year)
+        # Build the query with geoid context
+        geoid_list = ", ".join(geoids[:10])  # Show first 10 in context
+        if len(geoids) > 10:
+            geoid_list += f" and {len(geoids) - 10} more"
+        
+        query_parts = [question]
+        query_parts.append(f"for census tracts with geoids: {geoid_list}")
+        if year:
+            query_parts.append(f"for year {year}")
+        
+        full_question = " ".join(query_parts)
 
-        # Add geoid filter to the query
-        geoid_list = ", ".join(f"'{g}'" for g in geoids)
-
-        db = DBConnector(db_name=settings.POSTGRES_DB)
+        # Use SQL agent to answer the question
+        # Lazy import to avoid circular dependency
+        from app.agents.sql_agent.runner import SQLAgentRunner
+        runner = SQLAgentRunner()
+        
+        # Run the agent (synchronous wrapper for async function)
         try:
-            # Try to add WHERE clause for geoids
-            if "WHERE" in base_query.upper():
-                filtered_query = base_query.replace(
-                    "WHERE", f"WHERE ct.geoid IN ({geoid_list}) AND"
-                )
+            # Try to get existing event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If loop is already running, we need to use a different approach
+                # Create a new event loop in a thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, runner.run(full_question))
+                    response = future.result()
             else:
-                filtered_query = base_query + f" WHERE ct.geoid IN ({geoid_list})"
-
-            results = db.execute(filtered_query)
-
-            if not results:
-                return f"No census data found for the specified {len(geoids)} census tracts."
-
-            formatted_results = format_census_results(results)
-            return f"Census Data for {len(geoids)} census tracts:\n{formatted_results}"
-
-        finally:
-            db.close()
+                response = loop.run_until_complete(runner.run(full_question))
+        except RuntimeError:
+            # No event loop exists, create one
+            response = asyncio.run(runner.run(full_question))
+        
+        return response
 
     except Exception as e:
         logger.error(f"Error querying census by geoids: {e}")

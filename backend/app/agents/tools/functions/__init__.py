@@ -15,6 +15,12 @@ from .zoning import (
     query_zoning_by_geojson,
     get_zoning_codes_at_location,
 )
+from .sql import (
+    list_tables,
+    check_schema,
+    check_query,
+    run_query,
+)
 
 __all__ = [
     # Census functions
@@ -27,4 +33,9 @@ __all__ = [
     "query_zoning_by_codes",
     "query_zoning_by_geojson",
     "get_zoning_codes_at_location",
+    # SQL functions
+    "list_tables",
+    "check_schema",
+    "check_query",
+    "run_query",
 ]

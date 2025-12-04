@@ -198,6 +198,7 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/ac215-spatially-pipeline-accessor-keys.json
     volumes:
       - ./backend:/app
+      - ./llm:/llm:ro
       - ./secrets:/secrets:ro
       - backend_persistent_data:/persistent
     command: ["uv", "run", "fastapi", "dev", "--host", "0.0.0.0", "--port", "8000", "app/main.py"]

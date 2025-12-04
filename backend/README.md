@@ -7,7 +7,7 @@ FastAPI backend for the Spatially application, providing REST APIs for querying 
 The backend provides three main API endpoints:
 - **Census API**: Natural language queries about census data using text-to-SQL
 - **Zoning Ordinance API**: Semantic search in zoning ordinance documents
-- **Development Plans API**: (In development)
+- **Development Plans API**: Semantic search and NER-based entity extraction for development plans
 
 ## Quick Start
 
@@ -192,6 +192,84 @@ GET /api/v1/zoning_ordinance/zoning?city={city}&latitude={lat}&longitude={lon}
 Example:
 ```bash
 curl "http://localhost:8000/api/v1/zoning_ordinance/zoning?city=boston&latitude=42.3601&longitude=-71.0589"
+```
+
+### Development Plans API
+
+**Search Development Plans**
+```
+GET /api/v1/development-plans/search?city={city}&question={your_question}&top_k={k}
+```
+
+Query development plan documents using semantic vector search with optional filters:
+- `article_reference`: Filter by article references (e.g., `Article 50`, `Section 32`)
+- `project_name_contains`: Filter by project name substring
+- `file_name_contains`: Filter by file name substring
+- `similarity_threshold`: Minimum similarity score (0-1)
+
+Example:
+```bash
+# Basic search
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=What%20are%20the%20height%20restrictions?&top_k=5"
+
+# Search with article reference filter
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=building%20requirements&article_reference=Article%2050&article_reference=Section%2032"
+
+# Search with project name filter
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=parking%20requirements&project_name_contains=Hood%20Park"
+
+# Location-based search (finds plans within radius of lat/lon)
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=parking%20requirements&latitude=42.3601&longitude=-71.0589&radius_km=0.5"
+```
+
+**Extract Article References (NER)**
+```
+POST /api/v1/development-plans/extract-entities
+Content-Type: application/json
+
+{
+  "text": "Your development plan text"
+}
+```
+
+Uses a fine-tuned BERT NER model to extract article references from text.
+
+Example:
+```bash
+curl -X POST "http://localhost:8000/api/v1/development-plans/extract-entities" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "This project requires approval under Article 50 and Section 32 of the zoning code."}'
+
+# Response:
+{
+  "article_references": ["Article 50", "Section 32"],
+  "count": 2
+}
+```
+
+**List Projects by City**
+```
+GET /api/v1/development-plans/projects?city={city}
+```
+
+Get all development projects for a city with metadata.
+
+Example:
+```bash
+curl "http://localhost:8000/api/v1/development-plans/projects?city=boston"
+
+# Response:
+{
+  "city": "boston",
+  "projects": [
+    {
+      "project_name": "100 Hood Park Drive",
+      "file_count": 3,
+      "article_references": ["Article 50", "Section 32"]
+    }
+  ],
+  "count": 1
+}
 ```
 
 ## Testing

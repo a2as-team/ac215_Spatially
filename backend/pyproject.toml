@@ -26,6 +26,8 @@ dependencies = [
     "google-cloud-storage>=2.19.0",
     "google-genai>=1.0.0",
     "google-adk[all]>=1.8.0",
+    "transformers>=4.30.0",
+    "torch>=2.0.0",
 ]
 
 [tool.uv]

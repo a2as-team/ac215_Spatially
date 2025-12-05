@@ -191,7 +191,7 @@ def search_development_plans(
 
 
 @router.post("/extract-entities")
-def extract_entities(
+async def extract_entities(
     request: ExtractEntitiesRequest,
 ) -> ExtractEntitiesResponse:
     """
@@ -240,7 +240,7 @@ def extract_entities(
         from app.utils.ner.development_plans_ner import DevelopmentPlansNER
 
         ner_service = DevelopmentPlansNER()
-        article_refs = ner_service.extract_article_references(request.text)
+        article_refs = await ner_service.extract_article_references(request.text)
 
         return ExtractEntitiesResponse(
             article_references=article_refs, count=len(article_refs)

@@ -39,9 +39,19 @@ class DevelopmentPlansNER:
             return
 
         self.logger = logging.getLogger(__name__)
-        self.predictor = None
+        self.use_cloudrun = os.environ.get("USE_CLOUDRUN_NER", "false").lower() == "true"
+
+        if self.use_cloudrun:
+            from .cloudrun_client import CloudRunNERClient
+            self.client = CloudRunNERClient()
+            self.predictor = None
+            self.logger.info("DevelopmentPlansNER using Cloud Run service")
+        else:
+            self.predictor = None
+            self.client = None
+            self.logger.info("DevelopmentPlansNER using local model (lazy loading)")
+
         self._initialized = True
-        self.logger.info("DevelopmentPlansNER instance created (model not loaded yet)")
 
     def _ensure_predictor_loaded(self):
         """
@@ -122,12 +132,13 @@ class DevelopmentPlansNER:
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-    def extract_article_references(self, text: str) -> List[str]:
+    async def extract_article_references(self, text: str) -> List[str]:
         """
         Extract ARTICLE_REFERENCE entities from text.
 
-        This method uses the fine-tuned NER model to identify article references
-        like "Article 50", "Section 32", etc. in development plan text.
+        This method uses either the Cloud Run NER service or the local NER model
+        (depending on USE_CLOUDRUN_NER environment variable) to identify article
+        references like "Article 50", "Section 32", etc. in development plan text.
 
         Args:
             text: Input text to extract article references from
@@ -137,38 +148,43 @@ class DevelopmentPlansNER:
             Example: ["Article 50", "Section 32", "Article 10, Section 5"]
 
         Raises:
-            RuntimeError: If NER model cannot be loaded
+            RuntimeError: If NER model/service cannot be accessed
         """
-        # Ensure model is loaded
-        self._ensure_predictor_loaded()
-
         # Handle empty input
         if not text or not text.strip():
             return []
 
         try:
-            # Use predictor to extract all entities
-            entities = self.predictor.predict_entities(text)
+            if self.use_cloudrun:
+                # Use Cloud Run service
+                return await self.client.extract_article_references(text)
+            else:
+                # Use local model (existing logic)
+                # Ensure model is loaded
+                self._ensure_predictor_loaded()
 
-            # Filter for ARTICLE_REFERENCE only
-            article_refs = [
-                entity["text"]
-                for entity in entities
-                if entity.get("label") == "ARTICLE_REFERENCE"
-            ]
+                # Use predictor to extract all entities
+                entities = self.predictor.predict_entities(text)
 
-            # Remove duplicates while preserving order
-            unique_refs = []
-            seen = set()
-            for ref in article_refs:
-                if ref not in seen:
-                    seen.add(ref)
-                    unique_refs.append(ref)
+                # Filter for ARTICLE_REFERENCE only
+                article_refs = [
+                    entity["text"]
+                    for entity in entities
+                    if entity.get("label") == "ARTICLE_REFERENCE"
+                ]
 
-            self.logger.debug(
-                f"Extracted {len(unique_refs)} unique article references from text"
-            )
-            return unique_refs
+                # Remove duplicates while preserving order
+                unique_refs = []
+                seen = set()
+                for ref in article_refs:
+                    if ref not in seen:
+                        seen.add(ref)
+                        unique_refs.append(ref)
+
+                self.logger.debug(
+                    f"Extracted {len(unique_refs)} unique article references from text"
+                )
+                return unique_refs
 
         except Exception as e:
             error_msg = f"Error extracting article references: {e}"

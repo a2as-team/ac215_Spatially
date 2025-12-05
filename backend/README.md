@@ -52,6 +52,9 @@ docker run --platform linux/amd64 -it --rm \
 - Google Cloud Platform account (for Vertex AI embeddings)
 - Together AI API key (for text-to-SQL)
 - UV package manager (recommended) or pip
+- Cloud Run NER service deployed (for development plans article extraction)
+
+> **Note**: The backend no longer includes torch/transformers dependencies (~3GB size reduction). Named Entity Recognition (NER) for article reference extraction is now provided by a separate Cloud Run service.
 
 ## Environment Configuration
 
@@ -75,6 +78,10 @@ TOGETHER_API_KEY=your-together-ai-api-key
 # CORS Configuration (optional)
 BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 FRONTEND_HOST=http://localhost:5173
+
+# NER Service Configuration (for development plans)
+USE_CLOUDRUN_NER=true
+NER_SERVICE_URL=https://ner-service-xxxx-uc.a.run.app
 
 # Environment
 ENVIRONMENT=local
@@ -232,7 +239,7 @@ Content-Type: application/json
 }
 ```
 
-Uses a fine-tuned BERT NER model to extract article references from text.
+Uses a fine-tuned BERT NER model deployed on Cloud Run to extract article references from text. The backend makes authenticated HTTP calls to the NER service for inference.
 
 Example:
 ```bash
@@ -412,6 +419,19 @@ Database schema changes should be managed through migrations. See the main proje
 
 - Verify `TOGETHER_API_KEY` is set correctly
 - Check API key is valid and has sufficient credits
+
+### NER Service Issues
+
+- **503 Service Unavailable**: NER service may be down or not deployed
+  - Check Cloud Run service status: `gcloud run services describe ner-service --region=us-central1`
+  - Verify `NER_SERVICE_URL` environment variable is set correctly
+- **403 Forbidden**: Authentication/IAM permission issues
+  - If using authenticated access, ensure backend service account has `roles/run.invoker` permission
+  - Alternatively, enable public access on the Cloud Run service (less secure)
+- **Connection Timeout**: Network connectivity issues
+  - Verify backend can reach Cloud Run services
+  - Check firewall/network policies
+- **For Cloud Run deployment details**: See [workflow/deploy/cloudrun/README.md](../workflow/deploy/cloudrun/README.md)
 
 ## References
 

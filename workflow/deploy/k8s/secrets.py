@@ -114,6 +114,8 @@ class SecretsManager:
         Optional env vars:
         - FRONTEND_HOST (for CORS, defaults to http://localhost:3000)
         - BACKEND_CORS_ORIGINS (comma-separated list of additional origins)
+        - USE_CLOUDRUN_NER (whether to use Cloud Run NER service)
+        - NER_SERVICE_URL (Cloud Run NER service URL)
         """
         print("\n--- Setting up GCP secrets ---")
 
@@ -135,6 +137,15 @@ class SecretsManager:
 
         if cors_origins:
             secrets_data["BACKEND_CORS_ORIGINS"] = cors_origins
+
+        # Add NER service configuration if provided
+        use_cloudrun_ner = os.environ.get("USE_CLOUDRUN_NER")
+        ner_service_url = os.environ.get("NER_SERVICE_URL")
+
+        if use_cloudrun_ner:
+            secrets_data["USE_CLOUDRUN_NER"] = use_cloudrun_ner
+        if ner_service_url:
+            secrets_data["NER_SERVICE_URL"] = ner_service_url
 
         self.create_or_update_secret(self.gcp_secret_name, secrets_data)
         print(f"✓ Secret '{self.gcp_secret_name}' configured")

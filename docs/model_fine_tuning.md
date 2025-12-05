@@ -150,47 +150,104 @@ Trained models are stored in GCS:
 
 ## Deployment Strategy
 
-### Integration with Label Studio
+### Production: Cloud Run Microservice
 
-The fine-tuned model is deployed as a Label Studio ML backend:
+The fine-tuned NER model is deployed as a serverless microservice on Google Cloud Run:
+
+**Service**: `ner-service`  
+**URL**: `https://ner-service-{hash}-uc.a.run.app`  
+**Deployment Guide**: [workflow/deploy/cloudrun/README.md](../workflow/deploy/cloudrun/README.md)
+
+#### Architecture
+
+```
+Backend API (GKE)
+    ↓ HTTP POST
+NER Service (Cloud Run)
+    ↓ Loads model from GCS
+Fine-tuned BERT Model
+    ↓ Returns entities
+Backend API → Client
+```
+
+#### Key Features
+
+- **Auto-scaling**: Scales to zero when idle, up to 10 instances under load
+- **Authentication**: Service-to-service auth using Google Cloud ID tokens (or public access)
+- **Performance**: ~300-600ms latency (includes HTTP overhead)
+- **Cost-efficient**: Pay only for actual requests
+- **Isolated**: Separate from backend (no torch/transformers in backend image → 3GB size reduction)
+
+#### Deployment Process
+
+```bash
+# 1. Train model (saves to GCS)
+python workflow/jobs/run_development_plans_ner.py --epochs 3
+
+# 2. Deploy NER service to Cloud Run
+docker-compose run workflow python deploy/run.py \
+  --target cloudrun \
+  --action deploy \
+  --service ner-service
+
+# 3. Configure backend to use Cloud Run NER
+# Set environment variables:
+# USE_CLOUDRUN_NER=true
+# NER_SERVICE_URL=https://ner-service-xxxx-uc.a.run.app
+
+# 4. Redeploy backend
+docker-compose run workflow python deploy/run.py \
+  --target k8s \
+  --action deploy
+```
+
+#### API Integration
+
+**Endpoint**: `POST /api/v1/development-plans/extract-entities`
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/development-plans/extract-entities" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "This project requires approval under Article 50 and Section 32."}'
+
+# Response:
+{
+  "article_references": ["Article 50", "Section 32"],
+  "count": 2
+}
+```
+
+The backend automatically routes requests to Cloud Run using authenticated HTTP calls.
+
+### Development: Label Studio ML Backend
+
+For annotation and active learning, the model is also deployed as a Label Studio ML backend:
 
 1. **Model Loading**: `label_studio/label_studio_development_plans_backend/model.py`
-
    - Loads fine-tuned model from GCS or local directory
-   - Falls back to baseline model if fine-tuned model unavailable
-   - Provides predictions for active learning
+   - Provides predictions during annotation
 
-2. **Deployment Process**:
-
+2. **Deployment**:
    ```bash
-   # 1. Train model (saves to GCS)
-   python workflow/jobs/run_development_plans_ner.py --epochs 3
-
-   # 2. Download model to Label Studio backend
+   # Download model to Label Studio backend
    gsutil -m cp -r gs://bucket/models/development_plans/ner/{run_id}/* \
        ./label_studio/label_studio_development_plans_backend/models/
 
-   # 3. Restart Label Studio ML backend
+   # Restart Label Studio ML backend
    docker compose restart label-studio-ml-backend
    ```
 
-3. **Active Learning**: Model provides predictions during annotation, improving annotation speed and consistency
+3. **Active Learning**: Model predictions improve annotation speed and consistency
 
-### API Integration
+### Performance Characteristics
 
-The fine-tuned model can be integrated into the backend API for real-time entity extraction:
+| Environment | Latency | Memory | Cost |
+|-------------|---------|--------|------|
+| **Cloud Run (Production)** | 300-600ms | 2GB | Pay-per-request |
+| **Label Studio (Dev)** | 100-200ms | 500MB | Always-on |
+| **Backend Local (Deprecated)** | 50-100ms | 4GB | Always-loaded |
 
-1. **Model Service**: Create a service that loads the fine-tuned model
-2. **API Endpoint**: `/api/v1/development_plans/extract_entities`
-3. **Input**: Development plan text or document
-4. **Output**: Extracted entities with confidence scores
-
-### Performance Considerations
-
-- **Inference Speed**: ~100-200 tokens/second on GPU, ~10-20 tokens/second on CPU
-- **Memory Requirements**: ~500MB for model weights + tokenizer
-- **Batch Processing**: Supports batch inference for multiple documents
-- **Caching**: Consider caching predictions for frequently accessed documents
+**Note**: The backend no longer includes torch/transformers (86% image size reduction). All production NER inference is handled by Cloud Run.
 
 ## Future Improvements
 

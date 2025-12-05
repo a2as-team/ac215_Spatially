@@ -57,10 +57,23 @@ class RegistryConfig:
         }
 
     @staticmethod
+    def ner_service_image(gcp_region: str, gcp_project: str):
+        """NER inference service for Cloud Run deployment"""
+        project_root = Path(__file__).parent.parent
+        return {
+            "name": "ner-service",
+            "context": project_root / "llm" / "development_plans" / "NER",
+            "dockerfile": project_root / "llm" / "development_plans" / "NER" / "Dockerfile.service",
+            "image_uri": f"{gcp_region}-docker.pkg.dev/{gcp_project}/{RegistryConfig.repository_name()}/ner-service:latest",
+            "platform": RegistryConfig.platform(),
+        }
+
+    @staticmethod
     def images(gcp_region: str, gcp_project: str):
         return [
             RegistryConfig.data_collector_image(gcp_region, gcp_project),
             RegistryConfig.data_collector_playwright_image(gcp_region, gcp_project),
             RegistryConfig.data_processor_image(gcp_region, gcp_project),
             RegistryConfig.backend_image(gcp_region, gcp_project),
+            RegistryConfig.ner_service_image(gcp_region, gcp_project),
         ]

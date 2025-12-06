@@ -16,6 +16,7 @@ if str(project_root) not in sys.path:
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from utils.gcp_storage import GCPStorage
 from census import CensusCollector
+from census.state_fips import normalize_state
 from shared_config.city_service import CityService
 import pandas as pd
 
@@ -32,8 +33,10 @@ if __name__ == "__main__":
         if city:
             state = city.get("state")
             if state:
-                args["state"] = state
-                print(f"Mapping city '{args['city']}' to state '{args['state']}'")
+                # Normalize state name to abbreviation (e.g., "Massachusetts" -> "MA")
+                state_abbr = normalize_state(state)
+                args["state"] = state_abbr
+                print(f"Mapping city '{args['city']}' to state '{state}' ({state_abbr})")
             else:
                 raise ValueError(f"City '{args['city']}' found but has no state defined.")
         else:
@@ -68,7 +71,10 @@ if __name__ == "__main__":
         for year in years:
             print(f"Collecting: table={table_code} year={year}")
             try:
-                df = collector.collect(table_code=table_code, year=year, state=args["state"])
+                # Request tract-level data by passing tract="*"
+                # This fetches all tracts in the state and returns state, county, and tract columns
+                # for proper 11-digit geoid construction (state + county + tract)
+                df = collector.collect(table_code=table_code, year=year, state=args["state"], tract="*")
             except Exception as e:
                 print(f"Skipping {table_code} {year}: {e}")
                 continue

@@ -19,7 +19,7 @@ import {
   Box,
   Avatar,
 } from "@mantine/core";
-import { useDisclosure, useHotkeys } from "@mantine/hooks";
+import { useDisclosure, useHotkeys, useMediaQuery, useLocalStorage } from "@mantine/hooks";
 import {
   IconSend,
   IconPlus,
@@ -27,6 +27,7 @@ import {
   IconUser,
   IconRobot,
   IconX,
+  IconGripVertical,
 } from "@tabler/icons-react";
 import maplibregl from "maplibre-gl";
 import ReactMarkdown from "react-markdown";
@@ -40,6 +41,11 @@ import { MapLegend } from "@/components/MapLegend";
 interface CityPageProps {
   cityZoningData: CityZoningResponse;
 }
+
+// Sidebar width constraints
+const MIN_SIDEBAR_WIDTH = 300;
+const MAX_SIDEBAR_WIDTH = 800;
+const DEFAULT_SIDEBAR_WIDTH = 450;
 
 export default function CityPage({ cityZoningData }: CityPageProps) {
   const router = useRouter();
@@ -59,6 +65,52 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const map = useRef<maplibregl.Map | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+
+  // Resizable sidebar
+  const [sidebarWidth, setSidebarWidth] = useLocalStorage({
+    key: "spatially-sidebar-width",
+    defaultValue: DEFAULT_SIDEBAR_WIDTH,
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 768px)") ?? false;
+
+  // Handle sidebar resize
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = e.clientX;
+      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
+        setSidebarWidth(newWidth);
+        // Resize map during drag for smooth experience
+        if (map.current) {
+          map.current.resize();
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isResizing, setSidebarWidth]);
 
   const { data: chats } = useChats(10);
   const { data: currentChatData } = useChat(currentChatId);
@@ -424,11 +476,15 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     <AppShell
       header={{ height: 60 }}
       navbar={{
-        width: 500,
+        width: isMobile ? 300 : sidebarWidth,
         breakpoint: "sm",
         collapsed: { mobile: !opened },
       }}
       padding={0}
+      styles={{
+        root: { height: "100vh", overflow: "hidden" },
+        main: { height: "100%", overflow: "hidden" },
+      }}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
@@ -478,7 +534,48 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md" style={{ backgroundColor: "white" }}>
+      <AppShell.Navbar p="md" style={{ backgroundColor: "white", position: "relative" }}>
+        {/* Resize handle - only show on desktop */}
+        {!isMobile && (
+          <Box
+            onMouseDown={handleMouseDown}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: 6,
+              height: "100%",
+              cursor: "col-resize",
+              backgroundColor: isResizing ? "var(--mantine-color-blue-4)" : "transparent",
+              transition: "background-color 0.2s",
+              zIndex: 10,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--mantine-color-gray-3)";
+            }}
+            onMouseLeave={(e) => {
+              if (!isResizing) {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+            }}
+          >
+            <Box
+              style={{
+                position: "absolute",
+                top: "50%",
+                right: 0,
+                transform: "translateY(-50%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 6,
+                height: 40,
+              }}
+            >
+              <IconGripVertical size={12} color="gray" />
+            </Box>
+          </Box>
+        )}
         <Stack h="100%" gap="md">
           <Group justify="space-between">
             <div>
@@ -729,17 +826,24 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main style={{ height: "100vh", overflow: "hidden" }}>
-        <div style={{ position: "relative", width: "100%", height: "100%" }}>
-          <div
-            ref={mapContainer}
-            style={{
-              width: "100%",
-              height: "100%",
-            }}
-          />
-          <MapLegend zoningData={selectedZoning || cityZoningData?.zoning_data} />
-        </div>
+      <AppShell.Main
+        style={{
+          position: "fixed",
+          top: 60,
+          left: isMobile && !opened ? 0 : (isMobile ? 300 : sidebarWidth),
+          right: 0,
+          bottom: 0,
+          padding: 0,
+        }}
+      >
+        <div
+          ref={mapContainer}
+          style={{
+            width: "100%",
+            height: "100%",
+          }}
+        />
+        <MapLegend zoningData={selectedZoning || cityZoningData?.zoning_data} />
       </AppShell.Main>
     </AppShell>
   );

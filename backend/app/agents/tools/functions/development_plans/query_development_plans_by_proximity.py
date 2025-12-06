@@ -5,6 +5,7 @@ import logging
 from app.utils.vector_query.development_plans import DevelopmentPlansVectorQuery
 from app.core.config import settings
 from app.agents.tools.formatters import format_development_plans_results
+from app.agents.manager import get_current_context
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,13 @@ def query_development_plans_by_proximity(
                 f"No development plans found within {radius_km}km of "
                 f"({latitude}, {longitude}) in {city}."
             )
+
+        # Store results in context for later citation
+        context = get_current_context()
+        if context:
+            store = context.get_store("development_plans")
+            store.add(results)
+            logger.debug(f"Added {len(results)} development plan sources to context")
 
         formatted_results = format_development_plans_results(results, include_distance=True)
         return (

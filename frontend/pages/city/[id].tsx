@@ -1,7 +1,7 @@
 import { useRouter } from "next/router";
 import { GetStaticProps, GetStaticPaths } from "next";
 import Image from "next/image";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   AppShell,
   Burger,
@@ -19,7 +19,7 @@ import maplibregl from "maplibre-gl";
 import { useStartChat, useContinueChat, useChat } from "@/hooks/useChat";
 import { ZoningData, CityZoningResponse, getCityZoningServerSide, zoningApi } from "@/services/zoningApi";
 import { getCitiesServerSide, citiesApi } from "@/services/citiesApi";
-import { OrdinanceSource } from "@/services/chatApi";
+import { OrdinanceSource, DevelopmentPlanSource } from "@/services/chatApi";
 import { getZoneSubtypeColor } from "@/utils/zoningColors";
 import { MapLegend } from "@/components/MapLegend";
 import { FloatingChat } from "@/components/FloatingChat";
@@ -48,6 +48,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  // Track development plan markers on the map
+  const devPlanMarkersRef = useRef<maplibregl.Marker[]>([]);
 
   // Sidebar state - start collapsed by default
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -57,7 +59,11 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const [activeTabId, setActiveTabId] = useState("browse");
 
   // Track sources per tab (keyed by tab id)
-  const [tabSources, setTabSources] = useState<Record<string, OrdinanceSource[]>>({});
+  // Now supports both ordinance and development plan sources
+  const [tabSources, setTabSources] = useState<Record<string, {
+    ordinances: OrdinanceSource[];
+    developmentPlans: DevelopmentPlanSource[];
+  }>>({});
 
   // Track full document content per tab (keyed by tab id)
   const [tabDocuments, setTabDocuments] = useState<Record<string, { title: string; subtitle: string; content: string }>>({});
@@ -68,7 +74,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   // Also stores location for highlighting the correct polygon
   const messageTabMapRef = useRef<Record<string, {
     tabId: string;
-    sources: OrdinanceSource[];
+    ordinances: OrdinanceSource[];
+    developmentPlans: DevelopmentPlanSource[];
     label: string;
     location?: { latitude: number; longitude: number };
   }>>({});
@@ -124,8 +131,26 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const { mutate: startChat, isPending: isStarting } = useStartChat();
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
 
+  // Track pending user message for optimistic UI
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+
   const isPending = isStarting || isContinuing;
-  const messages = currentChatData?.messages || [];
+
+  // Combine actual messages with pending user message for optimistic display
+  const messages = useMemo(() => {
+    const actualMessages = currentChatData?.messages || [];
+    if (pendingUserMessage && isPending) {
+      return [
+        ...actualMessages,
+        {
+          message_id: "pending-user-message",
+          role: "user" as const,
+          content: pendingUserMessage,
+        },
+      ];
+    }
+    return actualMessages;
+  }, [currentChatData?.messages, pendingUserMessage, isPending]);
 
   // Fetch documents for the city
   const { data: documentsData, isLoading: documentsLoading } = useQuery({
@@ -263,6 +288,71 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     map.current.setPaintProperty("zoning-outline", "line-width", 1.5);
   }, []);
 
+  // Clear all development plan markers from the map
+  const clearDevPlanMarkers = useCallback(() => {
+    devPlanMarkersRef.current.forEach((marker) => marker.remove());
+    devPlanMarkersRef.current = [];
+  }, []);
+
+  // Show development plan locations on the map
+  const showDevPlanMarkers = useCallback((plans: DevelopmentPlanSource[]) => {
+    if (!map.current) return;
+
+    // Clear existing markers first
+    clearDevPlanMarkers();
+
+    // Create markers for each plan with location
+    const bounds = new maplibregl.LngLatBounds();
+    let hasValidLocations = false;
+
+    plans.forEach((plan, index) => {
+      if (plan.latitude && plan.longitude) {
+        hasValidLocations = true;
+
+        // Create a custom marker element
+        const el = document.createElement("div");
+        el.className = "dev-plan-marker";
+        el.style.cssText = `
+          width: 24px;
+          height: 24px;
+          background-color: #40c057;
+          border: 2px solid white;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: bold;
+          color: white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        `;
+        el.textContent = String(index + 1);
+        el.title = plan.title;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([plan.longitude, plan.latitude])
+          .setPopup(
+            new maplibregl.Popup({ offset: 25 }).setHTML(
+              `<strong>${plan.title}</strong>${plan.subtitle ? `<br/><small>${plan.subtitle}</small>` : ""}${plan.distance_km != null ? `<br/><small>${plan.distance_km.toFixed(2)}km away</small>` : ""}`
+            )
+          )
+          .addTo(map.current!);
+
+        devPlanMarkersRef.current.push(marker);
+        bounds.extend([plan.longitude, plan.latitude]);
+      }
+    });
+
+    // Fit map to show all markers if we have valid locations
+    if (hasValidLocations && !bounds.isEmpty()) {
+      map.current.fitBounds(bounds, {
+        padding: 100,
+        maxZoom: 15,
+      });
+    }
+  }, [clearDevPlanMarkers]);
+
   // Initialize map
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -377,7 +467,78 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   // Tab management functions
   const handleTabChange = useCallback((tabId: string) => {
     setActiveTabId(tabId);
-  }, []);
+
+    // If switching to a results tab, handle zoning/location display
+    if (tabId.startsWith("results-")) {
+      const messageId = tabId.replace("results-", "");
+      const tabData = messageTabMapRef.current[messageId];
+
+      // Check if this tab has ordinance sources (zoning data)
+      const hasOrdinances = tabData?.ordinances && tabData.ordinances.length > 0;
+      const hasDevPlans = tabData?.developmentPlans && tabData.developmentPlans.length > 0;
+
+      // If tab only has development plans (no ordinances), clear zoning selection
+      if (!hasOrdinances && hasDevPlans) {
+        setSelectedZoning(null);
+        setSelectedLocation(null);
+        resetZoneHighlight();
+        if (markerRef.current) {
+          markerRef.current.remove();
+          markerRef.current = null;
+        }
+        // Development plan markers will be shown by the useEffect that watches activeTabSources
+        return;
+      }
+
+      // If tab has ordinances and a stored location, zoom to it
+      if (hasOrdinances && tabData?.location && map.current && cityZoningData?.zoning_data) {
+        const { latitude, longitude } = tabData.location;
+
+        // Fly to the location
+        map.current.flyTo({
+          center: [longitude, latitude],
+          zoom: 15,
+          duration: 500,
+        });
+
+        // Query the map for features at this point after the fly animation
+        setTimeout(() => {
+          if (!map.current) return;
+          const point = map.current.project([longitude, latitude]);
+          const features = map.current.queryRenderedFeatures(point, {
+            layers: ["zoning-fill"],
+          });
+
+          if (features.length > 0) {
+            const zoningData: ZoningData[] = features.map((f) => ({
+              id: f.id as number,
+              code: f.properties?.code,
+              article: f.properties?.article,
+              usage: f.properties?.usage,
+              zone_subtype: f.properties?.zone_subtype,
+              geometry: f.geometry,
+            }));
+
+            const selectedCodes = zoningData
+              .map((z) => z.code)
+              .filter(Boolean) as string[];
+
+            highlightSelectedZones(selectedCodes);
+            setSelectedZoning(zoningData);
+            setSelectedLocation({ latitude, longitude });
+
+            // Update marker
+            if (markerRef.current) {
+              markerRef.current.remove();
+            }
+            markerRef.current = new maplibregl.Marker({ color: "#FF0000" })
+              .setLngLat([longitude, latitude])
+              .addTo(map.current!);
+          }
+        }, 600); // Wait for fly animation to complete
+      }
+    }
+  }, [cityZoningData, highlightSelectedZones, resetZoneHighlight]);
 
   const handleTabClose = useCallback((tabId: string) => {
     setSidebarTabs((prev) => prev.filter((t) => t.id !== tabId));
@@ -398,7 +559,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   }, [activeTabId]);
 
   const createResultsTab = useCallback((
-    sources: OrdinanceSource[],
+    ordinances: OrdinanceSource[],
+    developmentPlans: DevelopmentPlanSource[],
     messageId: string,
     label: string,
     location?: { latitude: number; longitude: number }
@@ -406,7 +568,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     const tabId = `results-${messageId}`;
 
     // Store in ref for reopening later (doesn't cause re-render)
-    messageTabMapRef.current[messageId] = { tabId, sources, label, location };
+    messageTabMapRef.current[messageId] = { tabId, ordinances, developmentPlans, label, location };
 
     // Update the set of messages with sources (for UI)
     setMessagesWithSources((prev) => new Set(prev).add(messageId));
@@ -423,7 +585,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     // Store sources for this tab
     setTabSources((prev) => ({
       ...prev,
-      [tabId]: sources,
+      [tabId]: { ordinances, developmentPlans },
     }));
 
     // Switch to the new tab and expand sidebar
@@ -517,7 +679,10 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         // Reopen the tab
         setTabSources((prev) => ({
           ...prev,
-          [tabData.tabId]: tabData.sources,
+          [tabData.tabId]: {
+            ordinances: tabData.ordinances,
+            developmentPlans: tabData.developmentPlans,
+          },
         }));
         setActiveTabId(tabData.tabId);
         setSidebarCollapsed(false);
@@ -575,6 +740,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const handleSendMessage = useCallback((content: string) => {
     if (!content.trim() || !id || typeof id !== "string") return;
 
+    // Show user message immediately (optimistic update)
+    setPendingUserMessage(content);
+
     // Capture location at time of sending for use in callback
     const messageLocation = selectedLocation ? { ...selectedLocation } : undefined;
 
@@ -588,13 +756,25 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         },
         {
           onSuccess: (data) => {
+            setPendingUserMessage(null); // Clear pending message
             setCurrentChatId(data.chat_id);
-            // Create new tab with ordinance sources
-            if (data.ordinance_sources && data.ordinance_sources.length > 0) {
+            // Create new tab with sources if any exist
+            const hasOrdinances = data.ordinance_sources && data.ordinance_sources.length > 0;
+            const hasDevPlans = data.development_plan_sources && data.development_plan_sources.length > 0;
+            if (hasOrdinances || hasDevPlans) {
               const lastMessage = data.messages[data.messages.length - 1];
               const label = content.slice(0, 20) + (content.length > 20 ? "..." : "");
-              createResultsTab(data.ordinance_sources, lastMessage.message_id, label, messageLocation);
+              createResultsTab(
+                data.ordinance_sources || [],
+                data.development_plan_sources || [],
+                lastMessage.message_id,
+                label,
+                messageLocation
+              );
             }
+          },
+          onError: () => {
+            setPendingUserMessage(null); // Clear pending message on error
           },
         }
       );
@@ -610,12 +790,24 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         },
         {
           onSuccess: (data) => {
-            // Create new tab with ordinance sources
-            if (data.ordinance_sources && data.ordinance_sources.length > 0) {
+            setPendingUserMessage(null); // Clear pending message
+            // Create new tab with sources if any exist
+            const hasOrdinances = data.ordinance_sources && data.ordinance_sources.length > 0;
+            const hasDevPlans = data.development_plan_sources && data.development_plan_sources.length > 0;
+            if (hasOrdinances || hasDevPlans) {
               const lastMessage = data.messages[data.messages.length - 1];
               const label = content.slice(0, 20) + (content.length > 20 ? "..." : "");
-              createResultsTab(data.ordinance_sources, lastMessage.message_id, label, messageLocation);
+              createResultsTab(
+                data.ordinance_sources || [],
+                data.development_plan_sources || [],
+                lastMessage.message_id,
+                label,
+                messageLocation
+              );
             }
+          },
+          onError: () => {
+            setPendingUserMessage(null); // Clear pending message on error
           },
         }
       );
@@ -633,6 +825,25 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
 
     resetZoneHighlight();
   }, [resetZoneHighlight]);
+
+  // Handle clicking on a development plan location to fly to it
+  const handlePlanLocationClick = useCallback((lat: number, lng: number) => {
+    if (!map.current) return;
+
+    map.current.flyTo({
+      center: [lng, lat],
+      zoom: 16,
+      duration: 1000,
+    });
+
+    // Find the marker at this location and open its popup
+    devPlanMarkersRef.current.forEach((marker) => {
+      const markerLngLat = marker.getLngLat();
+      if (Math.abs(markerLngLat.lat - lat) < 0.0001 && Math.abs(markerLngLat.lng - lng) < 0.0001) {
+        marker.togglePopup();
+      }
+    });
+  }, []);
 
   const handleToggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
@@ -685,7 +896,21 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   }, [cityZoningData, highlightSelectedZones]);
 
   // Get sources for active tab
-  const activeTabSources = tabSources[activeTabId] || [];
+  const activeTabSources = tabSources[activeTabId] || { ordinances: [], developmentPlans: [] };
+
+  // Show development plan markers when viewing a results tab with dev plans
+  useEffect(() => {
+    if (!mapLoaded) return;
+
+    const activeTab = sidebarTabs.find((t) => t.id === activeTabId);
+    const isResultsTab = activeTab?.type === "results";
+
+    if (isResultsTab && activeTabSources.developmentPlans.length > 0 && !sidebarCollapsed) {
+      showDevPlanMarkers(activeTabSources.developmentPlans);
+    } else {
+      clearDevPlanMarkers();
+    }
+  }, [activeTabId, activeTabSources.developmentPlans, sidebarTabs, mapLoaded, sidebarCollapsed, showDevPlanMarkers, clearDevPlanMarkers]);
 
   // Load city zoning data when available and map is ready
   useEffect(() => {
@@ -785,7 +1010,12 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               isLoading={loadingDocumentTabId === activeTabId}
             />
           ) : (
-            <QueryTab sources={activeTabSources} onZoningCodeClick={handleZoningCodeClick} />
+            <QueryTab
+              ordinanceSources={activeTabSources.ordinances}
+              developmentPlanSources={activeTabSources.developmentPlans}
+              onZoningCodeClick={handleZoningCodeClick}
+              onPlanLocationClick={handlePlanLocationClick}
+            />
           )}
         </Sidebar>
 

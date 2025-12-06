@@ -8,12 +8,17 @@ import {
   Divider,
   Badge,
   Paper,
+  ThemeIcon,
+  ActionIcon,
 } from "@mantine/core";
+import { IconQuote } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Plugin } from "unified";
 import type { Root, Table, TableRow, TableCell } from "mdast";
 import { visit } from "unist-util-visit";
+import { IconMapPin } from "@tabler/icons-react";
+import type { OrdinanceSource, DevelopmentPlanSource } from "@/services/chatApi";
 
 /**
  * Remark plugin to clean up malformed tables by removing empty columns.
@@ -63,25 +68,143 @@ const remarkCleanTables: Plugin<[], Root> = () => {
   };
 };
 
-export interface OrdinanceSource {
-  title: string;
-  subtitle?: string;
-  zoning_codes?: string[];
-  content: string;
-  similarity_score?: number;
-}
-
 interface QueryTabProps {
-  sources: OrdinanceSource[];
+  ordinanceSources: OrdinanceSource[];
+  developmentPlanSources: DevelopmentPlanSource[];
   onZoningCodeClick?: (code: string) => void;
+  onPlanLocationClick?: (lat: number, lng: number) => void;
 }
 
-export function QueryTab({ sources, onZoningCodeClick }: QueryTabProps) {
+export function QueryTab({
+  ordinanceSources,
+  developmentPlanSources,
+  onZoningCodeClick,
+  onPlanLocationClick,
+}: QueryTabProps) {
+  const hasOrdinances = ordinanceSources.length > 0;
+  const hasDevPlans = developmentPlanSources.length > 0;
+  const hasAny = hasOrdinances || hasDevPlans;
+
   return (
     <ScrollArea style={{ height: "100%" }} offsetScrollbars p="md">
       <Stack gap="lg">
-        {sources.map((source, index) => (
-          <Paper key={index} withBorder p="md" radius="md">
+        {/* Development Plan Sources */}
+        {hasDevPlans && (
+          <>
+            <Title order={5} c="dark">Development Plans</Title>
+            {developmentPlanSources.map((source, index) => (
+              <Paper key={`dev-${index}`} withBorder p="md" radius="md" style={{ borderColor: "var(--mantine-color-green-4)" }}>
+                {/* Source header */}
+                <Group justify="space-between" mb="sm">
+                  <div>
+                    <Group gap="xs">
+                      <Text fw={600} size="sm" c="dark">
+                        {source.title}
+                      </Text>
+                      {source.latitude && source.longitude && (
+                        <ActionIcon
+                          size="xs"
+                          variant="light"
+                          color="green"
+                          onClick={() => onPlanLocationClick?.(source.latitude!, source.longitude!)}
+                          title="Show on map"
+                        >
+                          <IconMapPin size={12} />
+                        </ActionIcon>
+                      )}
+                    </Group>
+                    {source.subtitle && (
+                      <Text size="xs" c="dimmed">
+                        {source.subtitle}
+                      </Text>
+                    )}
+                  </div>
+                  <Group gap="xs">
+                    {source.distance_km != null && (
+                      <Badge size="xs" color="green" variant="light">
+                        {source.distance_km.toFixed(2)}km away
+                      </Badge>
+                    )}
+                    {source.similarity_score && (
+                      <Badge size="xs" color="blue" variant="light">
+                        {Math.round(source.similarity_score * 100)}% match
+                      </Badge>
+                    )}
+                  </Group>
+                </Group>
+
+                {/* Agent's highlight - key excerpt */}
+                {source.highlight && (
+                  <Box
+                    mb="sm"
+                    p="sm"
+                    style={{
+                      backgroundColor: "var(--mantine-color-green-0)",
+                      borderLeft: "3px solid var(--mantine-color-green-6)",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    <Group gap="xs" mb={4}>
+                      <ThemeIcon size="xs" color="green" variant="light">
+                        <IconQuote size={12} />
+                      </ThemeIcon>
+                      <Text size="xs" fw={600} c="green.8">
+                        Key excerpt
+                      </Text>
+                    </Group>
+                    <Text size="sm" c="dark" style={{ fontStyle: "italic" }}>
+                      &quot;{source.highlight}&quot;
+                    </Text>
+                    {source.reason && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {source.reason}
+                      </Text>
+                    )}
+                  </Box>
+                )}
+
+                {/* Article references and zoning codes */}
+                <Group gap="xs" mb="sm" wrap="wrap">
+                  {source.article_reference?.map((ref) => (
+                    <Badge key={ref} size="xs" variant="outline" color="orange">
+                      {ref}
+                    </Badge>
+                  ))}
+                  {source.zoning_codes?.map((code) => (
+                    <Badge
+                      key={code}
+                      size="xs"
+                      variant="outline"
+                      color="blue"
+                      style={{
+                        cursor: onZoningCodeClick ? "pointer" : "default",
+                        transition: "all 0.2s ease",
+                      }}
+                      onClick={() => onZoningCodeClick?.(code)}
+                    >
+                      {code}
+                    </Badge>
+                  ))}
+                </Group>
+
+                <Divider mb="sm" />
+
+                {/* Content */}
+                <Text size="sm" c="dark" style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                  {source.content}
+                </Text>
+              </Paper>
+            ))}
+          </>
+        )}
+
+        {/* Ordinance Sources */}
+        {hasOrdinances && (
+          <>
+            {hasDevPlans && <Divider my="md" />}
+            <Title order={5} c="dark">Zoning Ordinances</Title>
+            {ordinanceSources.map((source, index) => (
+          <Paper key={`ord-${index}`} withBorder p="md" radius="md">
             {/* Source header */}
             <Group justify="space-between" mb="sm">
               <div>
@@ -100,6 +223,36 @@ export function QueryTab({ sources, onZoningCodeClick }: QueryTabProps) {
                 </Badge>
               )}
             </Group>
+
+            {/* Agent's highlight - key excerpt */}
+            {source.highlight && (
+              <Box
+                mb="sm"
+                p="sm"
+                style={{
+                  backgroundColor: "var(--mantine-color-yellow-0)",
+                  borderLeft: "3px solid var(--mantine-color-yellow-6)",
+                  borderRadius: "4px",
+                }}
+              >
+                <Group gap="xs" mb={4}>
+                  <ThemeIcon size="xs" color="yellow" variant="light">
+                    <IconQuote size={12} />
+                  </ThemeIcon>
+                  <Text size="xs" fw={600} c="yellow.8">
+                    Key excerpt
+                  </Text>
+                </Group>
+                <Text size="sm" c="dark" style={{ fontStyle: "italic" }}>
+                  "{source.highlight}"
+                </Text>
+                {source.reason && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    {source.reason}
+                  </Text>
+                )}
+              </Box>
+            )}
 
             {/* Zoning codes */}
             {source.zoning_codes && source.zoning_codes.length > 0 && (
@@ -301,11 +454,15 @@ export function QueryTab({ sources, onZoningCodeClick }: QueryTabProps) {
               </ReactMarkdown>
             </Box>
           </Paper>
-        ))}
-        {sources.length === 0 && (
+            ))}
+          </>
+        )}
+
+        {/* Empty state */}
+        {!hasAny && (
           <Box py="xl" ta="center">
             <Text size="sm" c="dimmed">
-              No content to display
+              No sources to display
             </Text>
           </Box>
         )}

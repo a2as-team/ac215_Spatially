@@ -5,7 +5,7 @@ import logging
 from app.utils.vector_query.zoning_ordinance import ZoningOrdinanceVectorQuery
 from app.core.config import settings
 from app.agents.tools.formatters import format_zoning_results
-from app.agents.context import get_agent_context
+from app.agents.manager import get_current_context
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +56,8 @@ def query_zoning_by_codes(
             return f"No zoning ordinance information found for codes [{codes_str}] in {city}."
 
         # Store results in agent context for frontend access
-        context = get_agent_context()
-        context.add_ordinance_sources(results)
+        context = get_current_context()
+        context.get_store("ordinances").add(results)
 
         formatted_results = format_zoning_results(results)
         codes_str = ", ".join(zoning_codes)

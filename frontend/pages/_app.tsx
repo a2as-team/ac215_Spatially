@@ -21,7 +21,7 @@ export default function App({ Component, pageProps }: AppProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <MantineProvider defaultColorScheme="dark">
+      <MantineProvider defaultColorScheme="light">
         <Component {...pageProps} />
       </MantineProvider>
     </QueryClientProvider>

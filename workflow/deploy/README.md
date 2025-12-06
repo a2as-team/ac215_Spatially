@@ -1,6 +1,11 @@
-# Kubernetes Deployment
+# Deployment Infrastructure
 
-Automated deployment pipeline for the Spatially backend on Google Kubernetes Engine (GKE).
+Automated deployment pipelines for Spatially services on Google Cloud Platform.
+
+## Deployment Targets
+
+- **GKE (Kubernetes)**: Backend API with auto-scaling, HTTPS, and DNS automation
+- **Cloud Run**: Serverless microservices (NER, OCR, etc.) with auto-scaling and authentication
 
 ## Architecture
 
@@ -74,3 +79,80 @@ Push to `prod` branch or manually trigger the workflow.
 9. Deploy Ingress (triggers DNS + TLS certificate)
 
 Result: `https://zoning-api.teamspatially.com` is live with auto-scaling and auto-renewed TLS.
+
+---
+
+## Cloud Run Deployment
+
+Serverless deployment for microservices (NER, OCR, etc.) with automatic scaling and authentication.
+
+### Available Services
+
+- **`ner-service`**: Named Entity Recognition for extracting article references from development plans
+
+### Usage
+
+```bash
+# Full Cloud Run deployment (build + push + deploy)
+docker-compose run workflow python deploy/run.py \
+  --target cloudrun \
+  --action deploy \
+  --service ner-service
+
+# Deploy only (skip image build)
+docker-compose run workflow python deploy/run.py \
+  --target cloudrun \
+  --action deploy-only \
+  --service ner-service
+
+# Delete service
+docker-compose run workflow python deploy/run.py \
+  --target cloudrun \
+  --action delete \
+  --service ner-service
+```
+
+### Architecture
+
+```
+workflow/deploy/
+├── cloudrun/               # Cloud Run deployment
+│   ├── service.py          # Generic CloudRunService class
+│   ├── config.py           # Service-specific configurations
+│   └── README.md           # Detailed Cloud Run documentation
+└── scripts/
+    └── cloudrun_deploy.py  # Cloud Run deployment orchestrator
+```
+
+### Features
+
+- **Auto-scaling**: Scale to zero when idle, up to configured max instances
+- **Authentication**: Service-to-service auth using Google Cloud ID tokens
+- **Health checks**: Liveness and readiness probes
+- **Cost optimization**: Pay only for actual usage
+- **Generic design**: Reusable for any Cloud Run service
+
+### Documentation
+
+For detailed Cloud Run deployment documentation, see [cloudrun/README.md](cloudrun/README.md).
+
+---
+
+## Comparing GKE vs Cloud Run
+
+| Feature | GKE | Cloud Run |
+|---------|-----|-----------|
+| **Use case** | Stateful backend API | Stateless microservices |
+| **Scaling** | HPA + Cluster Autoscaler | Automatic (0 to N instances) |
+| **Cost** | Always-on (cluster + nodes) | Pay per request |
+| **Complexity** | High (K8s config) | Low (just container) |
+| **Cold starts** | None | 10-20s (first request) |
+| **HTTPS** | cert-manager + Ingress | Automatic |
+| **Authentication** | API keys / OAuth | Google Cloud ID tokens |
+For monitoring the capability of hpa,
+
+```bash
+python -c "from deploy.gke.cluster import GKECluster; GKECluster().get_credentials()"
+kubectl get hpa spatially-backend-hpa --watch
+kubectl get pods -l app=spatially-backend --watch
+```

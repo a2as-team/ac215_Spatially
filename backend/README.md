@@ -8,7 +8,7 @@ The backend provides three main API endpoints:
 
 - **Census API**: Natural language queries about census data using text-to-SQL
 - **Zoning Ordinance API**: Semantic search in zoning ordinance documents
-- **Development Plans API**: (In development)
+- **Development Plans API**: Semantic search and NER-based entity extraction for development plans
 
 ## Quick Start
 
@@ -53,6 +53,9 @@ docker run --platform linux/amd64 -it --rm \
 - Google Cloud Platform account (for Vertex AI embeddings)
 - Together AI API key (for text-to-SQL)
 - UV package manager (recommended) or pip
+- Cloud Run NER service deployed (for development plans article extraction)
+
+> **Note**: The backend no longer includes torch/transformers dependencies (~3GB size reduction). Named Entity Recognition (NER) for article reference extraction is now provided by a separate Cloud Run service.
 
 ## Environment Configuration
 
@@ -76,6 +79,10 @@ TOGETHER_API_KEY=your-together-ai-api-key
 # CORS Configuration (optional)
 BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 FRONTEND_HOST=http://localhost:5173
+
+# NER Service Configuration (for development plans)
+USE_CLOUDRUN_NER=true
+NER_SERVICE_URL=https://ner-service-xxxx-uc.a.run.app
 
 # Environment
 ENVIRONMENT=local
@@ -200,6 +207,84 @@ Example:
 
 ```bash
 curl "http://localhost:8000/api/v1/zoning_ordinance/zoning?city=boston&latitude=42.3601&longitude=-71.0589"
+```
+
+### Development Plans API
+
+**Search Development Plans**
+```
+GET /api/v1/development-plans/search?city={city}&question={your_question}&top_k={k}
+```
+
+Query development plan documents using semantic vector search with optional filters:
+- `article_reference`: Filter by article references (e.g., `Article 50`, `Section 32`)
+- `project_name_contains`: Filter by project name substring
+- `file_name_contains`: Filter by file name substring
+- `similarity_threshold`: Minimum similarity score (0-1)
+
+Example:
+```bash
+# Basic search
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=What%20are%20the%20height%20restrictions?&top_k=5"
+
+# Search with article reference filter
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=building%20requirements&article_reference=Article%2050&article_reference=Section%2032"
+
+# Search with project name filter
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=parking%20requirements&project_name_contains=Hood%20Park"
+
+# Location-based search (finds plans within radius of lat/lon)
+curl "http://localhost:8000/api/v1/development-plans/search?city=boston&question=parking%20requirements&latitude=42.3601&longitude=-71.0589&radius_km=0.5"
+```
+
+**Extract Article References (NER)**
+```
+POST /api/v1/development-plans/extract-entities
+Content-Type: application/json
+
+{
+  "text": "Your development plan text"
+}
+```
+
+Uses a fine-tuned BERT NER model deployed on Cloud Run to extract article references from text. The backend makes authenticated HTTP calls to the NER service for inference.
+
+Example:
+```bash
+curl -X POST "http://localhost:8000/api/v1/development-plans/extract-entities" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "This project requires approval under Article 50 and Section 32 of the zoning code."}'
+
+# Response:
+{
+  "article_references": ["Article 50", "Section 32"],
+  "count": 2
+}
+```
+
+**List Projects by City**
+```
+GET /api/v1/development-plans/projects?city={city}
+```
+
+Get all development projects for a city with metadata.
+
+Example:
+```bash
+curl "http://localhost:8000/api/v1/development-plans/projects?city=boston"
+
+# Response:
+{
+  "city": "boston",
+  "projects": [
+    {
+      "project_name": "100 Hood Park Drive",
+      "file_count": 3,
+      "article_references": ["Article 50", "Section 32"]
+    }
+  ],
+  "count": 1
+}
 ```
 
 ## Testing
@@ -342,6 +427,19 @@ Database schema changes should be managed through migrations. See the main proje
 
 - Verify `TOGETHER_API_KEY` is set correctly
 - Check API key is valid and has sufficient credits
+
+### NER Service Issues
+
+- **503 Service Unavailable**: NER service may be down or not deployed
+  - Check Cloud Run service status: `gcloud run services describe ner-service --region=us-central1`
+  - Verify `NER_SERVICE_URL` environment variable is set correctly
+- **403 Forbidden**: Authentication/IAM permission issues
+  - If using authenticated access, ensure backend service account has `roles/run.invoker` permission
+  - Alternatively, enable public access on the Cloud Run service (less secure)
+- **Connection Timeout**: Network connectivity issues
+  - Verify backend can reach Cloud Run services
+  - Check firewall/network policies
+- **For Cloud Run deployment details**: See [workflow/deploy/cloudrun/README.md](../workflow/deploy/cloudrun/README.md)
 
 ## References
 

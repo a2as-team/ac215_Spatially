@@ -33,9 +33,9 @@ def format_zoning_results(results: List[dict], max_results: int = 5) -> str:
             header += f" (Zones: {', '.join(zoning_codes)})"
         header += f" [Relevance: {similarity:.2%}]"
 
-        # Truncate text if too long
-        if len(text_chunk) > 500:
-            text_chunk = text_chunk[:500] + "..."
+        # Truncate text if too long (use higher limit for tables)
+        if len(text_chunk) > 2000:
+            text_chunk = text_chunk[:2000] + "..."
 
         formatted_lines.append(header)
         formatted_lines.append(f"     {text_chunk}")

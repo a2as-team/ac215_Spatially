@@ -74,3 +74,69 @@ This will:
 - **GCS Bucket**: `spatially-us-central-1-model-training`
 - **Path**: `ner_model_output/model/`
 - **Files**: `ner_model/` (model weights) and `ner_tokenizer/` (tokenizer config)
+
+## Production Deployment (Cloud Run)
+
+The trained NER model is deployed as a serverless microservice on Google Cloud Run for production inference.
+
+### Service Information
+
+- **Service Name**: `ner-service`
+- **Platform**: Google Cloud Run
+- **Region**: `us-central1`
+- **Endpoint**: `https://ner-service-{hash}-uc.a.run.app`
+
+### Deploy to Cloud Run
+
+```bash
+# Build and deploy NER service
+docker-compose run workflow python deploy/run.py \
+  --target cloudrun \
+  --action deploy \
+  --service ner-service
+```
+
+### Service Architecture
+
+**Docker Image**: Built from `Dockerfile.service`
+- Base: Python 3.10
+- Includes: FastAPI, transformers, torch
+- Loads model from GCS on startup
+- Provides REST API for entity extraction
+
+**Endpoints**:
+- `GET /health` - Health check (liveness probe)
+- `GET /ready` - Readiness check (model loaded status)
+- `POST /extract-article-references` - Extract article references from text
+
+**Configuration**:
+- Memory: 2GB (model + inference)
+- CPU: 2 vCPUs
+- Timeout: 300s (5 minutes)
+- Concurrency: 10 requests per instance
+- Auto-scaling: 0 to 10 instances
+- Authentication: Configurable (public or service account)
+
+### Integration with Backend
+
+The backend API automatically uses the Cloud Run NER service when configured:
+
+```bash
+# Backend environment variables
+USE_CLOUDRUN_NER=true
+NER_SERVICE_URL=https://ner-service-xxxx-uc.a.run.app
+```
+
+Backend code (`backend/app/utils/ner/development_plans_ner.py`) automatically detects this configuration and uses HTTP calls to Cloud Run instead of loading the model locally.
+
+**Benefits**:
+- ✅ Backend image size reduced from 4.4GB → 605MB (86% reduction)
+- ✅ No torch/transformers in backend dependencies
+- ✅ Independent scaling for ML inference
+- ✅ Cost-efficient (pay per request, scale to zero)
+
+### Deployment Documentation
+
+For detailed deployment instructions, IAM setup, and troubleshooting:
+- [Cloud Run Deployment Guide](../../../workflow/deploy/cloudrun/README.md)
+- [Backend API README](../../../backend/README.md) - NER integration and troubleshooting

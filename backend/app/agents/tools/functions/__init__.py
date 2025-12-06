@@ -21,6 +21,11 @@ from .sql import (
     check_query,
     run_query,
 )
+from .development_plans import (
+    query_development_plans,
+    query_development_plans_by_proximity,
+    query_development_plans_by_zone,
+)
 
 __all__ = [
     # Census functions
@@ -38,4 +43,8 @@ __all__ = [
     "check_schema",
     "check_query",
     "run_query",
+    # Development plans functions
+    "query_development_plans",
+    "query_development_plans_by_proximity",
+    "query_development_plans_by_zone",
 ]

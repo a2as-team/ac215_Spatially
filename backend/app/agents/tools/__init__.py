@@ -6,6 +6,7 @@ Structure:
 - functions/: Core query functions (one function per file)
   - census/: Census data queries
   - zoning/: Zoning ordinance queries
+  - development_plans/: Development plans queries
 - creators/: Factory functions that create tools with bound parameters
 - formatters/: Result formatting utilities
 """
@@ -22,6 +23,10 @@ from .functions import (
     query_zoning_by_codes,
     query_zoning_by_geojson,
     get_zoning_codes_at_location,
+    # Development plans
+    query_development_plans,
+    query_development_plans_by_proximity,
+    query_development_plans_by_zone,
 )
 
 # Creators - factory functions that bind parameters
@@ -30,12 +35,16 @@ from .creators import (
     create_zoning_tool,
     create_location_zoning_tool,
     create_location_zoning_code_tool,
+    create_development_plans_tool,
+    create_location_development_plans_proximity_tool,
+    create_location_development_plans_zone_tool,
 )
 
 # Formatters
 from .formatters import (
     format_census_results,
     format_zoning_results,
+    format_development_plans_results,
 )
 
 # Legacy - keep BaseTool for backwards compatibility
@@ -54,12 +63,22 @@ __all__ = [
     "query_zoning_by_codes",
     "query_zoning_by_geojson",
     "get_zoning_codes_at_location",
-    # Creators
+    # Development plans functions
+    "query_development_plans",
+    "query_development_plans_by_proximity",
+    "query_development_plans_by_zone",
+    # Census creators
     "create_census_tool",
+    # Zoning creators
     "create_zoning_tool",
     "create_location_zoning_tool",
     "create_location_zoning_code_tool",
+    # Development plans creators
+    "create_development_plans_tool",
+    "create_location_development_plans_proximity_tool",
+    "create_location_development_plans_zone_tool",
     # Formatters
     "format_census_results",
     "format_zoning_results",
+    "format_development_plans_results",
 ]

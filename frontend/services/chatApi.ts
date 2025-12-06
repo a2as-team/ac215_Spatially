@@ -8,11 +8,20 @@ export interface ChatMessage {
   image_path?: string;
 }
 
+export interface OrdinanceSource {
+  title: string;
+  subtitle?: string;
+  zoning_codes?: string[];
+  content: string;
+  similarity_score?: number;
+}
+
 export interface Chat {
   chat_id: string;
   title: string;
   dts: number;
   messages: ChatMessage[];
+  ordinance_sources?: OrdinanceSource[];
 }
 
 export interface StartChatRequest {

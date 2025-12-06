@@ -40,8 +40,8 @@ export function MapLegend({ zoningData }: MapLegendProps) {
       radius="sm"
       style={{
         position: "absolute",
-        bottom: 30,
-        right: 10,
+        top: 10,
+        left: 10,
         maxHeight: 300,
         overflow: "auto",
         zIndex: 1000,

@@ -25,6 +25,16 @@ export interface ZoningCodesResponse {
   count: number;
 }
 
+export interface Document {
+  title: string;
+  subtitle: string;
+}
+
+export interface DocumentsResponse {
+  documents: Document[];
+  count: number;
+}
+
 export const citiesApi = {
   // Get all cities
   getCities: async (): Promise<CitiesResponse> => {
@@ -41,6 +51,12 @@ export const citiesApi = {
   // Get zoning codes for a city
   getZoningCodes: async (cityName: string): Promise<ZoningCodesResponse> => {
     const { data } = await apiClient.get<ZoningCodesResponse>(`/api/v1/cities/${cityName}/zoning-codes`);
+    return data;
+  },
+
+  // Get documents for a city
+  getDocuments: async (cityName: string): Promise<DocumentsResponse> => {
+    const { data } = await apiClient.get<DocumentsResponse>(`/api/v1/cities/${cityName}/documents`);
     return data;
   },
 };

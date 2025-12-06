@@ -65,6 +65,13 @@ export interface CityZoningResponse {
   count: number;
 }
 
+export interface FullDocumentResponse {
+  title: string;
+  subtitle: string;
+  content: string;
+  city: string;
+}
+
 // Server-side only function for getStaticProps (similar to citiesApi pattern)
 export const getCityZoningServerSide = async (city: string): Promise<CityZoningResponse> => {
   const isServer = typeof window === 'undefined';
@@ -110,6 +117,20 @@ export const zoningApi = {
   getAllZoningForCity: async (city: string): Promise<CityZoningResponse> => {
     const { data } = await apiClient.get<CityZoningResponse>(
       `/api/v1/zoning_ordinance/${city}`
+    );
+    return data;
+  },
+
+  getFullDocument: async (
+    city: string,
+    title: string,
+    subtitle?: string
+  ): Promise<FullDocumentResponse> => {
+    const { data } = await apiClient.get<FullDocumentResponse>(
+      `/api/v1/zoning_ordinance/document/${city}`,
+      {
+        params: { title, subtitle: subtitle || '' },
+      }
     );
     return data;
   },

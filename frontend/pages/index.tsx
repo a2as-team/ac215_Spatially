@@ -1,5 +1,6 @@
 import { GetStaticProps } from "next";
 import { useRouter } from "next/router";
+import Image from "next/image";
 import {
   Container,
   Title,
@@ -11,7 +12,7 @@ import {
   Stack,
   Center,
 } from "@mantine/core";
-import { IconMap, IconMapPin } from "@tabler/icons-react";
+import { IconMapPin } from "@tabler/icons-react";
 import { getCitiesServerSide, City } from "@/services/citiesApi";
 
 interface HomeProps {
@@ -31,7 +32,7 @@ export default function Home({ cities }: HomeProps) {
         <Center>
           <Stack gap="md" align="center">
             <Group>
-              <IconMap size={48} />
+              <Image src="/icon.png" alt="Spatially" width={48} height={48} />
               <Title order={1}>Spatially Zoning</Title>
             </Group>
             <Text size="lg" c="dimmed" ta="center">

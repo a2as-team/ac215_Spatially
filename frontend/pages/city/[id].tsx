@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { GetStaticProps, GetStaticPaths } from "next";
+import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   AppShell,
@@ -18,10 +19,9 @@ import {
   Box,
   Avatar,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useHotkeys } from "@mantine/hooks";
 import {
   IconSend,
-  IconMap,
   IconPlus,
   IconMapPin,
   IconUser,
@@ -32,9 +32,10 @@ import maplibregl from "maplibre-gl";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useStartChat, useContinueChat, useChats, useChat } from "@/hooks/useChat";
-import { useZoningAtLocation } from "@/hooks/useZoningSearch";
 import { ZoningData, CityZoningResponse, getCityZoningServerSide } from "@/services/zoningApi";
 import { getCitiesServerSide } from "@/services/citiesApi";
+import { getZoneSubtypeColor } from "@/utils/zoningColors";
+import { MapLegend } from "@/components/MapLegend";
 
 interface CityPageProps {
   cityZoningData: CityZoningResponse;
@@ -63,8 +64,6 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const { data: currentChatData } = useChat(currentChatId);
   const { mutate: startChat, isPending: isStarting } = useStartChat();
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
-  const { mutate: fetchZoning, isPending: isLoadingZoning } =
-    useZoningAtLocation();
 
   const isPending = isStarting || isContinuing;
 
@@ -72,9 +71,10 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const messages = currentChatData?.messages || [];
 
   // Add zoning polygons to map
-  const addZoningLayer = useCallback((zoningData: ZoningData[]) => {
-    if (!map.current) {
-      console.log("Map not ready for adding zoning layer");
+  const addZoningLayer = useCallback((zoningData: ZoningData[], fitBounds = true) => {
+    // Check map style is fully loaded before adding layers
+    if (!map.current || !map.current.isStyleLoaded()) {
+      console.log("Map style not ready for adding zoning layer");
       return;
     }
 
@@ -91,19 +91,33 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       map.current.removeSource("zoning");
     }
 
-    // Create GeoJSON features from zoning data
+    // Log sample of incoming data to debug zone_subtype
+    console.log("Sample zoning data:", zoningData.slice(0, 3).map(z => ({
+      code: z.code,
+      zone_subtype: z.zone_subtype,
+    })));
+
+    // Create GeoJSON features from zoning data with color based on zone_subtype
     const features = zoningData
       .filter((z) => z.geometry)
-      .map((z) => ({
-        type: "Feature" as const,
-        properties: {
-          code: z.code || z.zoning_code,
-          article: z.article,
-          usage: z.usage,
-        },
-        geometry: z.geometry,
-      }));
+      .map((z) => {
+        const color = getZoneSubtypeColor(z.zone_subtype);
+        return {
+          type: "Feature" as const,
+          properties: {
+            code: z.code || z.zoning_code,
+            article: z.article,
+            usage: z.usage,
+            zone_subtype: z.zone_subtype || "Unknown",
+            color: color,
+          },
+          geometry: z.geometry,
+        };
+      });
 
+    // Log color assignments
+    const uniqueColors = [...new Set(features.map(f => `${f.properties.zone_subtype}: ${f.properties.color}`))];
+    console.log("Zone subtype to color mappings:", uniqueColors);
     console.log(`Created ${features.length} GeoJSON features`);
     if (features.length === 0) {
       console.warn("No features with geometry to display");
@@ -119,44 +133,88 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       },
     });
 
-    // Add fill layer
+    // Add fill layer with data-driven color based on zone_subtype
     map.current.addLayer({
       id: "zoning-fill",
       type: "fill",
       source: "zoning",
       paint: {
-        "fill-color": "#0080ff",
-        "fill-opacity": 0.3,
+        "fill-color": ["get", "color"],
+        "fill-opacity": 0.5,
       },
     });
 
-    // Add outline layer
+    // Add outline layer with matching color
     map.current.addLayer({
       id: "zoning-outline",
       type: "line",
       source: "zoning",
       paint: {
-        "line-color": "#0080ff",
-        "line-width": 2,
+        "line-color": ["get", "color"],
+        "line-width": 1.5,
       },
     });
 
-    // Fit bounds to show all zoning areas
-    const bounds = new maplibregl.LngLatBounds();
-    features.forEach((feature) => {
-      if (feature.geometry.type === "Polygon") {
-        feature.geometry.coordinates[0].forEach((coord: number[]) => {
-          bounds.extend(coord as [number, number]);
-        });
-      } else if (feature.geometry.type === "MultiPolygon") {
-        feature.geometry.coordinates.forEach((polygon: number[][][]) => {
-          polygon[0].forEach((coord: number[]) => {
+    // Fit bounds to show all zoning areas (only on initial load)
+    if (fitBounds) {
+      const bounds = new maplibregl.LngLatBounds();
+      features.forEach((feature) => {
+        if (feature.geometry.type === "Polygon") {
+          feature.geometry.coordinates[0].forEach((coord: number[]) => {
             bounds.extend(coord as [number, number]);
           });
+        } else if (feature.geometry.type === "MultiPolygon") {
+          feature.geometry.coordinates.forEach((polygon: number[][][]) => {
+            polygon[0].forEach((coord: number[]) => {
+              bounds.extend(coord as [number, number]);
+            });
+          });
+        }
+      });
+      // Resize map to ensure proper dimensions, then fit bounds
+      map.current.resize();
+      // Small delay to ensure resize is applied before fitBounds
+      setTimeout(() => {
+        map.current?.fitBounds(bounds, {
+          padding: { top: 50, right: 50, bottom: 50, left: 50 }
         });
-      }
-    });
-    map.current.fitBounds(bounds, { padding: 50 });
+      }, 50);
+    }
+  }, []);
+
+  // Highlight selected zones by dimming others
+  const highlightSelectedZones = useCallback((selectedCodes: string[]) => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+
+    map.current.setPaintProperty("zoning-fill", "fill-opacity", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      0.7, // Selected zones: higher opacity
+      0.15, // Other zones: dimmed
+    ]);
+
+    map.current.setPaintProperty("zoning-outline", "line-opacity", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      1, // Selected zones: full opacity
+      0.3, // Other zones: dimmed
+    ]);
+
+    map.current.setPaintProperty("zoning-outline", "line-width", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      3, // Selected zones: thicker line
+      1, // Other zones: thin line
+    ]);
+  }, []);
+
+  // Reset zone highlighting (restore all to normal opacity)
+  const resetZoneHighlight = useCallback(() => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+
+    map.current.setPaintProperty("zoning-fill", "fill-opacity", 0.5);
+    map.current.setPaintProperty("zoning-outline", "line-opacity", 1);
+    map.current.setPaintProperty("zoning-outline", "line-width", 1.5);
   }, []);
 
   // Initialize map
@@ -183,7 +241,15 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
 
       map.current.on("load", () => {
         console.log("Map loaded successfully!");
-        setMapLoaded(true);
+        // Trigger resize to account for sidebar layout
+        // Use multiple resize calls to ensure proper dimensions after CSS settles
+        setTimeout(() => {
+          map.current?.resize();
+          setTimeout(() => {
+            map.current?.resize();
+            setMapLoaded(true);
+          }, 100);
+        }, 100);
       });
 
       map.current.on("error", (e) => {
@@ -196,6 +262,23 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       map.current.on("click", (e) => {
         const { lng, lat } = e.lngLat;
 
+        // Query features at click point from the zoning layer
+        const features = map.current!.queryRenderedFeatures(e.point, {
+          layers: ["zoning-fill"],
+        });
+
+        if (features.length === 0) {
+          // Clicked outside any zone - clear selection
+          setSelectedZoning(null);
+          setSelectedLocation(null);
+          if (markerRef.current) {
+            markerRef.current.remove();
+            markerRef.current = null;
+          }
+          resetZoneHighlight();
+          return;
+        }
+
         // Add or update marker
         if (markerRef.current) {
           markerRef.current.remove();
@@ -207,23 +290,23 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         // Save selected location for chat context
         setSelectedLocation({ latitude: lat, longitude: lng });
 
-        // Fetch zoning data
-        if (id && typeof id === "string") {
-          fetchZoning(
-            { city: id, latitude: lat, longitude: lng },
-            {
-              onSuccess: (data) => {
-                setSelectedZoning(data.zoning_data);
-                // Add zoning polygons to map
-                addZoningLayer(data.zoning_data);
-              },
-              onError: (error) => {
-                console.error("Error fetching zoning:", error);
-                setSelectedZoning(null);
-              },
-            }
-          );
-        }
+        // Convert MapLibre features to ZoningData format
+        const zoningData: ZoningData[] = features.map((f) => ({
+          id: f.id as number,
+          code: f.properties?.code,
+          article: f.properties?.article,
+          usage: f.properties?.usage,
+          zone_subtype: f.properties?.zone_subtype,
+          geometry: f.geometry,
+        }));
+
+        setSelectedZoning(zoningData);
+
+        // Highlight selected zones (dim others)
+        const selectedCodes = zoningData
+          .map((z) => z.code)
+          .filter(Boolean) as string[];
+        highlightSelectedZones(selectedCodes);
       });
     } catch (error) {
       console.error("Failed to initialize map:", error);
@@ -241,7 +324,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         map.current = null;
       }
     };
-  }, [id, fetchZoning, addZoningLayer]);
+  }, [id, addZoningLayer, highlightSelectedZones, resetZoneHighlight]);
 
   const handleSendMessage = () => {
     if (!inputValue.trim() || !id || typeof id !== "string") return;
@@ -292,7 +375,7 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     setInputValue("");
   };
 
-  const handleClearSelection = () => {
+  const handleClearSelection = useCallback(() => {
     // Clear selected zoning and location
     setSelectedZoning(null);
     setSelectedLocation(null);
@@ -303,11 +386,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       markerRef.current = null;
     }
 
-    // Reload all city zoning data
-    if (cityZoningData?.zoning_data && mapLoaded) {
-      addZoningLayer(cityZoningData.zoning_data);
-    }
-  };
+    // Reset zone highlighting (restore all to normal opacity)
+    resetZoneHighlight();
+  }, [resetZoneHighlight]);
 
   // Load city zoning data when available and map is ready
   useEffect(() => {
@@ -321,7 +402,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       console.log(`Loading ${cityZoningData.zoning_data.length} zoning areas for city:`, cityZoningData.city);
       addZoningLayer(cityZoningData.zoning_data);
     }
-  }, [mapLoaded, cityZoningData, addZoningLayer]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapLoaded, cityZoningData]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -334,6 +416,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       }
     }
   }, [messages]);
+
+  // Handle escape key to deselect
+  useHotkeys([["Escape", handleClearSelection]]);
 
   return (
     <AppShell
@@ -354,8 +439,11 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               hiddenFrom="sm"
               size="sm"
             />
-            <Group>
-              <IconMap size={28} />
+            <Group
+              style={{ cursor: "pointer" }}
+              onClick={() => router.push("/")}
+            >
+              <Image src="/icon.png" alt="Spatially" width={40} height={40} />
               <Title order={3}>Spatially Zoning</Title>
             </Group>
             <Text size="sm" c="dimmed" tt="capitalize">
@@ -373,9 +461,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               {selectedZoning.map((zone, index) => (
                 <Badge key={index} color="blue" variant="light">
                   {zone.code || zone.zoning_code}
+                  {zone.zone_subtype && ` (${zone.zone_subtype})`}
                 </Badge>
               ))}
-              {isLoadingZoning && <Loader size="xs" />}
               <ActionIcon
                 size="sm"
                 variant="subtle"
@@ -385,14 +473,6 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               >
                 <IconX size={16} />
               </ActionIcon>
-            </Group>
-          )}
-          {isLoadingZoning && !selectedZoning && (
-            <Group gap="xs">
-              <Loader size="xs" />
-              <Text size="sm" c="dimmed">
-                Loading zoning data...
-              </Text>
             </Group>
           )}
         </Group>
@@ -649,19 +729,17 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main p={0} style={{ position: "relative", overflow: "hidden" }}>
-        <div
-          ref={mapContainer}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: "100%",
-            height: "100%",
-          }}
-        />
+      <AppShell.Main style={{ height: "100vh", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+          <div
+            ref={mapContainer}
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
+          <MapLegend zoningData={selectedZoning || cityZoningData?.zoning_data} />
+        </div>
       </AppShell.Main>
     </AppShell>
   );

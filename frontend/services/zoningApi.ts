@@ -33,6 +33,7 @@ export interface ZoningData {
   zoning_code?: string; // Alternative field name for compatibility
   article?: string;
   usage?: string;
+  zone_subtype?: string | null; // Zone classification for color coding
   geometry?: any;
   created_at?: string;
 }

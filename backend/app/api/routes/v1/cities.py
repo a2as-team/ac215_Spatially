@@ -44,6 +44,61 @@ def get_cities() -> Dict[str, Any]:
         )
 
 
+@router.get("/{city_name}/zoning-codes")
+def get_city_zoning_codes(city_name: str) -> Dict[str, Any]:
+    """
+    Get all zoning codes for a specific city.
+
+    Args:
+        city_name: Name of the city (case-insensitive)
+
+    Returns:
+        Dictionary with:
+        - zoning_codes: List of zoning code objects with zone_code, zone_subtype, etc.
+        - count: Number of zoning codes
+    """
+    try:
+        db = DBConnector(db_name=settings.POSTGRES_DB)
+        city_id = db.get_city_id(city_name)
+
+        if city_id is None:
+            raise HTTPException(status_code=404, detail=f"City '{city_name}' not found")
+
+        results = db.execute(
+            """
+            SELECT id, zone_code, zone_subtype, area_acres, description, created_at
+            FROM zoning_codes
+            WHERE city_id = %s
+            ORDER BY zone_code
+            """,
+            (city_id,),
+        )
+
+        zoning_codes = []
+        if results:
+            for row in results:
+                code = dict(row)
+                if code.get("created_at"):
+                    code["created_at"] = code["created_at"].isoformat()
+                if code.get("area_acres"):
+                    code["area_acres"] = float(code["area_acres"])
+                zoning_codes.append(code)
+
+        db.close()
+
+        return {
+            "zoning_codes": zoning_codes,
+            "count": len(zoning_codes),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve zoning codes: {str(e)}"
+        )
+
+
 @router.get("/{city_name}")
 def get_city(city_name: str) -> Dict[str, Any]:
     """

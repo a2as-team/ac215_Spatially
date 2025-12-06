@@ -62,7 +62,7 @@ class ZoningCodesBaseCollector(BaseCollector, ABC):
             CREATE TABLE IF NOT EXISTS zoning_codes (
                 id SERIAL PRIMARY KEY,
                 city_id INTEGER NOT NULL REFERENCES cities(id) ON DELETE CASCADE,
-                zone_code VARCHAR(50) NOT NULL,
+                zone_code VARCHAR(255) NOT NULL,
                 zone_subtype VARCHAR(255),
                 area_acres DECIMAL(12, 2),
                 description TEXT,

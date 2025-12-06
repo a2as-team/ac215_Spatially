@@ -73,7 +73,7 @@ jobs:
 
           echo "=== Starting Deployment ==="
           cd /app/deploy
-          python -u run.py --action deploy
+          python -u run.py --target gke --action deploy
 
           echo "=== Deployment Complete ==="
 

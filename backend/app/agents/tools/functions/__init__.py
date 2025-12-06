@@ -15,6 +15,11 @@ from .zoning import (
     query_zoning_by_geojson,
     get_zoning_codes_at_location,
 )
+from .development_plans import (
+    query_development_plans,
+    query_development_plans_by_proximity,
+    query_development_plans_by_zone,
+)
 
 __all__ = [
     # Census functions
@@ -27,4 +32,8 @@ __all__ = [
     "query_zoning_by_codes",
     "query_zoning_by_geojson",
     "get_zoning_codes_at_location",
+    # Development plans functions
+    "query_development_plans",
+    "query_development_plans_by_proximity",
+    "query_development_plans_by_zone",
 ]

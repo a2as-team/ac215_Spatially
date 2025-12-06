@@ -13,6 +13,7 @@ Comprehensive documentation is available in the [`docs/`](./docs/) directory:
 ## Quick Links
 
 - [Backend API README](./backend/README.md): Setup and usage instructions for the FastAPI backend
+- [Cloud Run Deployment Guide](./workflow/deploy/cloudrun/README.md): Deploy services to Google Cloud Run (NER, etc.)
 - [Census Data Collector README](./data/collector/census/README.md): Census data collection documentation
 - [Zoning Ordinance Collector README](./data/collector/zoning_ordinance/README.md): Zoning ordinance collection documentation
 - [Zoning Codes Collector README](./data/collector/zoning_codes/README.md): Zoning codes collection documentation

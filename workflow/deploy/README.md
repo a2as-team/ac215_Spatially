@@ -149,3 +149,10 @@ For detailed Cloud Run deployment documentation, see [cloudrun/README.md](cloudr
 | **Cold starts** | None | 10-20s (first request) |
 | **HTTPS** | cert-manager + Ingress | Automatic |
 | **Authentication** | API keys / OAuth | Google Cloud ID tokens |
+For monitoring the capability of hpa,
+
+```bash
+python -c "from deploy.gke.cluster import GKECluster; GKECluster().get_credentials()"
+kubectl get hpa spatially-backend-hpa --watch
+kubectl get pods -l app=spatially-backend --watch
+```

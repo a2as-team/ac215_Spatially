@@ -21,6 +21,12 @@ def health_check():
     return {"status": "healthy"}
 
 
+@router.get("/cors")
+def cors_check():
+    """Check allowed CORS origins"""
+    return {"allowed_origins": settings.all_cors_origins}
+
+
 @router.get("/readiness")
 async def readiness_check():
     try:

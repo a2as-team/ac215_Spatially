@@ -16,6 +16,7 @@ class SecretsManager:
         # Secret names
         self.db_secret_name = "spatially-db-secrets"
         self.gcp_secret_name = "spatially-gcp-secrets"
+        self.gcp_sa_key_secret_name = "gcp-sa-key"
         self.cloudflare_secret_name = "cloudflare-api-token"
 
     def run_command(
@@ -62,6 +63,7 @@ class SecretsManager:
         print("\n--- Removing existing secrets ---")
         self.delete_secret(self.db_secret_name)
         self.delete_secret(self.gcp_secret_name)
+        self.delete_secret(self.gcp_sa_key_secret_name)
         self.delete_secret(self.cloudflare_secret_name)
 
     def setup_db_secrets(self):
@@ -132,11 +134,21 @@ class SecretsManager:
             "GCP_REGION": gcp_region,
         }
 
-        # Add CORS settings if provided
-        cors_origins = os.environ.get("BACKEND_CORS_ORIGINS")
+        # Add CORS settings - derive frontend host from DOMAIN_FILTER and add to BACKEND_CORS_ORIGINS
+        domain_filter = os.environ.get("DOMAIN_FILTER")
+        cors_origins = os.environ.get("BACKEND_CORS_ORIGINS", "")
+
+        # Derive frontend host from DOMAIN_FILTER (e.g., teamspatially.com -> https://zoning.teamspatially.com)
+        if domain_filter:
+            frontend_host = f"https://zoning.{domain_filter}"
+            if cors_origins:
+                cors_origins = f"{cors_origins},{frontend_host}"
+            else:
+                cors_origins = frontend_host
 
         if cors_origins:
             secrets_data["BACKEND_CORS_ORIGINS"] = cors_origins
+            print(f"  CORS allowed origins: {cors_origins}")
 
         # Add NER service configuration if provided
         use_cloudrun_ner = os.environ.get("USE_CLOUDRUN_NER")
@@ -149,6 +161,36 @@ class SecretsManager:
 
         self.create_or_update_secret(self.gcp_secret_name, secrets_data)
         print(f"✓ Secret '{self.gcp_secret_name}' configured")
+
+    def setup_gcp_sa_key_secret(self):
+        """
+        Setup GCP service account key secret from file.
+
+        Required env var:
+        - GOOGLE_APPLICATION_CREDENTIALS (path to service account key JSON file)
+        """
+        print("\n--- Setting up GCP service account key secret ---")
+
+        sa_key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+        if not sa_key_path:
+            raise ValueError(
+                "Missing required environment variable: GOOGLE_APPLICATION_CREDENTIALS"
+            )
+
+        if not os.path.exists(sa_key_path):
+            raise ValueError(f"Service account key file not found: {sa_key_path}")
+
+        # Create secret from file
+        cmd = [
+            "kubectl", "create", "secret", "generic", self.gcp_sa_key_secret_name,
+            f"--from-file=key.json={sa_key_path}",
+            "--dry-run=client", "-o", "yaml"
+        ]
+        yaml_output = subprocess.check_output(cmd, text=True)
+        self.run_command(["kubectl", "apply", "-f", "-"], input=yaml_output)
+
+        print(f"✓ Secret '{self.gcp_sa_key_secret_name}' configured")
 
     def setup_cloudflare_secrets(self):
         """
@@ -179,6 +221,7 @@ class SecretsManager:
         self.remove_existing_secrets()
         self.setup_db_secrets()
         self.setup_gcp_secrets()
+        self.setup_gcp_sa_key_secret()
         self.setup_cloudflare_secrets()
 
     def status(self):

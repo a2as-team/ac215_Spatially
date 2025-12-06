@@ -16,23 +16,68 @@ STATE_FIPS = {
     "DC": "11", "PR": "72"
 }
 
-def get_fips_code(state_abbr: str) -> str:
+# State full name to abbreviation mapping
+STATE_NAME_TO_ABBR = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
+    "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+    "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO",
+    "Montana": "MT", "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ",
+    "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH",
+    "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT",
+    "Virginia": "VA", "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+    "District of Columbia": "DC", "Puerto Rico": "PR"
+}
+
+def normalize_state(state: str) -> str:
     """
-    Convert state abbreviation to FIPS code.
+    Convert state name to abbreviation.
+
+    Accepts either full state name (e.g., "Massachusetts") or abbreviation (e.g., "MA").
+    Returns the two-letter state abbreviation.
 
     Args:
-        state_abbr: Two-letter state abbreviation (e.g., "MA", "IL")
+        state: State name or abbreviation
+
+    Returns:
+        Two-letter state abbreviation (e.g., "MA")
+
+    Raises:
+        ValueError: If state is not recognized
+    """
+    # Try as abbreviation first (case-insensitive)
+    state_upper = state.upper()
+    if state_upper in STATE_FIPS:
+        return state_upper
+
+    # Try as full name (case-sensitive for title case)
+    if state in STATE_NAME_TO_ABBR:
+        return STATE_NAME_TO_ABBR[state]
+
+    # Try case-insensitive full name match
+    for name, abbr in STATE_NAME_TO_ABBR.items():
+        if name.upper() == state.upper():
+            return abbr
+
+    raise ValueError(
+        f"Unknown state: {state}. "
+        f"Must be a valid state name or abbreviation."
+    )
+
+def get_fips_code(state: str) -> str:
+    """
+    Convert state name or abbreviation to FIPS code.
+
+    Args:
+        state: State name (e.g., "Massachusetts") or abbreviation (e.g., "MA")
 
     Returns:
         Two-digit FIPS code (e.g., "25", "17")
 
     Raises:
-        ValueError: If state abbreviation is not recognized
+        ValueError: If state is not recognized
     """
-    state_abbr = state_abbr.upper()
-    if state_abbr not in STATE_FIPS:
-        raise ValueError(
-            f"Unknown state abbreviation: {state_abbr}. "
-            f"Valid options: {', '.join(sorted(STATE_FIPS.keys()))}"
-        )
+    state_abbr = normalize_state(state)
     return STATE_FIPS[state_abbr]

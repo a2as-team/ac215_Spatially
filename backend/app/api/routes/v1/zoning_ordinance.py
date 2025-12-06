@@ -1,8 +1,13 @@
 from fastapi import APIRouter, HTTPException, Query
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.utils.vector_query.zoning_ordinance import ZoningOrdinanceVectorQuery
 from app.utils.spatial_query.zoning_map import ZoningMapSpatialQuery
+from app.utils.db_accessor import DBConnector
+from app.utils.gcs_accessor import GCSAccessor
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/zoning_ordinance", tags=["zoning-ordinance"])
 
@@ -158,6 +163,90 @@ def get_zoning_at_location(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/document/{city}")
+def get_full_document(
+    city: str,
+    title: str = Query(..., description="Document title"),
+    subtitle: Optional[str] = Query("", description="Document subtitle (optional)"),
+) -> Dict[str, Any]:
+    """
+    Fetch the full markdown content of a zoning ordinance document from GCS.
+
+    This endpoint:
+    1. Looks up the document metadata in the database
+    2. Retrieves the GCS path from the metadata
+    3. Downloads and returns the full markdown content
+
+    Args:
+        city: City name
+        title: Document title
+        subtitle: Document subtitle (optional)
+
+    Returns:
+        Dictionary with:
+        - title: Document title
+        - subtitle: Document subtitle
+        - content: Full markdown content
+        - city: City name
+    """
+    try:
+        db = DBConnector(db_name=settings.POSTGRES_DB)
+        city_id = db.get_city_id(city)
+
+        if city_id is None:
+            raise HTTPException(status_code=404, detail=f"City '{city}' not found")
+
+        # Get document metadata including GCS path
+        results = db.execute(
+            """
+            SELECT DISTINCT metadata
+            FROM zoning_ordinance_embed
+            WHERE city_id = %s
+              AND document_title = %s
+              AND (document_subtitle = %s OR (%s = '' AND (document_subtitle IS NULL OR document_subtitle = '')))
+            LIMIT 1
+            """,
+            (city_id, title, subtitle, subtitle),
+        )
+
+        db.close()
+
+        if not results or not results[0].get("metadata"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Document '{title}' not found for city '{city}'"
+            )
+
+        metadata = results[0]["metadata"]
+        markdown_gcs_path = metadata.get("markdown_gcs_path")
+
+        if not markdown_gcs_path:
+            raise HTTPException(
+                status_code=404,
+                detail="Document GCS path not found in metadata"
+            )
+
+        # Download full markdown from GCS
+        gcs = GCSAccessor()
+        content = gcs.download_as_text(markdown_gcs_path)
+
+        return {
+            "title": title,
+            "subtitle": subtitle or "",
+            "content": content,
+            "city": city,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching document: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch document: {str(e)}"
+        )
 
 
 @router.get("/{city}")

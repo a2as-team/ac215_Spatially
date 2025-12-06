@@ -5,7 +5,11 @@ is selected.
 """
 
 from google.adk.agents import LlmAgent
-from app.agents.tools import create_census_tool, create_zoning_tool
+from app.agents.tools import (
+    create_census_tool,
+    create_zoning_tool,
+    create_development_plans_tool,
+)
 from .prompts import INSTRUCTION
 
 
@@ -49,6 +53,7 @@ class CityDataAgent:
         # Create tools with city pre-bound
         census_tool = create_census_tool(city=self.city)
         zoning_tool = create_zoning_tool(city=self.city)
+        development_plans_tool = create_development_plans_tool(city=self.city)
 
         # Build instruction with city context
         instruction = INSTRUCTION.format(city=self.city.title())
@@ -57,7 +62,7 @@ class CityDataAgent:
             name="CityDataAgent",
             model=self.model,
             instruction=instruction,
-            tools=[census_tool, zoning_tool],
+            tools=[census_tool, zoning_tool, development_plans_tool],
         )
 
         return agent

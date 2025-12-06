@@ -1,0 +1,59 @@
+# Cloud Run Dockerfile for NER Service
+# Optimized for production deployment with minimal image size and proper signal handling
+
+FROM python:3.10-slim-bullseye
+
+# Prevent Python from writing pyc files and buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency management
+RUN pip install --no-cache-dir uv
+
+# Copy dependency files
+COPY pyproject.toml ./
+
+# Install Python dependencies (production only)
+# Install FastAPI, uvicorn, pydantic-settings and dependencies from pyproject.toml
+RUN uv pip install --system --no-cache \
+    "fastapi>=0.100.0" \
+    "uvicorn[standard]>=0.23.0" \
+    "pydantic>=2.0.0" \
+    "pydantic-settings>=2.0.0" && \
+    uv pip install --system --no-cache .
+
+# Copy service code and package
+COPY service/ ./service/
+COPY package/ ./package/
+
+# Add package to PYTHONPATH
+ENV PYTHONPATH="/app/package:${PYTHONPATH}"
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/tmp && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Cloud Run injects PORT environment variable
+ENV PORT=8080
+
+# Expose port (documentation only, Cloud Run handles actual port binding)
+EXPOSE 8080
+
+# Health check (optional, Cloud Run has its own health checks)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:${PORT}/health')" || exit 1
+
+# Use exec form for proper signal handling
+CMD uvicorn service.main:app --host 0.0.0.0 --port ${PORT} --workers 1

@@ -33,6 +33,7 @@ export interface ZoningData {
   zoning_code?: string; // Alternative field name for compatibility
   article?: string;
   usage?: string;
+  zone_subtype?: string | null; // Zone classification for color coding
   geometry?: any;
   created_at?: string;
 }
@@ -62,6 +63,13 @@ export interface CityZoningResponse {
   city: string;
   zoning_data: ZoningData[];
   count: number;
+}
+
+export interface FullDocumentResponse {
+  title: string;
+  subtitle: string;
+  content: string;
+  city: string;
 }
 
 // Server-side only function for getStaticProps (similar to citiesApi pattern)
@@ -109,6 +117,20 @@ export const zoningApi = {
   getAllZoningForCity: async (city: string): Promise<CityZoningResponse> => {
     const { data } = await apiClient.get<CityZoningResponse>(
       `/api/v1/zoning_ordinance/${city}`
+    );
+    return data;
+  },
+
+  getFullDocument: async (
+    city: string,
+    title: string,
+    subtitle?: string
+  ): Promise<FullDocumentResponse> => {
+    const { data } = await apiClient.get<FullDocumentResponse>(
+      `/api/v1/zoning_ordinance/document/${city}`,
+      {
+        params: { title, subtitle: subtitle || '' },
+      }
     );
     return data;
   },

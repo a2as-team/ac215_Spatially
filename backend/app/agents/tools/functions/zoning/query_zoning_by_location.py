@@ -4,6 +4,7 @@ import logging
 from app.utils.vector_query.zoning_ordinance import ZoningOrdinanceVectorQuery
 from app.core.config import settings
 from app.agents.tools.formatters import format_zoning_results
+from app.agents.context import get_agent_context
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,10 @@ def query_zoning_by_location(
                 f"No zoning ordinance information found for the location "
                 f"({latitude}, {longitude}) in {city}."
             )
+
+        # Store results in agent context for frontend access
+        context = get_agent_context()
+        context.add_ordinance_sources(results)
 
         formatted_results = format_zoning_results(results)
         return (

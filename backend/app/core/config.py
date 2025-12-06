@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     # GCP Configuration for Vertex AI (matching data processing env vars)
     GCP_PROJECT: str = ""
     GCP_REGION: str = ""
+    GCS_BUCKET_NAME: str = "spatially-data"
 
     @model_validator(mode="after")
     def set_defaults_from_env(self) -> Self:

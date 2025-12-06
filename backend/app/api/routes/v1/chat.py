@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
 from app.agents import ChatHistoryManager, SmartDataAgentRunner
+from app.agents.context import get_agent_context, clear_agent_context
 
 
 class ChatMessage(BaseModel):
@@ -69,6 +70,9 @@ async def start_chat(
     session_id = x_session_id or "default"
     chat_id = str(uuid.uuid4())
 
+    # Clear agent context before running
+    clear_agent_context()
+
     # Create the agent runner
     runner = SmartDataAgentRunner(
         city=request.city,
@@ -81,7 +85,15 @@ async def start_chat(
     )
 
     # Run the agent
-    response = await runner.run(request.content)
+    await runner.run(request.content)
+
+    # Get ordinance sources from context
+    agent_context = get_agent_context()
+    ordinance_sources = agent_context.get_ordinance_sources_dict()
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Chat response ordinance sources count: {len(ordinance_sources)}")
 
     # Generate title from first message
     title = request.content[:50]
@@ -103,6 +115,7 @@ async def start_chat(
             "longitude": runner.longitude,
             "agent_type": runner.agent_type,
         },
+        "ordinance_sources": ordinance_sources,
     }
 
     return chat_response
@@ -132,6 +145,9 @@ async def continue_chat(
     new_latitude = request.latitude
     new_longitude = request.longitude
 
+    # Clear agent context before running
+    clear_agent_context()
+
     # Create runner with saved context
     runner = SmartDataAgentRunner(
         city=city,
@@ -160,7 +176,11 @@ async def continue_chat(
         pass
 
     # Run the agent
-    response = await runner.run(request.content)
+    await runner.run(request.content)
+
+    # Get ordinance sources from context
+    agent_context = get_agent_context()
+    ordinance_sources = agent_context.get_ordinance_sources_dict()
 
     # Save to disk
     runner.save_to_disk(title=chat.get("title"))
@@ -177,6 +197,7 @@ async def continue_chat(
             "longitude": runner.longitude,
             "agent_type": runner.agent_type,
         },
+        "ordinance_sources": ordinance_sources,
     }
 
     return chat_response

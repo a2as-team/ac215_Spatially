@@ -31,6 +31,34 @@ STATE_NAME_TO_ABBR = {
     "District of Columbia": "DC", "Puerto Rico": "PR"
 }
 
+# City to county FIPS code mapping
+# Format: "city_name": {"state": "STATE_ABBR", "county": "COUNTY_FIPS"}
+# Only cities with county mappings are supported for census data collection
+CITY_COUNTY_MAPPING = {
+    "boston": {"state": "MA", "county": "025"},        # Suffolk County - 207 tracts
+}
+
+def get_city_county(city_name: str) -> dict:
+    """
+    Get county FIPS code for a city.
+
+    Args:
+        city_name: City slug name (e.g., "boston", "cambridge")
+
+    Returns:
+        Dictionary with state and county FIPS code
+
+    Raises:
+        ValueError: If city is not in mapping
+    """
+    city_lower = city_name.lower()
+    if city_lower not in CITY_COUNTY_MAPPING:
+        raise ValueError(
+            f"County mapping not found for city: {city_name}. "
+            f"Available cities: {', '.join(CITY_COUNTY_MAPPING.keys())}"
+        )
+    return CITY_COUNTY_MAPPING[city_lower]
+
 def normalize_state(state: str) -> str:
     """
     Convert state name to abbreviation.

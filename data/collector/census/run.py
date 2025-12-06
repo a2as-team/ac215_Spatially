@@ -16,8 +16,7 @@ if str(project_root) not in sys.path:
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from utils.gcp_storage import GCPStorage
 from census import CensusCollector
-from census.state_fips import normalize_state
-from shared_config.city_service import CityService
+from census.state_fips import get_city_county
 import pandas as pd
 
 if __name__ == "__main__":
@@ -28,20 +27,12 @@ if __name__ == "__main__":
     args = parser.parse()
 
     city_key = args["city"].strip().lower()
-    with CityService() as service:
-        city = service.get_city(city_key)
-        if city:
-            state = city.get("state")
-            if state:
-                # Normalize state name to abbreviation (e.g., "Massachusetts" -> "MA")
-                state_abbr = normalize_state(state)
-                args["state"] = state_abbr
-                print(f"Mapping city '{args['city']}' to state '{state}' ({state_abbr})")
-            else:
-                raise ValueError(f"City '{args['city']}' found but has no state defined.")
-        else:
-            available = [c["name"] for c in service.get_all_cities()]
-            raise ValueError(f"Unknown city: {args['city']}. Known cities: {available[:10]}...")
+
+    # Get county FIPS code for the city (required - no fallback)
+    city_county_info = get_city_county(city_key)
+    args["state"] = city_county_info["state"]
+    args["county"] = city_county_info["county"]
+    print(f"City '{city_key}' mapped to state={args['state']}, county={args['county']}")
 
     collector = CensusCollector()
     table_codes = list(collector.caller_map.keys())
@@ -71,10 +62,16 @@ if __name__ == "__main__":
         for year in years:
             print(f"Collecting: table={table_code} year={year}")
             try:
-                # Request tract-level data by passing tract="*"
-                # This fetches all tracts in the state and returns state, county, and tract columns
-                # for proper 11-digit geoid construction (state + county + tract)
-                df = collector.collect(table_code=table_code, year=year, state=args["state"], tract="*")
+                # Request tract-level data for specific county only
+                # Passing county FIPS and tract="*" fetches all tracts in that county
+                # Returns state, county, and tract columns for proper 11-digit geoid construction
+                df = collector.collect(
+                    table_code=table_code,
+                    year=year,
+                    state=args["state"],
+                    county=args["county"],
+                    tract="*"
+                )
             except Exception as e:
                 print(f"Skipping {table_code} {year}: {e}")
                 continue

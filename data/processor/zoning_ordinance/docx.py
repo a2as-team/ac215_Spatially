@@ -1,4 +1,5 @@
 from utils.gcp_storage import GCPStorage
+from utils.markdown_table_cleaner import clean_markdown_tables
 from .base import ZoningOrdinanceBaseProcessor
 import os
 import pandas as pd
@@ -76,12 +77,15 @@ class DocxProcessor(ZoningOrdinanceBaseProcessor):
         md = MarkItDown()
         result = md.convert(temp_path)
 
+        # Clean up malformed tables (remove empty columns)
+        cleaned_content = clean_markdown_tables(result.text_content)
+
         # Save markdown file
         download_path = f"{self.download_directory()}/{filename}.md"
         with open(download_path, "w", encoding="utf-8") as file:
-            file.write(result.text_content)
+            file.write(cleaned_content)
 
-        return result.text_content, title, subtitle, download_path, docx_blob.name
+        return cleaned_content, title, subtitle, download_path, docx_blob.name
 
     def create_chunk_data(
         self,

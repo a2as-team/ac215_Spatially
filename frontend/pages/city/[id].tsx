@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 import { GetStaticProps, GetStaticPaths } from "next";
+import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   AppShell,
@@ -7,48 +8,38 @@ import {
   Group,
   Title,
   Text,
-  Textarea,
-  ScrollArea,
-  Stack,
-  Paper,
-  Loader,
   ActionIcon,
-  Divider,
   Badge,
   Box,
-  Avatar,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import {
-  IconSend,
-  IconMap,
-  IconPlus,
-  IconMapPin,
-  IconUser,
-  IconRobot,
-  IconX,
-} from "@tabler/icons-react";
+import { useDisclosure, useHotkeys, useMediaQuery, useLocalStorage } from "@mantine/hooks";
+import { useQuery } from "@tanstack/react-query";
+import { IconMapPin, IconX } from "@tabler/icons-react";
 import maplibregl from "maplibre-gl";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { useStartChat, useContinueChat, useChats, useChat } from "@/hooks/useChat";
-import { useZoningAtLocation } from "@/hooks/useZoningSearch";
-import { ZoningData, CityZoningResponse, getCityZoningServerSide } from "@/services/zoningApi";
-import { getCitiesServerSide } from "@/services/citiesApi";
+import { useStartChat, useContinueChat, useChat } from "@/hooks/useChat";
+import { ZoningData, CityZoningResponse, getCityZoningServerSide, zoningApi } from "@/services/zoningApi";
+import { getCitiesServerSide, citiesApi } from "@/services/citiesApi";
+import { OrdinanceSource } from "@/services/chatApi";
+import { getZoneSubtypeColor } from "@/utils/zoningColors";
+import { MapLegend } from "@/components/MapLegend";
+import { FloatingChat } from "@/components/FloatingChat";
+import { Sidebar, SidebarTab, DocumentTab, QueryTab, DocumentContentTab } from "@/components/sidebar";
 
 interface CityPageProps {
   cityZoningData: CityZoningResponse;
 }
 
+// Sidebar width constraints for ordinance viewer
+const MIN_SIDEBAR_WIDTH = 300;
+const MAX_SIDEBAR_WIDTH = 800;
+const DEFAULT_SIDEBAR_WIDTH = 450;
+
 export default function CityPage({ cityZoningData }: CityPageProps) {
   const router = useRouter();
   const { id } = router.query;
   const [opened, { toggle }] = useDisclosure();
-  const [inputValue, setInputValue] = useState("");
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  const [selectedZoning, setSelectedZoning] = useState<ZoningData[] | null>(
-    null
-  );
+  const [selectedZoning, setSelectedZoning] = useState<ZoningData[] | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -56,29 +47,98 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
-  const { data: chats } = useChats(10);
+  // Sidebar state - start collapsed by default
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarTabs, setSidebarTabs] = useState<SidebarTab[]>([
+    { id: "browse", label: "Browse", type: "browse" },
+  ]);
+  const [activeTabId, setActiveTabId] = useState("browse");
+
+  // Track sources per tab (keyed by tab id)
+  const [tabSources, setTabSources] = useState<Record<string, OrdinanceSource[]>>({});
+
+  // Track full document content per tab (keyed by tab id)
+  const [tabDocuments, setTabDocuments] = useState<Record<string, { title: string; subtitle: string; content: string }>>({});
+  const [loadingDocumentTabId, setLoadingDocumentTabId] = useState<string | null>(null);
+
+  // Track which messages have tabs (for reopening closed tabs)
+  // Using ref to avoid re-renders when updating the map
+  // Also stores location for highlighting the correct polygon
+  const messageTabMapRef = useRef<Record<string, {
+    tabId: string;
+    sources: OrdinanceSource[];
+    label: string;
+    location?: { latitude: number; longitude: number };
+  }>>({});
+  // Simple set of message IDs that have sources (for UI display only)
+  const [messagesWithSources, setMessagesWithSources] = useState<Set<string>>(new Set());
+
+  // Resizable ordinance viewer
+  const [sidebarWidth, setSidebarWidth] = useLocalStorage({
+    key: "spatially-sidebar-width",
+    defaultValue: DEFAULT_SIDEBAR_WIDTH,
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 768px)") ?? false;
+
+  // Handle sidebar resize
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = e.clientX;
+      if (newWidth >= MIN_SIDEBAR_WIDTH && newWidth <= MAX_SIDEBAR_WIDTH) {
+        setSidebarWidth(newWidth);
+        if (map.current) {
+          map.current.resize();
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isResizing, setSidebarWidth]);
+
   const { data: currentChatData } = useChat(currentChatId);
   const { mutate: startChat, isPending: isStarting } = useStartChat();
   const { mutate: continueChat, isPending: isContinuing } = useContinueChat();
-  const { mutate: fetchZoning, isPending: isLoadingZoning } =
-    useZoningAtLocation();
 
   const isPending = isStarting || isContinuing;
-
-  // Get current chat messages from the dedicated query (updates immediately on mutation)
   const messages = currentChatData?.messages || [];
 
+  // Fetch documents for the city
+  const { data: documentsData, isLoading: documentsLoading } = useQuery({
+    queryKey: ["documents", id],
+    queryFn: () => citiesApi.getDocuments(id as string),
+    enabled: !!id && typeof id === "string",
+  });
+
   // Add zoning polygons to map
-  const addZoningLayer = useCallback((zoningData: ZoningData[]) => {
-    if (!map.current) {
-      console.log("Map not ready for adding zoning layer");
+  const addZoningLayer = useCallback((zoningData: ZoningData[], fitBounds = true) => {
+    if (!map.current || !map.current.isStyleLoaded()) {
       return;
     }
-
-    console.log(`Adding zoning layer with ${zoningData.length} zones`);
 
     // Remove existing zoning layer if it exists
     if (map.current.getLayer("zoning-fill")) {
@@ -91,22 +151,25 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       map.current.removeSource("zoning");
     }
 
-    // Create GeoJSON features from zoning data
+    // Create GeoJSON features from zoning data with color based on zone_subtype
     const features = zoningData
       .filter((z) => z.geometry)
-      .map((z) => ({
-        type: "Feature" as const,
-        properties: {
-          code: z.code || z.zoning_code,
-          article: z.article,
-          usage: z.usage,
-        },
-        geometry: z.geometry,
-      }));
+      .map((z) => {
+        const color = getZoneSubtypeColor(z.zone_subtype);
+        return {
+          type: "Feature" as const,
+          properties: {
+            code: z.code || z.zoning_code,
+            article: z.article,
+            usage: z.usage,
+            zone_subtype: z.zone_subtype || "Unknown",
+            color: color,
+          },
+          geometry: z.geometry,
+        };
+      });
 
-    console.log(`Created ${features.length} GeoJSON features`);
     if (features.length === 0) {
-      console.warn("No features with geometry to display");
       return;
     }
 
@@ -125,8 +188,8 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       type: "fill",
       source: "zoning",
       paint: {
-        "fill-color": "#0080ff",
-        "fill-opacity": 0.3,
+        "fill-color": ["get", "color"],
+        "fill-opacity": 0.5,
       },
     });
 
@@ -136,67 +199,113 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
       type: "line",
       source: "zoning",
       paint: {
-        "line-color": "#0080ff",
-        "line-width": 2,
+        "line-color": ["get", "color"],
+        "line-width": 1.5,
       },
     });
 
-    // Fit bounds to show all zoning areas
-    const bounds = new maplibregl.LngLatBounds();
-    features.forEach((feature) => {
-      if (feature.geometry.type === "Polygon") {
-        feature.geometry.coordinates[0].forEach((coord: number[]) => {
-          bounds.extend(coord as [number, number]);
-        });
-      } else if (feature.geometry.type === "MultiPolygon") {
-        feature.geometry.coordinates.forEach((polygon: number[][][]) => {
-          polygon[0].forEach((coord: number[]) => {
+    // Fit bounds
+    if (fitBounds) {
+      const bounds = new maplibregl.LngLatBounds();
+      features.forEach((feature) => {
+        if (feature.geometry.type === "Polygon") {
+          feature.geometry.coordinates[0].forEach((coord: number[]) => {
             bounds.extend(coord as [number, number]);
           });
+        } else if (feature.geometry.type === "MultiPolygon") {
+          feature.geometry.coordinates.forEach((polygon: number[][][]) => {
+            polygon[0].forEach((coord: number[]) => {
+              bounds.extend(coord as [number, number]);
+            });
+          });
+        }
+      });
+      map.current.resize();
+      setTimeout(() => {
+        map.current?.fitBounds(bounds, {
+          padding: { top: 50, right: 50, bottom: 50, left: 50 },
         });
-      }
-    });
-    map.current.fitBounds(bounds, { padding: 50 });
+      }, 50);
+    }
+  }, []);
+
+  // Highlight selected zones by dimming others
+  const highlightSelectedZones = useCallback((selectedCodes: string[]) => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+
+    map.current.setPaintProperty("zoning-fill", "fill-opacity", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      0.7,
+      0.15,
+    ]);
+
+    map.current.setPaintProperty("zoning-outline", "line-opacity", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      1,
+      0.3,
+    ]);
+
+    map.current.setPaintProperty("zoning-outline", "line-width", [
+      "case",
+      ["in", ["get", "code"], ["literal", selectedCodes]],
+      3,
+      1,
+    ]);
+  }, []);
+
+  // Reset zone highlighting
+  const resetZoneHighlight = useCallback(() => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+    map.current.setPaintProperty("zoning-fill", "fill-opacity", 0.5);
+    map.current.setPaintProperty("zoning-outline", "line-opacity", 1);
+    map.current.setPaintProperty("zoning-outline", "line-width", 1.5);
   }, []);
 
   // Initialize map
   useEffect(() => {
-    if (!mapContainer.current) {
-      console.log("Map container not ready");
-      return;
-    }
-
-    if (map.current) {
-      console.log("Map already initialized");
-      return;
-    }
-
-    console.log("Initializing map...");
+    if (!mapContainer.current || map.current) return;
 
     try {
       map.current = new maplibregl.Map({
         container: mapContainer.current,
         style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-        center: [-71.0589, 42.3601], // Boston
+        center: [-71.0589, 42.3601],
         zoom: 12,
       });
 
       map.current.on("load", () => {
-        console.log("Map loaded successfully!");
-        setMapLoaded(true);
-      });
-
-      map.current.on("error", (e) => {
-        console.error("Map error:", e);
+        setTimeout(() => {
+          map.current?.resize();
+          setTimeout(() => {
+            map.current?.resize();
+            setMapLoaded(true);
+          }, 100);
+        }, 100);
       });
 
       map.current.addControl(new maplibregl.NavigationControl(), "top-right");
 
-      // Add click handler to query zoning
+      // Add click handler
       map.current.on("click", (e) => {
         const { lng, lat } = e.lngLat;
 
-        // Add or update marker
+        const features = map.current!.queryRenderedFeatures(e.point, {
+          layers: ["zoning-fill"],
+        });
+
+        if (features.length === 0) {
+          setSelectedZoning(null);
+          setSelectedLocation(null);
+          if (markerRef.current) {
+            markerRef.current.remove();
+            markerRef.current = null;
+          }
+          resetZoneHighlight();
+          return;
+        }
+
         if (markerRef.current) {
           markerRef.current.remove();
         }
@@ -204,25 +313,48 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
           .setLngLat([lng, lat])
           .addTo(map.current!);
 
-        // Save selected location for chat context
         setSelectedLocation({ latitude: lat, longitude: lng });
 
-        // Fetch zoning data
-        if (id && typeof id === "string") {
-          fetchZoning(
-            { city: id, latitude: lat, longitude: lng },
-            {
-              onSuccess: (data) => {
-                setSelectedZoning(data.zoning_data);
-                // Add zoning polygons to map
-                addZoningLayer(data.zoning_data);
-              },
-              onError: (error) => {
-                console.error("Error fetching zoning:", error);
-                setSelectedZoning(null);
-              },
+        const zoningData: ZoningData[] = features.map((f) => ({
+          id: f.id as number,
+          code: f.properties?.code,
+          article: f.properties?.article,
+          usage: f.properties?.usage,
+          zone_subtype: f.properties?.zone_subtype,
+          geometry: f.geometry,
+        }));
+
+        setSelectedZoning(zoningData);
+
+        const selectedCodes = zoningData
+          .map((z) => z.code)
+          .filter(Boolean) as string[];
+        highlightSelectedZones(selectedCodes);
+
+        // Zoom to fit the selected zone(s)
+        const bounds = new maplibregl.LngLatBounds();
+        zoningData.forEach((zone) => {
+          if (zone.geometry) {
+            if (zone.geometry.type === "Polygon") {
+              (zone.geometry.coordinates as number[][][])[0].forEach((coord) => {
+                bounds.extend(coord as [number, number]);
+              });
+            } else if (zone.geometry.type === "MultiPolygon") {
+              (zone.geometry.coordinates as number[][][][]).forEach((polygon) => {
+                polygon[0].forEach((coord) => {
+                  bounds.extend(coord as [number, number]);
+                });
+              });
             }
-          );
+          }
+        });
+
+        if (!bounds.isEmpty()) {
+          map.current!.fitBounds(bounds, {
+            padding: { top: 100, right: 100, bottom: 100, left: 100 },
+            maxZoom: 16,
+            duration: 500,
+          });
         }
       });
     } catch (error) {
@@ -230,7 +362,6 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
     }
 
     return () => {
-      console.log("Cleaning up map...");
       setMapLoaded(false);
       if (markerRef.current) {
         markerRef.current.remove();
@@ -241,16 +372,213 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         map.current = null;
       }
     };
-  }, [id, fetchZoning, addZoningLayer]);
+  }, [id, addZoningLayer, highlightSelectedZones, resetZoneHighlight]);
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim() || !id || typeof id !== "string") return;
+  // Tab management functions
+  const handleTabChange = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+  }, []);
 
-    const content = inputValue;
-    setInputValue("");
+  const handleTabClose = useCallback((tabId: string) => {
+    setSidebarTabs((prev) => prev.filter((t) => t.id !== tabId));
+    setTabSources((prev) => {
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    setTabDocuments((prev) => {
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    // Switch to browse tab if closing active tab
+    if (activeTabId === tabId) {
+      setActiveTabId("browse");
+    }
+  }, [activeTabId]);
+
+  const createResultsTab = useCallback((
+    sources: OrdinanceSource[],
+    messageId: string,
+    label: string,
+    location?: { latitude: number; longitude: number }
+  ) => {
+    const tabId = `results-${messageId}`;
+
+    // Store in ref for reopening later (doesn't cause re-render)
+    messageTabMapRef.current[messageId] = { tabId, sources, label, location };
+
+    // Update the set of messages with sources (for UI)
+    setMessagesWithSources((prev) => new Set(prev).add(messageId));
+
+    // Check if tab already exists
+    setSidebarTabs((prev) => {
+      const exists = prev.find((t) => t.id === tabId);
+      if (exists) {
+        return prev;
+      }
+      return [...prev, { id: tabId, label, type: "results", messageId }];
+    });
+
+    // Store sources for this tab
+    setTabSources((prev) => ({
+      ...prev,
+      [tabId]: sources,
+    }));
+
+    // Switch to the new tab and expand sidebar
+    setActiveTabId(tabId);
+    setSidebarCollapsed(false);
+  }, []);
+
+  // Handle clicking on a chat message to reopen its tab and highlight zones
+  const handleMessageClick = useCallback((messageId: string) => {
+    const tabData = messageTabMapRef.current[messageId];
+    if (!tabData) return;
+
+    // If we have a stored location, use it to find the specific polygon
+    if (tabData.location && map.current && cityZoningData?.zoning_data) {
+      const { latitude, longitude } = tabData.location;
+      const point = map.current.project([longitude, latitude]);
+
+      // Query the map for features at this point
+      const features = map.current.queryRenderedFeatures(point, {
+        layers: ["zoning-fill"],
+      });
+
+      if (features.length > 0) {
+        const zoningData: ZoningData[] = features.map((f) => ({
+          id: f.id as number,
+          code: f.properties?.code,
+          article: f.properties?.article,
+          usage: f.properties?.usage,
+          zone_subtype: f.properties?.zone_subtype,
+          geometry: f.geometry,
+        }));
+
+        const selectedCodes = zoningData
+          .map((z) => z.code)
+          .filter(Boolean) as string[];
+
+        // Highlight the zone(s) on the map
+        highlightSelectedZones(selectedCodes);
+
+        // Set selected zoning for UI display
+        setSelectedZoning(zoningData);
+
+        // Update marker position
+        if (markerRef.current) {
+          markerRef.current.remove();
+        }
+        markerRef.current = new maplibregl.Marker({ color: "#FF0000" })
+          .setLngLat([longitude, latitude])
+          .addTo(map.current);
+
+        // Set selected location
+        setSelectedLocation({ latitude, longitude });
+
+        // Calculate bounds and zoom to fit
+        const bounds = new maplibregl.LngLatBounds();
+        zoningData.forEach((zone) => {
+          if (zone.geometry) {
+            if (zone.geometry.type === "Polygon") {
+              (zone.geometry.coordinates as number[][][])[0].forEach((coord) => {
+                bounds.extend(coord as [number, number]);
+              });
+            } else if (zone.geometry.type === "MultiPolygon") {
+              (zone.geometry.coordinates as number[][][][]).forEach((polygon) => {
+                polygon[0].forEach((coord) => {
+                  bounds.extend(coord as [number, number]);
+                });
+              });
+            }
+          }
+        });
+
+        if (!bounds.isEmpty()) {
+          map.current.fitBounds(bounds, {
+            padding: { top: 100, right: 100, bottom: 100, left: 100 },
+            maxZoom: 16,
+            duration: 500,
+          });
+        }
+      }
+    }
+
+    // Check if tab still exists by looking at current tabs
+    setSidebarTabs((currentTabs) => {
+      const existingTab = currentTabs.find((t) => t.id === tabData.tabId);
+      if (existingTab) {
+        // Tab exists, just switch to it
+        setActiveTabId(tabData.tabId);
+        setSidebarCollapsed(false);
+        return currentTabs;
+      } else {
+        // Reopen the tab
+        setTabSources((prev) => ({
+          ...prev,
+          [tabData.tabId]: tabData.sources,
+        }));
+        setActiveTabId(tabData.tabId);
+        setSidebarCollapsed(false);
+        return [...currentTabs, { id: tabData.tabId, label: tabData.label, type: "results", messageId }];
+      }
+    });
+  }, [cityZoningData, highlightSelectedZones]);
+
+  const handleDocumentSelect = useCallback(async (title: string, subtitle: string) => {
+    if (!id || typeof id !== "string") return;
+
+    // Create a unique tab ID for this document
+    const tabId = `doc-${title}-${subtitle}`.replace(/\s+/g, "-").toLowerCase();
+
+    // Check if tab already exists
+    const existingTab = sidebarTabs.find((t) => t.id === tabId);
+    if (existingTab) {
+      setActiveTabId(tabId);
+      setSidebarCollapsed(false);
+      return;
+    }
+
+    // Create new tab
+    const label = subtitle ? `${title} - ${subtitle}` : title;
+    const truncatedLabel = label.length > 25 ? label.slice(0, 25) + "..." : label;
+
+    setSidebarTabs((prev) => [
+      ...prev,
+      { id: tabId, label: truncatedLabel, type: "document" },
+    ]);
+    setActiveTabId(tabId);
+    setSidebarCollapsed(false);
+    setLoadingDocumentTabId(tabId);
+
+    try {
+      const response = await zoningApi.getFullDocument(id, title, subtitle);
+      setTabDocuments((prev) => ({
+        ...prev,
+        [tabId]: {
+          title: response.title,
+          subtitle: response.subtitle,
+          content: response.content,
+        },
+      }));
+    } catch (error) {
+      console.error("Failed to fetch document:", error);
+      // Remove the tab on error
+      setSidebarTabs((prev) => prev.filter((t) => t.id !== tabId));
+      setActiveTabId("browse");
+    } finally {
+      setLoadingDocumentTabId(null);
+    }
+  }, [id, sidebarTabs]);
+
+  const handleSendMessage = useCallback((content: string) => {
+    if (!content.trim() || !id || typeof id !== "string") return;
+
+    // Capture location at time of sending for use in callback
+    const messageLocation = selectedLocation ? { ...selectedLocation } : undefined;
 
     if (!currentChatId) {
-      // Start a new chat with city and optional location
       startChat(
         {
           content,
@@ -261,14 +589,16 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
         {
           onSuccess: (data) => {
             setCurrentChatId(data.chat_id);
-          },
-          onError: (error) => {
-            console.error("Error starting chat:", error);
+            // Create new tab with ordinance sources
+            if (data.ordinance_sources && data.ordinance_sources.length > 0) {
+              const lastMessage = data.messages[data.messages.length - 1];
+              const label = content.slice(0, 20) + (content.length > 20 ? "..." : "");
+              createResultsTab(data.ordinance_sources, lastMessage.message_id, label, messageLocation);
+            }
           },
         }
       );
     } else {
-      // Continue existing chat with optional new location
       continueChat(
         {
           chatId: currentChatId,
@@ -279,71 +609,105 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
           },
         },
         {
-          onError: (error) => {
-            console.error("Error continuing chat:", error);
+          onSuccess: (data) => {
+            // Create new tab with ordinance sources
+            if (data.ordinance_sources && data.ordinance_sources.length > 0) {
+              const lastMessage = data.messages[data.messages.length - 1];
+              const label = content.slice(0, 20) + (content.length > 20 ? "..." : "");
+              createResultsTab(data.ordinance_sources, lastMessage.message_id, label, messageLocation);
+            }
           },
         }
       );
     }
-  };
+  }, [id, currentChatId, selectedLocation, startChat, continueChat, createResultsTab]);
 
-  const handleNewChat = () => {
-    setCurrentChatId(null);
-    setInputValue("");
-  };
-
-  const handleClearSelection = () => {
-    // Clear selected zoning and location
+  const handleClearSelection = useCallback(() => {
     setSelectedZoning(null);
     setSelectedLocation(null);
 
-    // Remove marker from map
     if (markerRef.current) {
       markerRef.current.remove();
       markerRef.current = null;
     }
 
-    // Reload all city zoning data
-    if (cityZoningData?.zoning_data && mapLoaded) {
-      addZoningLayer(cityZoningData.zoning_data);
+    resetZoneHighlight();
+  }, [resetZoneHighlight]);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  // Handle clicking on a zoning code in the QueryTab to highlight on map
+  const handleZoningCodeClick = useCallback((code: string) => {
+    if (!cityZoningData?.zoning_data) return;
+
+    // Find the zoning data for this code
+    const zoningData = cityZoningData.zoning_data.filter(
+      (z) => z.code === code || z.zoning_code === code
+    );
+
+    if (zoningData.length === 0) return;
+
+    // Highlight the zone(s) on the map
+    highlightSelectedZones([code]);
+
+    // Set selected zoning for UI display
+    setSelectedZoning(zoningData);
+
+    // Calculate bounds and zoom to fit
+    if (map.current) {
+      const bounds = new maplibregl.LngLatBounds();
+      zoningData.forEach((zone) => {
+        if (zone.geometry) {
+          if (zone.geometry.type === "Polygon") {
+            (zone.geometry.coordinates as number[][][])[0].forEach((coord) => {
+              bounds.extend(coord as [number, number]);
+            });
+          } else if (zone.geometry.type === "MultiPolygon") {
+            (zone.geometry.coordinates as number[][][][]).forEach((polygon) => {
+              polygon[0].forEach((coord) => {
+                bounds.extend(coord as [number, number]);
+              });
+            });
+          }
+        }
+      });
+
+      if (!bounds.isEmpty()) {
+        map.current.fitBounds(bounds, {
+          padding: { top: 100, right: 100, bottom: 100, left: 100 },
+          maxZoom: 16,
+          duration: 500,
+        });
+      }
     }
-  };
+  }, [cityZoningData, highlightSelectedZones]);
+
+  // Get sources for active tab
+  const activeTabSources = tabSources[activeTabId] || [];
 
   // Load city zoning data when available and map is ready
   useEffect(() => {
-    console.log("City zoning effect triggered:", {
-      mapLoaded,
-      hasCityZoningData: !!cityZoningData,
-      zoningDataLength: cityZoningData?.zoning_data?.length,
-    });
-
     if (mapLoaded && cityZoningData?.zoning_data && cityZoningData.zoning_data.length > 0) {
-      console.log(`Loading ${cityZoningData.zoning_data.length} zoning areas for city:`, cityZoningData.city);
       addZoningLayer(cityZoningData.zoning_data);
     }
   }, [mapLoaded, cityZoningData, addZoningLayer]);
 
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (scrollAreaRef.current) {
-      const scrollElement = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-      }
-    }
-  }, [messages]);
+  // Handle escape key to deselect
+  useHotkeys([["Escape", handleClearSelection]]);
+
+  // Calculate map offset based on sidebar
+  const mapLeftOffset = !sidebarCollapsed && !isMobile ? sidebarWidth : 0;
 
   return (
     <AppShell
       header={{ height: 60 }}
-      navbar={{
-        width: 500,
-        breakpoint: "sm",
-        collapsed: { mobile: !opened },
-      }}
       padding={0}
+      styles={{
+        root: { height: "100vh", overflow: "hidden" },
+        main: { height: "100%", overflow: "hidden" },
+      }}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
@@ -354,8 +718,11 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               hiddenFrom="sm"
               size="sm"
             />
-            <Group>
-              <IconMap size={28} />
+            <Group
+              style={{ cursor: "pointer" }}
+              onClick={() => router.push("/")}
+            >
+              <Image src="/icon.png" alt="Spatially" width={40} height={40} />
               <Title order={3}>Spatially Zoning</Title>
             </Group>
             <Text size="sm" c="dimmed" tt="capitalize">
@@ -373,9 +740,9 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               {selectedZoning.map((zone, index) => (
                 <Badge key={index} color="blue" variant="light">
                   {zone.code || zone.zoning_code}
+                  {zone.zone_subtype && ` (${zone.zone_subtype})`}
                 </Badge>
               ))}
-              {isLoadingZoning && <Loader size="xs" />}
               <ActionIcon
                 size="sm"
                 variant="subtle"
@@ -387,281 +754,71 @@ export default function CityPage({ cityZoningData }: CityPageProps) {
               </ActionIcon>
             </Group>
           )}
-          {isLoadingZoning && !selectedZoning && (
-            <Group gap="xs">
-              <Loader size="xs" />
-              <Text size="sm" c="dimmed">
-                Loading zoning data...
-              </Text>
-            </Group>
-          )}
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md" style={{ backgroundColor: "white" }}>
-        <Stack h="100%" gap="md">
-          <Group justify="space-between">
-            <div>
-              <Title order={4}>Zoning Chat</Title>
-              <Text size="sm" c="dimmed">
-                Ask questions about zoning
-              </Text>
-            </div>
-            <ActionIcon
-              size="lg"
-              variant="filled"
-              onClick={handleNewChat}
-              title="New Chat"
-            >
-              <IconPlus size={18} />
-            </ActionIcon>
-          </Group>
-
-          <Divider />
-
-          {/* Chat History */}
-          {chats && chats.length > 0 && (
-            <div>
-              <Text size="xs" fw={500} c="dimmed" mb="xs">
-                RECENT CHATS
-              </Text>
-              <Stack gap="xs">
-                {chats.map((chat) => (
-                  <Paper
-                    key={chat.chat_id}
-                    p="xs"
-                    withBorder
-                    style={{
-                      cursor: "pointer",
-                      backgroundColor:
-                        currentChatId === chat.chat_id
-                          ? "var(--mantine-color-blue-1)"
-                          : "white",
-                    }}
-                    onClick={() => setCurrentChatId(chat.chat_id)}
-                  >
-                    <Text size="sm" lineClamp={1}>
-                      {chat.title}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {new Date(chat.dts * 1000).toLocaleDateString()}
-                    </Text>
-                  </Paper>
-                ))}
-              </Stack>
-            </div>
-          )}
-
-          <Divider />
-
-          {/* Messages */}
-          <ScrollArea style={{ flex: 1 }} offsetScrollbars ref={scrollAreaRef}>
-            <Stack gap="md">
-              {messages.length === 0 ? (
-                <Paper p="md" withBorder style={{ backgroundColor: "white" }}>
-                  <Text size="sm" c="dimmed" ta="center">
-                    {currentChatId
-                      ? "Loading messages..."
-                      : "Start a new conversation!"}
-                  </Text>
-                </Paper>
-              ) : (
-                messages.map((message) => (
-                  <Group
-                    key={message.message_id}
-                    align="flex-start"
-                    gap="sm"
-                    wrap="nowrap"
-                    style={{
-                      flexDirection:
-                        message.role === "user" ? "row-reverse" : "row",
-                    }}
-                  >
-                    <Avatar
-                      color={message.role === "user" ? "blue" : "grape"}
-                      radius="xl"
-                      size="md"
-                    >
-                      {message.role === "user" ? (
-                        <IconUser size={20} />
-                      ) : (
-                        <IconRobot size={20} />
-                      )}
-                    </Avatar>
-                    <Paper
-                      p="md"
-                      radius="lg"
-                      shadow="sm"
-                      withBorder
-                      style={{
-                        maxWidth: "75%",
-                        backgroundColor:
-                          message.role === "user"
-                            ? "var(--mantine-color-blue-1)"
-                            : "var(--mantine-color-gray-0)",
-                      }}
-                    >
-                      <Box>
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => (
-                              <Text size="sm" mb="xs" c="dark">
-                                {children}
-                              </Text>
-                            ),
-                            h1: ({ children }) => (
-                              <Title order={4} mb="xs" c="dark">
-                                {children}
-                              </Title>
-                            ),
-                            h2: ({ children }) => (
-                              <Title order={5} mb="xs" c="dark">
-                                {children}
-                              </Title>
-                            ),
-                            h3: ({ children }) => (
-                              <Title order={6} mb="xs" c="dark">
-                                {children}
-                              </Title>
-                            ),
-                            code: ({ children, className }) => {
-                              const isInline = !className;
-                              return isInline ? (
-                                <Text
-                                  component="code"
-                                  size="sm"
-                                  c="blue"
-                                  style={{
-                                    backgroundColor: "var(--mantine-color-gray-1)",
-                                    padding: "2px 6px",
-                                    borderRadius: "4px",
-                                    fontFamily: "monospace",
-                                  }}
-                                >
-                                  {children}
-                                </Text>
-                              ) : (
-                                <Text
-                                  component="pre"
-                                  size="sm"
-                                  c="dark"
-                                  style={{
-                                    backgroundColor: "var(--mantine-color-gray-1)",
-                                    padding: "12px",
-                                    borderRadius: "8px",
-                                    overflowX: "auto",
-                                    fontFamily: "monospace",
-                                  }}
-                                >
-                                  <code>{children}</code>
-                                </Text>
-                              );
-                            },
-                            ul: ({ children }) => (
-                              <Text
-                                component="ul"
-                                size="sm"
-                                c="dark"
-                                style={{ paddingLeft: "20px" }}
-                              >
-                                {children}
-                              </Text>
-                            ),
-                            ol: ({ children }) => (
-                              <Text
-                                component="ol"
-                                size="sm"
-                                c="dark"
-                                style={{ paddingLeft: "20px" }}
-                              >
-                                {children}
-                              </Text>
-                            ),
-                            li: ({ children }) => (
-                              <Text component="li" size="sm" mb={4} c="dark">
-                                {children}
-                              </Text>
-                            ),
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
-                      </Box>
-                    </Paper>
-                  </Group>
-                ))
-              )}
-              {isPending && (
-                <Group align="flex-start" gap="sm" wrap="nowrap">
-                  <Avatar color="grape" radius="xl" size="md">
-                    <IconRobot size={20} />
-                  </Avatar>
-                  <Paper
-                    p="md"
-                    radius="lg"
-                    shadow="sm"
-                    withBorder
-                    style={{
-                      backgroundColor: "var(--mantine-color-gray-0)",
-                    }}
-                  >
-                    <Group gap="xs">
-                      <Loader size="xs" />
-                      <Text size="sm" c="dark">
-                        Thinking...
-                      </Text>
-                    </Group>
-                  </Paper>
-                </Group>
-              )}
-            </Stack>
-          </ScrollArea>
-
-          {/* Input */}
-          <Group gap="xs" align="flex-end">
-            <Textarea
-              placeholder="Ask about zoning... (Enter to send, Shift+Enter for new line)"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              minRows={1}
-              maxRows={4}
-              autosize
-              style={{ flex: 1 }}
-              disabled={isPending}
+      <AppShell.Main>
+        {/* Sidebar with tabs */}
+        <Sidebar
+          tabs={sidebarTabs}
+          activeTabId={activeTabId}
+          onTabChange={handleTabChange}
+          onTabClose={handleTabClose}
+          width={sidebarWidth}
+          isResizing={isResizing}
+          onResizeStart={handleMouseDown}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleSidebar}
+          isMobile={isMobile}
+        >
+          {activeTabId === "browse" ? (
+            <DocumentTab
+              documents={documentsData?.documents || []}
+              isLoading={documentsLoading}
+              onDocumentSelect={handleDocumentSelect}
             />
-            <ActionIcon
-              size="lg"
-              variant="filled"
-              color="blue"
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isPending}
-            >
-              <IconSend size={18} />
-            </ActionIcon>
-          </Group>
-        </Stack>
-      </AppShell.Navbar>
+          ) : activeTabId.startsWith("doc-") ? (
+            <DocumentContentTab
+              title={tabDocuments[activeTabId]?.title || ""}
+              subtitle={tabDocuments[activeTabId]?.subtitle}
+              content={tabDocuments[activeTabId]?.content || ""}
+              isLoading={loadingDocumentTabId === activeTabId}
+            />
+          ) : (
+            <QueryTab sources={activeTabSources} onZoningCodeClick={handleZoningCodeClick} />
+          )}
+        </Sidebar>
 
-      <AppShell.Main p={0} style={{ position: "relative", overflow: "hidden" }}>
-        <div
-          ref={mapContainer}
+        {/* Map Container */}
+        <Box
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
+            position: "fixed",
+            top: 60,
+            left: mapLeftOffset,
             right: 0,
             bottom: 0,
-            width: "100%",
-            height: "100%",
+            transition: !sidebarCollapsed ? "left 0.3s ease" : "none",
           }}
-        />
+        >
+          <div
+            ref={mapContainer}
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
+          <MapLegend zoningData={selectedZoning || cityZoningData?.zoning_data} />
+
+          {/* Floating Chat */}
+          <FloatingChat
+            messages={messages}
+            isPending={isPending}
+            onSendMessage={handleSendMessage}
+            selectedZoning={selectedZoning}
+            messagesWithSources={messagesWithSources}
+            onMessageClick={handleMessageClick}
+          />
+        </Box>
       </AppShell.Main>
     </AppShell>
   );
@@ -677,7 +834,6 @@ export const getStaticPaths: GetStaticPaths = async () => {
 
   return {
     paths,
-    // fallback: 'blocking' allows new cities to be rendered on-demand
     fallback: "blocking",
   };
 };
@@ -698,7 +854,6 @@ export const getStaticProps: GetStaticProps<CityPageProps> = async ({
     props: {
       cityZoningData,
     },
-    // Revalidate every hour - GeoJSON data doesn't change often
     revalidate: 3600,
   };
 };

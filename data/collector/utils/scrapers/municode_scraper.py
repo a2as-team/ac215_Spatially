@@ -21,6 +21,11 @@ class MunicodeScraper:
         self.selenium_util = SeleniumUtil(headless=True, download_dir=download_dir)
         self.download_count = 0
 
+    def _download_total_excel(self):
+        # This will be used to get the title (e.g. article, title) and subtitle (e.g. section, sub-section)
+        # in our database, we have column document_title and document_subtitle
+        pass
+
     def _refresh_session(self):
         """
         Refresh the browser session with new headers to avoid detection.

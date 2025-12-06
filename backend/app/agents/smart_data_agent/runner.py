@@ -21,7 +21,7 @@ from google.genai import types
 
 from app.agents.location_data_agent import LocationDataAgent
 from app.agents.city_data_agent import CityDataAgent
-from app.agents.history_manager import ChatHistoryManager
+from app.agents.manager import ChatManager, AgentContext, set_current_context
 from app.agents.config import ensure_configured
 
 
@@ -68,7 +68,8 @@ class SmartDataAgentRunner:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         chat_id: Optional[str] = None,
-        history_manager: Optional[ChatHistoryManager] = None,
+        chat_manager: Optional[ChatManager] = None,
+        agent_context: Optional[AgentContext] = None,
     ):
         """
         Initialize the runner.
@@ -81,7 +82,8 @@ class SmartDataAgentRunner:
             session_id: Optional session ID for continuity
             user_id: Optional user ID
             chat_id: Optional chat ID for persistence
-            history_manager: Optional ChatHistoryManager for disk persistence
+            chat_manager: Optional ChatManager for disk persistence and context
+            agent_context: Optional AgentContext (if not using ChatManager)
         """
         self.city = city.lower()
         self.latitude = latitude
@@ -95,8 +97,16 @@ class SmartDataAgentRunner:
         # Chat history for session transfer
         self._history: List[ChatMessage] = []
 
-        # Optional persistence manager
-        self._history_manager = history_manager
+        # Chat manager for persistence and context
+        self._chat_manager = chat_manager
+
+        # Agent context - use provided, get from chat_manager, or create new
+        if agent_context is not None:
+            self._agent_context = agent_context
+        elif chat_manager is not None:
+            self._agent_context = chat_manager.get_context(self.chat_id, self.session_id)
+        else:
+            self._agent_context = AgentContext()
 
         # Session service (shared across agent switches)
         self.session_service = InMemorySessionService()
@@ -169,12 +179,22 @@ class SmartDataAgentRunner:
             )
             self._session_initialized = True
 
-    async def _replay_history_to_session(self):
+    async def _replay_history_to_session(
+        self,
+        location_changed: bool = False,
+        old_coords: tuple = None,
+        new_coords: tuple = None,
+    ):
         """
         Replay the conversation history to the new agent session.
 
         This injects the previous conversation context so the new agent
         understands what was discussed before the mode switch.
+
+        Args:
+            location_changed: Whether the location was changed
+            old_coords: Tuple of (old_latitude, old_longitude)
+            new_coords: Tuple of (new_latitude, new_longitude)
         """
         if not self._history:
             return
@@ -182,11 +202,29 @@ class SmartDataAgentRunner:
         # Build a context summary from history
         history_summary = self._build_history_summary()
 
-        if history_summary:
+        # Add location change notice if applicable
+        location_notice = ""
+        if location_changed and new_coords:
+            location_notice = (
+                f"\n\n**IMPORTANT: The user has selected a NEW LOCATION on the map.**\n"
+                f"New coordinates: ({new_coords[0]:.6f}, {new_coords[1]:.6f})\n"
+                f"You MUST query the zoning code at this NEW location using get_zoning_code_at_location.\n"
+                f"Do NOT assume the previous zoning code (from earlier in the conversation) still applies.\n"
+                f"The new location may have a completely different zoning designation.\n"
+            )
+
+        if history_summary or location_notice:
             # Send a system-like message to establish context
+            context_text = "[Previous conversation context]\n"
+            if history_summary:
+                context_text += history_summary
+            if location_notice:
+                context_text += location_notice
+            context_text += "\n\n[Continue from here]"
+
             context_message = types.Content(
                 role="user",
-                parts=[types.Part(text=f"[Previous conversation context]\n{history_summary}\n\n[Continue from here]")],
+                parts=[types.Part(text=context_text)],
             )
 
             # Run the agent with the context to prime it
@@ -235,6 +273,9 @@ class SmartDataAgentRunner:
             This preserves the conversation history and transfers it
             to the new location-based agent.
         """
+        old_latitude = self.latitude
+        old_longitude = self.longitude
+
         self.latitude = latitude
         self.longitude = longitude
         self._init_agent()
@@ -242,8 +283,12 @@ class SmartDataAgentRunner:
         # Create a new session for the new agent
         await self._create_new_session()
 
-        # Replay history to give context to new agent
-        await self._replay_history_to_session()
+        # Replay history to give context to new agent, noting the location change
+        await self._replay_history_to_session(
+            location_changed=True,
+            old_coords=(old_latitude, old_longitude),
+            new_coords=(latitude, longitude),
+        )
 
     async def switch_to_city_mode(self):
         """
@@ -260,7 +305,7 @@ class SmartDataAgentRunner:
         # Create a new session for the new agent
         await self._create_new_session()
 
-        # Replay history to give context to new agent
+        # Replay history to give context to new agent (no location change params needed)
         await self._replay_history_to_session()
 
     def get_history(self) -> List[Dict[str, Any]]:
@@ -295,9 +340,23 @@ class SmartDataAgentRunner:
             for msg in history
         ]
 
+    async def replay_history(self):
+        """
+        Replay conversation history to the ADK session.
+
+        This should be called after set_history() when continuing a chat
+        so the LLM knows about the previous conversation context.
+        """
+        await self._ensure_session()
+        await self._replay_history_to_session()
+
     def clear_history(self):
         """Clear the conversation history."""
         self._history = []
+
+    def get_agent_context(self) -> AgentContext:
+        """Get the agent context for this runner."""
+        return self._agent_context
 
     async def run(self, user_message: str) -> str:
         """
@@ -310,6 +369,9 @@ class SmartDataAgentRunner:
             The agent's response as a string
         """
         await self._ensure_session()
+
+        # Set current context so tools can access it
+        set_current_context(self._agent_context)
 
         # Add user message to history
         user_msg = ChatMessage(role="user", content=user_message)
@@ -350,6 +412,9 @@ class SmartDataAgentRunner:
             Response chunks as they become available
         """
         await self._ensure_session()
+
+        # Set current context so tools can access it
+        set_current_context(self._agent_context)
 
         # Add user message to history
         user_msg = ChatMessage(role="user", content=user_message)
@@ -399,15 +464,15 @@ class SmartDataAgentRunner:
 
     def save_to_disk(self, title: Optional[str] = None) -> bool:
         """
-        Save the current chat to disk using ChatHistoryManager.
+        Save the current chat to disk using ChatManager.
 
         Args:
             title: Optional title for the chat
 
         Returns:
-            True on success, False if no history_manager or on error
+            True on success, False if no chat_manager or on error
         """
-        if not self._history_manager:
+        if not self._chat_manager:
             return False
 
         import time
@@ -423,7 +488,7 @@ class SmartDataAgentRunner:
                 "agent_type": self.agent_type,
             },
         }
-        return self._history_manager.save_chat(chat_data, self.session_id) or False
+        return self._chat_manager.save_chat(chat_data, self.session_id) or False
 
     def _generate_title(self) -> str:
         """Generate a title from the first user message."""
@@ -440,7 +505,7 @@ class SmartDataAgentRunner:
         cls,
         chat_id: str,
         session_id: str,
-        history_manager: ChatHistoryManager,
+        chat_manager: ChatManager,
         model: str = "gemini-2.0-flash",
     ) -> Optional["SmartDataAgentRunner"]:
         """
@@ -449,13 +514,13 @@ class SmartDataAgentRunner:
         Args:
             chat_id: Chat ID to load
             session_id: Session ID
-            history_manager: ChatHistoryManager instance
+            chat_manager: ChatManager instance
             model: Gemini model to use
 
         Returns:
             SmartDataAgentRunner with restored state, or None if not found
         """
-        chat_data = history_manager.get_chat(chat_id, session_id)
+        chat_data = chat_manager.get_chat(chat_id, session_id)
         if not chat_data:
             return None
 
@@ -467,7 +532,7 @@ class SmartDataAgentRunner:
             model=model,
             session_id=session_id,
             chat_id=chat_id,
-            history_manager=history_manager,
+            chat_manager=chat_manager,
         )
 
         # Restore history
@@ -481,7 +546,7 @@ class SmartDataAgentRunner:
         cls,
         context: Dict[str, Any],
         model: str = "gemini-2.0-flash",
-        history_manager: Optional[ChatHistoryManager] = None,
+        chat_manager: Optional[ChatManager] = None,
     ) -> "SmartDataAgentRunner":
         """
         Create a runner from a saved context.
@@ -489,7 +554,7 @@ class SmartDataAgentRunner:
         Args:
             context: Context dictionary from get_context()
             model: Gemini model to use
-            history_manager: Optional ChatHistoryManager for persistence
+            chat_manager: Optional ChatManager for persistence
 
         Returns:
             SmartDataAgentRunner with restored state
@@ -502,7 +567,7 @@ class SmartDataAgentRunner:
             session_id=context.get("session_id"),
             user_id=context.get("user_id"),
             chat_id=context.get("chat_id"),
-            history_manager=history_manager,
+            chat_manager=chat_manager,
         )
 
         # Restore history if present

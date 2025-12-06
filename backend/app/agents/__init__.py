@@ -8,8 +8,10 @@ Available agents:
 - LocationDataAgent: Agent for location-specific queries (lat/long provided)
 - CityDataAgent: Agent for city-wide queries (no specific location)
 
-Persistence:
+Management:
+- ChatManager: Unified chat management with history persistence and per-chat context
 - ChatHistoryManager: Disk-based persistence for chat history
+- AgentContext: Per-chat context for tool execution data
 
 Configuration:
 - configure_vertexai: Configure Google GenAI to use Vertex AI
@@ -22,7 +24,7 @@ from .smart_data_agent import (
     LocationDataAgent,
     CityDataAgent,
 )
-from .history_manager import ChatHistoryManager
+from .manager import ChatManager, ChatHistoryManager, AgentContext
 from .config import configure_vertexai
 
 __all__ = [
@@ -31,6 +33,8 @@ __all__ = [
     "ChatMessage",
     "LocationDataAgent",
     "CityDataAgent",
+    "ChatManager",
     "ChatHistoryManager",
+    "AgentContext",
     "configure_vertexai",
 ]

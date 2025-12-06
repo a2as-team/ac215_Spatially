@@ -15,6 +15,7 @@ if str(project_root) not in sys.path:
 
 from utils.smart_arg_parser import SmartArgItem, SmartArgParser
 from utils.gcp_storage import GCPStorage
+from utils.db_accessor import DBAccessor
 from census import CensusCollector
 from census.state_fips import get_city_county
 import pandas as pd
@@ -33,6 +34,27 @@ if __name__ == "__main__":
     args["state"] = city_county_info["state"]
     args["county"] = city_county_info["county"]
     print(f"City '{city_key}' mapped to state={args['state']}, county={args['county']}")
+
+    # Get valid geoids from database (only Boston's 207 tracts)
+    db_name = os.environ.get("APP_DB_NAME")
+    valid_geoids = set()
+    if db_name:
+        try:
+            db = DBAccessor(db_name=db_name)
+            try:
+                results = db.execute("SELECT DISTINCT geoid FROM census_tract")
+                valid_geoids = {row["geoid"] for row in results}
+                print(f"✅ Found {len(valid_geoids)} valid geoids in census_tract table")
+            except Exception as e:
+                print(f"⚠️  Could not query database for geoids: {e}")
+                print(f"   Will collect all data without filtering")
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"⚠️  Could not connect to database: {e}")
+            print(f"   Will collect all data without filtering")
+    else:
+        print(f"⚠️  APP_DB_NAME not set, will collect all data without filtering")
 
     collector = CensusCollector()
     table_codes = list(collector.caller_map.keys())
@@ -75,6 +97,26 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"Skipping {table_code} {year}: {e}")
                 continue
+
+            # Filter to only valid geoids if we have them
+            if valid_geoids:
+                # Construct geoid from geography columns (same logic as processor)
+                if 'state' in df.columns and 'county' in df.columns and 'tract' in df.columns:
+                    df['geoid'] = (
+                        df['state'].astype(str).str.zfill(2) +
+                        df['county'].astype(str).str.zfill(3) +
+                        df['tract'].astype(str).str.zfill(6)
+                    )
+                    # Filter to only rows with valid geoids
+                    initial_rows = len(df)
+                    df = df[df['geoid'].isin(valid_geoids)]
+                    filtered_rows = len(df)
+                    if initial_rows != filtered_rows:
+                        print(f"  → Filtered from {initial_rows} to {filtered_rows} rows (kept {len(df['geoid'].unique())} unique geoids)")
+                    # Remove temporary geoid column (processor will reconstruct it)
+                    df = df.drop(columns=['geoid'])
+                else:
+                    print(f"  ⚠️  Could not construct geoid from CSV columns, skipping filter")
 
             # Save to local file
             filename = f"{city_key}_{args['state']}_{table_code}_{year}.csv"

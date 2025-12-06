@@ -15,6 +15,7 @@ from .zoning import (
     query_zoning_by_geojson,
     get_zoning_codes_at_location,
 )
+from .cite_sources import cite_sources, cite_recent_sources
 from .development_plans import (
     query_development_plans,
     query_development_plans_by_proximity,
@@ -36,4 +37,7 @@ __all__ = [
     "query_development_plans",
     "query_development_plans_by_proximity",
     "query_development_plans_by_zone",
+    # Cite sources (generic)
+    "cite_sources",
+    "cite_recent_sources",
 ]

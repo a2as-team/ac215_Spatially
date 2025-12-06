@@ -11,6 +11,7 @@ from app.agents.tools import (
     create_location_zoning_code_tool,
     create_location_development_plans_proximity_tool,
     create_location_development_plans_zone_tool,
+    create_cite_sources_tool,
 )
 from .prompts import INSTRUCTION
 
@@ -84,6 +85,7 @@ class LocationDataAgent:
             longitude=self.longitude,
             city=self.city,
         )
+        cite_tool = create_cite_sources_tool()
 
         # Build instruction with location context
         instruction = INSTRUCTION.format(
@@ -102,6 +104,7 @@ class LocationDataAgent:
                 zoning_ordinance_tool,
                 development_plans_proximity_tool,
                 development_plans_zone_tool,
+                cite_tool,
             ],
         )
 

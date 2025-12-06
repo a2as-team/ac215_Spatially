@@ -9,6 +9,7 @@ from app.agents.tools import (
     create_census_tool,
     create_zoning_tool,
     create_development_plans_tool,
+    create_cite_sources_tool,
 )
 from .prompts import INSTRUCTION
 
@@ -54,6 +55,7 @@ class CityDataAgent:
         census_tool = create_census_tool(city=self.city)
         zoning_tool = create_zoning_tool(city=self.city)
         development_plans_tool = create_development_plans_tool(city=self.city)
+        cite_tool = create_cite_sources_tool()
 
         # Build instruction with city context
         instruction = INSTRUCTION.format(city=self.city.title())
@@ -62,7 +64,7 @@ class CityDataAgent:
             name="CityDataAgent",
             model=self.model,
             instruction=instruction,
-            tools=[census_tool, zoning_tool, development_plans_tool],
+            tools=[census_tool, zoning_tool, development_plans_tool, cite_tool],
         )
 
         return agent

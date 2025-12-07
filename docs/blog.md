@@ -2,7 +2,7 @@ This article was produced as part of the final project for Harvard’s
 [AC215 Fall 2025](https://harvard-iacs.github.io/2025-AC215/) course.
 
 **Project Repository:** https://github.com/hunkim98/ac215_Spatially  
-**Team:** Spatially — Hun Kim, Devraj Raghusvanshi, Angelica Kim, Zewen (Zoe) Qiu  
+**Team:** Spatially — Hun Kim, Devraj Raghuvanshi, Angelica Kim, Zewen (Zoe) Qiu  
 **Video:** *[link]*
 
 ### Table of Contents

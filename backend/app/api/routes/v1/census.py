@@ -80,9 +80,8 @@ def search_census(
         if latitude is not None and longitude is not None:
             try:
                 spatial_query = CensusTractSpatialQuery(db_name=settings.POSTGRES_DB)
-                tract_data = spatial_query.get_census_tract_by_location(latitude, longitude)
-                if tract_data:
-                    geoid = tract_data["geoid"]
+                geoid = spatial_query.get_census_tract_by_location(latitude, longitude)
+                if geoid:
                     logger.info(f"Found census tract {geoid} for location ({latitude}, {longitude})")
                 else:
                     logger.warning(f"No census tract found for location ({latitude}, {longitude})")
@@ -147,51 +146,6 @@ def search_census(
     except Exception as e:
         logger.error(f"Error executing census query: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
-@router.get("/tract")
-def get_census_tract_by_location(
-    latitude: float = Query(..., description="Latitude of the location", ge=-90, le=90),
-    longitude: float = Query(..., description="Longitude of the location", ge=-180, le=180),
-) -> Dict[str, Any]:
-    """
-    Get the census tract that contains a specific location.
-    
-    This endpoint uses PostGIS spatial queries to find which census tract contains
-    the given point and returns the tract information including:
-    - Census tract geoid (unique identifier)
-    - GeoJSON geometry of the tract
-    
-    Args:
-        latitude: Latitude of the location
-        longitude: Longitude of the location
-        
-    Returns:
-        Dictionary with:
-        - location: The queried location
-        - census_tract: Census tract data including geoid and geometry
-    """
-    try:
-        spatial_query = CensusTractSpatialQuery(db_name=settings.POSTGRES_DB)
-        tract_data = spatial_query.get_census_tract_by_location(latitude, longitude)
-        
-        if not tract_data:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No census tract found for location ({latitude}, {longitude})"
-            )
-        
-        return {
-            "location": {"latitude": latitude, "longitude": longitude},
-            "census_tract": tract_data,
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting census tract by location: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
 
 @router.get("/")
 def get_census():

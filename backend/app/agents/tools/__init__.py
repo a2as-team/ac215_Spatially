@@ -32,6 +32,7 @@ from .functions import (
 # Creators - factory functions that bind parameters
 from .creators import (
     create_census_tool,
+    create_location_census_tool,
     create_zoning_tool,
     create_location_zoning_tool,
     create_location_zoning_code_tool,
@@ -69,6 +70,7 @@ __all__ = [
     "query_development_plans_by_zone",
     # Census creators
     "create_census_tool",
+    "create_location_census_tool",
     # Zoning creators
     "create_zoning_tool",
     "create_location_zoning_tool",

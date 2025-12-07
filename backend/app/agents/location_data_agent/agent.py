@@ -6,7 +6,7 @@ This agent handles queries when the user has selected a specific location
 
 from google.adk.agents import LlmAgent
 from app.agents.tools import (
-    create_census_tool,
+    create_location_census_tool,
     create_location_zoning_tool,
     create_location_zoning_code_tool,
     create_location_development_plans_proximity_tool,
@@ -63,7 +63,11 @@ class LocationDataAgent:
             LlmAgent configured for location-specific queries
         """
         # Create tools with location/city pre-bound
-        census_tool = create_census_tool(city=self.city)
+        census_tool = create_location_census_tool(
+            latitude=self.latitude,
+            longitude=self.longitude,
+            city=self.city,
+        )
         zoning_code_tool = create_location_zoning_code_tool(
             latitude=self.latitude,
             longitude=self.longitude,

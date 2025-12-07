@@ -11,6 +11,8 @@ def query_census_data(
     question: str,
     city: str,
     year: Optional[int] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
 ) -> str:
     """
     Query census demographic data using natural language.
@@ -28,6 +30,8 @@ def query_census_data(
         city: City name to query data for (e.g., "boston", "cambridge")
         year: Optional year for the ACS data (e.g., 2022, 2021). If not specified,
               returns data from the most recent available year.
+        latitude: Optional latitude coordinate for location-specific queries
+        longitude: Optional longitude coordinate for location-specific queries
 
     Returns:
         A formatted string with the census data results or an error message.
@@ -38,12 +42,35 @@ def query_census_data(
         - "What is the population by age group?"
     """
     try:
-        logger.info(f"Census query: {question}, city: {city}, year: {year}")
+        logger.info(f"Census query: {question}, city: {city}, year: {year}, lat: {latitude}, lon: {longitude}")
 
-        # Build the query with city and year context
+        # If lat/long provided, find the census tract geoid
+        geoid = None
+        if latitude is not None and longitude is not None:
+            try:
+                from app.utils.spatial_query.census_tract import CensusTractSpatialQuery
+                from app.core.config import settings
+                spatial_query = CensusTractSpatialQuery(db_name=settings.POSTGRES_DB)
+                geoid = spatial_query.get_census_tract_by_location(latitude, longitude)
+                if not geoid:
+                    error_msg = f"No census tract found for location ({latitude}, {longitude})"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
+                logger.info(f"Found census tract {geoid} for location ({latitude}, {longitude})")
+            except ValueError:
+                raise
+            except Exception as e:
+                error_msg = f"Error finding census tract for location ({latitude}, {longitude}): {str(e)}"
+                logger.error(error_msg)
+                raise ValueError(error_msg) from e
+
+        # Build the query with city, location, and year context
         query_parts = [question]
         if city:
             query_parts.append(f"for {city}")
+        if geoid:
+            # Include the geoid in the query so the SQL agent can filter by it
+            query_parts.append(f"for census tract with geoid {geoid}")
         if year:
             query_parts.append(f"for year {year}")
         

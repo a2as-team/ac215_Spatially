@@ -1,3 +1,4 @@
+import { useRef, useState, useEffect } from "react";
 import {
   Paper,
   Group,
@@ -52,6 +53,44 @@ export function Sidebar({
   isMobile,
   children,
 }: SidebarProps) {
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Check if tabs overflow and update scroll button visibility
+  const updateScrollButtons = () => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    setCanScrollLeft(viewport.scrollLeft > 0);
+    setCanScrollRight(
+      viewport.scrollLeft < viewport.scrollWidth - viewport.clientWidth - 1
+    );
+  };
+
+  // Update scroll buttons on mount and when tabs change
+  useEffect(() => {
+    updateScrollButtons();
+    // Add a small delay to ensure DOM is updated
+    const timeout = setTimeout(updateScrollButtons, 100);
+    return () => clearTimeout(timeout);
+  }, [tabs]);
+
+  // Scroll tabs left or right
+  const scrollTabs = (direction: "left" | "right") => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    const scrollAmount = 150;
+    viewport.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+
+    // Update buttons after scroll
+    setTimeout(updateScrollButtons, 300);
+  };
+
   return (
     <>
       {/* Collapsed toggle button */}
@@ -153,81 +192,138 @@ export function Sidebar({
       </Group>
 
       {/* Tabs */}
-      <Box style={{ borderBottom: "1px solid var(--mantine-color-gray-2)" }}>
-        <ScrollArea type="never" style={{ whiteSpace: "nowrap" }}>
-          <Group gap={0} wrap="nowrap" p="xs" pb={0}>
-            {tabs.map((tab) => (
-              <UnstyledButton
-                key={tab.id}
-                onClick={() => onTabChange(tab.id)}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: "4px 4px 0 0",
-                  backgroundColor:
-                    activeTabId === tab.id
-                      ? "var(--mantine-color-blue-0)"
-                      : "transparent",
-                  borderBottom:
-                    activeTabId === tab.id
-                      ? "2px solid var(--mantine-color-blue-6)"
-                      : "2px solid transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  minWidth: 0,
-                  flexShrink: 0,
-                }}
-              >
-                {tab.type === "browse" ? (
-                  <IconBook size={14} />
-                ) : tab.type === "document" ? (
-                  <IconFileText size={14} />
-                ) : (
-                  <IconArticle size={14} />
-                )}
-                <Text
-                  size="xs"
-                  fw={activeTabId === tab.id ? 600 : 400}
-                  style={{
-                    maxWidth: 120,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {tab.label}
-                </Text>
-                {tab.type !== "browse" && (
-                  <Box
-                    component="span"
-                    onClick={(e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      onTabClose(tab.id);
-                    }}
-                    style={{
-                      marginLeft: 4,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 16,
-                      height: 16,
-                      borderRadius: 4,
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e: React.MouseEvent<HTMLSpanElement>) => {
-                      e.currentTarget.style.backgroundColor = "var(--mantine-color-gray-2)";
-                    }}
-                    onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => {
-                      e.currentTarget.style.backgroundColor = "transparent";
-                    }}
-                  >
-                    <IconX size={10} color="gray" />
-                  </Box>
-                )}
-              </UnstyledButton>
-            ))}
-          </Group>
-        </ScrollArea>
+      <Box style={{ borderBottom: "1px solid var(--mantine-color-gray-2)", position: "relative" }}>
+        <Group gap={0} wrap="nowrap" align="stretch">
+          {/* Left scroll button */}
+          {canScrollLeft && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => scrollTabs("left")}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 2,
+                backgroundColor: "white",
+                boxShadow: "2px 0 4px rgba(0,0,0,0.1)",
+              }}
+            >
+              <IconChevronLeft size={14} />
+            </ActionIcon>
+          )}
+
+          {/* Tab scroll area */}
+          <Box
+            style={{ flex: 1, overflow: "hidden", paddingLeft: canScrollLeft ? 24 : 0, paddingRight: canScrollRight ? 24 : 0 }}
+          >
+            <ScrollArea
+              type="never"
+              style={{ whiteSpace: "nowrap" }}
+              viewportRef={scrollViewportRef}
+              onScrollPositionChange={updateScrollButtons}
+            >
+              <Group gap={4} wrap="nowrap" px="xs" pt="xs" pb={0} style={{ marginBottom: -1 }}>
+                {tabs.map((tab) => {
+                  const isActive = activeTabId === tab.id;
+                  return (
+                    <UnstyledButton
+                      key={tab.id}
+                      onClick={() => onTabChange(tab.id)}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: "6px 6px 0 0",
+                        backgroundColor: isActive ? "white" : "var(--mantine-color-gray-0)",
+                        border: "1px solid var(--mantine-color-gray-3)",
+                        borderBottom: isActive ? "1px solid white" : "1px solid var(--mantine-color-gray-3)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        minWidth: 0,
+                        flexShrink: 0,
+                        position: "relative",
+                        zIndex: isActive ? 1 : 0,
+                        marginBottom: isActive ? -1 : 0,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {tab.type === "browse" ? (
+                        <IconBook size={14} color={isActive ? "var(--mantine-color-blue-6)" : "var(--mantine-color-gray-6)"} />
+                      ) : tab.type === "document" ? (
+                        <IconFileText size={14} color={isActive ? "var(--mantine-color-blue-6)" : "var(--mantine-color-gray-6)"} />
+                      ) : (
+                        <IconArticle size={14} color={isActive ? "var(--mantine-color-blue-6)" : "var(--mantine-color-gray-6)"} />
+                      )}
+                      <Text
+                        size="xs"
+                        fw={isActive ? 600 : 400}
+                        c={isActive ? "blue.7" : "gray.7"}
+                        style={{
+                          maxWidth: 120,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {tab.label}
+                      </Text>
+                      {tab.type !== "browse" && (
+                        <Box
+                          component="span"
+                          onClick={(e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            onTabClose(tab.id);
+                          }}
+                          style={{
+                            marginLeft: 4,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: 16,
+                            height: 16,
+                            borderRadius: 4,
+                            cursor: "pointer",
+                          }}
+                          onMouseEnter={(e: React.MouseEvent<HTMLSpanElement>) => {
+                            e.currentTarget.style.backgroundColor = "var(--mantine-color-gray-2)";
+                          }}
+                          onMouseLeave={(e: React.MouseEvent<HTMLSpanElement>) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }}
+                        >
+                          <IconX size={10} color="gray" />
+                        </Box>
+                      )}
+                    </UnstyledButton>
+                  );
+                })}
+              </Group>
+            </ScrollArea>
+          </Box>
+
+          {/* Right scroll button */}
+          {canScrollRight && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => scrollTabs("right")}
+              style={{
+                position: "absolute",
+                right: 0,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: 2,
+                backgroundColor: "white",
+                boxShadow: "-2px 0 4px rgba(0,0,0,0.1)",
+              }}
+            >
+              <IconChevronRight size={14} />
+            </ActionIcon>
+          )}
+        </Group>
       </Box>
 
       {/* Content - rendered by children */}

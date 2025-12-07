@@ -37,6 +37,7 @@ from .creators import (
     create_development_plans_tool,
     create_location_development_plans_proximity_tool,
     create_location_development_plans_zone_tool,
+    create_cite_sources_tool,
 )
 
 # Formatters
@@ -75,6 +76,8 @@ __all__ = [
     "create_development_plans_tool",
     "create_location_development_plans_proximity_tool",
     "create_location_development_plans_zone_tool",
+    # Cite sources
+    "create_cite_sources_tool",
     # Formatters
     "format_census_results",
     "format_zoning_results",

@@ -14,6 +14,8 @@ import logging
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional
+from io import StringIO
+from psycopg2.extras import execute_values
 from utils.db_accessor import DBAccessor
 from utils.gcp_storage import GCPStorage
 from template import BaseProcessor
@@ -67,17 +69,6 @@ class CensusProcessor(BaseProcessor):
     def _create_census_tables(self):
         """Create all census-related tables in the database."""
         self.logger.info("Creating census tables...")
-
-        # Create CENSUS_TRACT table
-        self.db.execute("""
-            CREATE TABLE IF NOT EXISTS census_tract (
-                geoid VARCHAR(50) PRIMARY KEY,
-                geom GEOMETRY(MultiPolygon, 4326),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_census_tract_geom ON census_tract USING GIST(geom);
-        """)
-
         # Create topic enum type
         self.db.execute("""
             DO $$ BEGIN
@@ -117,10 +108,10 @@ class CensusProcessor(BaseProcessor):
         # Create ACS_VARIABLE table
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS acs_variable (
-                variable_id VARCHAR(500) PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 acs_table_id VARCHAR(100) REFERENCES acs_table(acs_table_id),
                 name TEXT,
-                concept TEXT
+                UNIQUE(acs_table_id, name)
             );
             CREATE INDEX IF NOT EXISTS idx_acs_variable_table ON acs_variable(acs_table_id);
         """)
@@ -129,11 +120,12 @@ class CensusProcessor(BaseProcessor):
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS acs_value (
                 acs_value_id SERIAL PRIMARY KEY,
-                geoid VARCHAR(50) REFERENCES census_tract(geoid),
-                variable_id VARCHAR(500) REFERENCES acs_variable(variable_id),
+                geoid VARCHAR(50) REFERENCES census_tracts(geoid),
+                variable_id INTEGER REFERENCES acs_variable(id),
                 year INTEGER NOT NULL,
                 value FLOAT,
-                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(geoid, variable_id, year)
             );
             CREATE INDEX IF NOT EXISTS idx_acs_value_geoid ON acs_value(geoid);
             CREATE INDEX IF NOT EXISTS idx_acs_value_variable ON acs_value(variable_id);
@@ -297,19 +289,6 @@ class CensusProcessor(BaseProcessor):
             metadata["description"]
         ))
 
-    def _ingest_census_tract(self, geoid: str):
-        """
-        Insert census tract if it doesn't exist.
-
-        Args:
-            geoid: Geographic identifier
-        """
-        self.db.execute("""
-            INSERT INTO census_tract (geoid)
-            VALUES (%s)
-            ON CONFLICT (geoid) DO NOTHING
-        """, (geoid,))
-
     def _ingest_variables_and_values(
         self,
         df: pd.DataFrame,
@@ -332,22 +311,55 @@ class CensusProcessor(BaseProcessor):
 
         self.logger.info(f"Found {len(variable_columns)} variables in {table_code}")
 
-        # Insert variables
-        for var_col in variable_columns:
-            variable_id = f"{table_code}_{var_col}"
-
-            self.db.execute("""
-                INSERT INTO acs_variable (variable_id, acs_table_id, name, concept)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (variable_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    concept = EXCLUDED.concept
-            """, (
-                variable_id,
-                table_code,
-                var_col,
-                f"{table_code} - {var_col}"  # Simplified concept
-            ))
+        # Bulk insert variables and get their integer IDs
+        # Create mapping from (acs_table_id, name) to integer id
+        variable_key_to_int_id = {}
+        
+        if variable_columns:
+            variable_data = [
+                (table_code, var_col)
+                for var_col in variable_columns
+            ]
+            
+            self.db.connect()
+            with self.db.conn.cursor() as cur:
+                # Use COPY for bulk insert (faster than INSERT)
+                # Create temporary table for upsert logic
+                cur.execute("""
+                    CREATE TEMP TABLE temp_acs_variable (
+                        acs_table_id VARCHAR(100),
+                        name TEXT
+                    ) ON COMMIT DROP
+                """)
+                
+                # Use COPY to load into temp table
+                buffer = StringIO()
+                for row in variable_data:
+                    buffer.write('\t'.join(str(x) for x in row) + '\n')
+                buffer.seek(0)
+                
+                cur.copy_from(
+                    buffer,
+                    'temp_acs_variable',
+                    columns=('acs_table_id', 'name'),
+                    null=''
+                )
+                
+                # Upsert from temp table and return IDs
+                cur.execute("""
+                    INSERT INTO acs_variable (acs_table_id, name)
+                    SELECT acs_table_id, name
+                    FROM temp_acs_variable
+                    ON CONFLICT (acs_table_id, name) DO UPDATE SET
+                        name = EXCLUDED.name
+                    RETURNING id, acs_table_id, name
+                """)
+                
+                # Build mapping from (acs_table_id, name) to integer id
+                for row in cur.fetchall():
+                    int_id, acs_table_id, name = row
+                    variable_key_to_int_id[(acs_table_id, name)] = int_id
+            self.db.conn.commit()
 
         # Construct geoid from geography columns
         # For state-level data
@@ -370,17 +382,13 @@ class CensusProcessor(BaseProcessor):
             self.logger.warning("Could not construct geoid from available columns")
             return
 
-        # Insert census tracts and values
-        inserted_count = 0
-        batch_size = 100
-
+        # Prepare values for bulk insertion using integer variable IDs
+        value_data = []
+        
         for idx, row in df.iterrows():
             geoid = row['geoid']
-
-            # Insert tract
-            self._ingest_census_tract(geoid)
-
-            # Insert values for all variables
+            
+            # Collect values for all variables
             for var_col in variable_columns:
                 try:
                     value = row[var_col]
@@ -395,26 +403,94 @@ class CensusProcessor(BaseProcessor):
                     except (ValueError, TypeError):
                         continue
 
-                    variable_id = f"{table_code}_{var_col}"
-
-                    self.db.execute("""
-                        INSERT INTO acs_value (geoid, variable_id, year, value)
-                        VALUES (%s, %s, %s, %s)
-                    """, (geoid, variable_id, year, value_float))
-
-                    inserted_count += 1
-
-                    # Commit in batches
-                    if inserted_count % batch_size == 0:
-                        self.db.conn.commit()
-                        self.logger.info(f"  → Inserted {inserted_count} values...")
+                    # Get integer ID from mapping using (acs_table_id, name)
+                    variable_key = (table_code, var_col)
+                    variable_int_id = variable_key_to_int_id.get(variable_key)
+                    if variable_int_id is None:
+                        self.logger.warning(f"Variable not found in mapping: {table_code}.{var_col}")
+                        continue
+                    
+                    value_data.append((geoid, variable_int_id, year, value_float))
 
                 except Exception as e:
-                    self.logger.warning(f"Failed to insert value for {var_col}: {e}")
+                    self.logger.warning(f"Failed to prepare value for {var_col}: {e}")
                     continue
 
-        # Final commit
-        self.db.conn.commit()
+        # Stop if no data to insert
+        if not value_data:
+            self.logger.warning(f"No values to insert for {table_code}")
+            return
+
+        # Set batch size to minimum of 10000 or total data length
+        batch_size = min(10000, len(value_data))
+
+        # Bulk insert values using COPY (optimized for large data loads)
+        # Reference: https://www.postgresql.org/docs/current/populate.html
+        inserted_count = 0
+        self.db.connect()
+        
+        # Use COPY for bulk insert (much faster than INSERT)
+        # Process in batches to avoid memory issues with very large datasets
+        for i in range(0, len(value_data), batch_size):
+            batch = value_data[i:i + batch_size]
+            
+            try:
+                with self.db.conn.cursor() as cur:
+                    # Use COPY for bulk insert (faster than execute_values)
+                    buffer = StringIO()
+                    for row in batch:
+                        # Format: geoid, variable_id, year, value
+                        buffer.write('\t'.join(str(x) for x in row) + '\n')
+                    buffer.seek(0)
+                    
+                    cur.copy_from(
+                        buffer,
+                        'acs_value',
+                        columns=('geoid', 'variable_id', 'year', 'value'),
+                        null=''
+                    )
+                
+                self.db.conn.commit()
+                inserted_count += len(batch)
+                self.logger.info(f"  → Inserted {inserted_count}/{len(value_data)} values...")
+            except Exception as e:
+                self.db.conn.rollback()
+                self.logger.warning(f"Failed to insert batch: {e}")
+                # Fallback to execute_values for problematic batches
+                try:
+                    with self.db.conn.cursor() as cur:
+                        execute_values(
+                            cur,
+                            """
+                            INSERT INTO acs_value (geoid, variable_id, year, value)
+                            VALUES %s
+                            """,
+                            batch,
+                            page_size=1000
+                        )
+                    self.db.conn.commit()
+                    inserted_count += len(batch)
+                except Exception as fallback_error:
+                    self.db.conn.rollback()
+                    self.logger.warning(f"Fallback insert also failed: {fallback_error}")
+                    # Try inserting batch one by one to identify problematic rows
+                    for row_data in batch:
+                        try:
+                            with self.db.conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO acs_value (geoid, variable_id, year, value)
+                                    VALUES (%s, %s, %s, %s)
+                                    """,
+                                    row_data
+                                )
+                            self.db.conn.commit()
+                            inserted_count += 1
+                        except Exception as row_error:
+                            self.db.conn.rollback()
+                            self.logger.warning(f"Failed to insert row {row_data}: {row_error}")
+                            continue
+
         self.logger.info(f"Inserted {inserted_count} total values for {table_code}")
 
     def _process_csv_file(
@@ -445,14 +521,115 @@ class CensusProcessor(BaseProcessor):
         # Ingest variables and values
         self._ingest_variables_and_values(df, table_code, year)
 
+    def _drop_indexes_and_constraints(self):
+        """Drop indexes and foreign key constraints for faster bulk loading."""
+        self.logger.info("Dropping indexes and foreign key constraints for bulk loading...")
+        self.db.connect()
+        
+        with self.db.conn.cursor() as cur:
+            # Drop indexes on acs_value table
+            cur.execute("DROP INDEX IF EXISTS idx_acs_value_geoid")
+            cur.execute("DROP INDEX IF EXISTS idx_acs_value_variable")
+            cur.execute("DROP INDEX IF EXISTS idx_acs_value_year")
+            
+            # Drop foreign key constraints on acs_value table
+            # Find and drop FK constraints
+            cur.execute("""
+                SELECT conname
+                FROM pg_constraint
+                WHERE conrelid = 'acs_value'::regclass
+                AND contype = 'f'
+            """)
+            fk_constraints = cur.fetchall()
+            for (conname,) in fk_constraints:
+                cur.execute(f"ALTER TABLE acs_value DROP CONSTRAINT IF EXISTS {conname}")
+            
+        self.db.conn.commit()
+        self.logger.info("Indexes and constraints dropped")
+
+    def _recreate_indexes_and_constraints(self):
+        """Recreate indexes and foreign key constraints after bulk loading."""
+        self.logger.info("Recreating indexes and foreign key constraints...")
+        self.db.connect()
+        
+        with self.db.conn.cursor() as cur:
+            # Recreate indexes (faster to create on existing data than update incrementally)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_acs_value_geoid ON acs_value(geoid)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_acs_value_variable ON acs_value(variable_id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_acs_value_year ON acs_value(year)
+            """)
+            
+            # Recreate foreign key constraints
+            # Note: This validates all existing data, which may take time
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint 
+                        WHERE conname = 'acs_value_geoid_fkey'
+                    ) THEN
+                        ALTER TABLE acs_value
+                        ADD CONSTRAINT acs_value_geoid_fkey
+                        FOREIGN KEY (geoid) REFERENCES census_tracts(geoid);
+                    END IF;
+                END $$;
+            """)
+            
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint 
+                        WHERE conname = 'acs_value_variable_id_fkey'
+                    ) THEN
+                        ALTER TABLE acs_value
+                        ADD CONSTRAINT acs_value_variable_id_fkey
+                        FOREIGN KEY (variable_id) REFERENCES acs_variable(id);
+                    END IF;
+                END $$;
+            """)
+            
+        self.db.conn.commit()
+        self.logger.info("Indexes and constraints recreated")
+
+    def _run_analyze(self):
+        """Run ANALYZE to update table statistics after bulk loading."""
+        self.logger.info("Running ANALYZE to update table statistics...")
+        self.db.connect()
+        
+        with self.db.conn.cursor() as cur:
+            cur.execute("ANALYZE acs_value")
+            cur.execute("ANALYZE acs_variable")
+            cur.execute("ANALYZE acs_table")
+        
+        self.db.conn.commit()
+        self.logger.info("ANALYZE completed")
+
     def process(self, test_mode: bool = False):
         """
         Main processing function to download CSV files from GCS and ingest into database.
+        
+        Optimized for bulk loading following PostgreSQL best practices:
+        - Drops indexes and FK constraints before loading
+        - Uses COPY for bulk inserts (faster than INSERT)
+        - Recreates indexes and FK constraints after loading
+        - Runs ANALYZE to update statistics
+        
+        Reference: https://www.postgresql.org/docs/current/populate.html
 
         Args:
             test_mode: If True, only process first few files for testing
         """
         self.logger.info(f"Starting census data ingestion for {self.city}")
+
+        # Optimize for bulk loading: drop indexes and constraints
+        # Reference: https://www.postgresql.org/docs/current/populate.html#POPULATE-RM-INDEXES
+        self._drop_indexes_and_constraints()
 
         # Download CSV files from GCS
         download_dir = Path(self.download_directory())
@@ -481,8 +658,8 @@ class CensusProcessor(BaseProcessor):
 
             # Process each CSV file
             for i, csv_file in enumerate(csv_files):
-                if test_mode and i >= 3:
-                    self.logger.info("Test mode: stopping after 3 files")
+                if test_mode and i > 2:
+                    self.logger.info("Test mode: stopping after 2 files")
                     break
 
                 # Parse filename: {city}_{state}_{table_code}_{year}.csv
@@ -501,8 +678,8 @@ class CensusProcessor(BaseProcessor):
 
             # Process each file in manifest
             for idx, row in manifest_df.iterrows():
-                if test_mode and idx >= 3:
-                    self.logger.info("Test mode: stopping after 3 files")
+                if test_mode and idx > 2:
+                    self.logger.info("Test mode: stopping after 2 files")
                     break
 
                 city = row['city']
@@ -519,5 +696,13 @@ class CensusProcessor(BaseProcessor):
                     continue
 
                 self._process_csv_file(csv_path, table_code, year, state)
+
+        # Recreate indexes and constraints after bulk loading
+        # Reference: https://www.postgresql.org/docs/current/populate.html#POPULATE-RM-INDEXES
+        self._recreate_indexes_and_constraints()
+        
+        # Run ANALYZE to update statistics for query planner
+        # Reference: https://www.postgresql.org/docs/current/populate.html#POPULATE-ANALYZE
+        self._run_analyze()
 
         self.logger.info(f"Census data ingestion completed for {self.city}")

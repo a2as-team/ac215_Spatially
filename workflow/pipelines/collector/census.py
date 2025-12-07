@@ -25,12 +25,22 @@ class CensusCollectorComponent(BaseComponent):
         city = self.city
         gcp_region = self.GCP_REGION
         gcp_project = self.GCP_PROJECT
+        app_db_name = self.APP_DB_NAME
+        postgre_user = self.POSTGRE_USER
+        postgre_password = self.POSTGRE_PASSWORD
+        postgre_host = self.POSTGRE_HOST
+        postgre_port = self.POSTGRE_PORT
 
         @dsl.container_component
         def census_collector_component():
             cmd = (
                 f"export GCS_BUCKET_NAME={self.GCS_BUCKET_NAME} && "
                 f"export GCP_PROJECT={gcp_project} && "
+                f"export APP_DB_NAME={app_db_name} && "
+                f"export POSTGRE_USER={postgre_user} && "
+                f"export POSTGRE_PASSWORD={postgre_password} && "
+                f"export POSTGRE_HOST={postgre_host} && "
+                f"export POSTGRE_PORT={postgre_port} && "
                 f"/home/app/.venv/bin/python /app/census/run.py "
                 f"--city '{city}'"
             )

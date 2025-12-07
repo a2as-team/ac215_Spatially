@@ -44,7 +44,8 @@ erDiagram
     cities ||--o{ zoning_codes : "has many"
     cities ||--o{ zoning_ordinance_embed : "has many"
     cities ||--o{ development_plans_embed : "has many"
-    CENSUS_TRACT ||--o{ ACS_VALUE : "has measurements"
+    cities ||--o{ census_tracts : "has many"
+    census_tracts ||--o{ ACS_VALUE : "has measurements"
     ACS_TABLE ||--o{ ACS_VARIABLE : "defines variables"
     ACS_VARIABLE ||--o{ ACS_VALUE : "provides variable metadata"
 
@@ -57,8 +58,9 @@ erDiagram
         timestamp updated_at
     }
 
-    CENSUS_TRACT {
+    census_tracts {
         varchar geoid PK "Geo identifier"
+        int city_id FK "References cities(id)"
         geometry geom "PostGIS geometry"
         timestamp created_at
     }
@@ -71,16 +73,15 @@ erDiagram
     }
 
     ACS_VARIABLE {
-        string variable_id PK
+        int id PK
         string acs_table_id FK
         string name
-        string concept
     }
 
     ACS_VALUE {
         int acs_value_id PK
         string geoid FK
-        string variable_id FK
+        int variable_id FK
         int year
         float value
     }

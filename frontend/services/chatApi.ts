@@ -14,6 +14,27 @@ export interface OrdinanceSource {
   zoning_codes?: string[];
   content: string;
   similarity_score?: number;
+  highlight?: string;  // Key excerpt highlighted by the agent
+  reason?: string;     // Why this source is relevant
+}
+
+export interface DevelopmentPlanSource {
+  title: string;           // project_name
+  subtitle?: string;       // file_name
+  content: string;         // text_chunk
+  zoning_codes?: string[];
+  article_reference?: string[];
+  similarity_score?: number;
+  distance_km?: number;
+  highlight?: string;
+  reason?: string;
+  // GeoJSON point for map display
+  geojson?: {
+    type: "Point";
+    coordinates: [number, number]; // [longitude, latitude]
+  };
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface Chat {
@@ -22,6 +43,7 @@ export interface Chat {
   dts: number;
   messages: ChatMessage[];
   ordinance_sources?: OrdinanceSource[];
+  development_plan_sources?: DevelopmentPlanSource[];
 }
 
 export interface StartChatRequest {

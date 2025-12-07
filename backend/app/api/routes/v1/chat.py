@@ -7,8 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
-from app.agents import ChatHistoryManager, SmartDataAgentRunner
-from app.agents.context import get_agent_context, clear_agent_context
+from app.agents import SmartDataAgentRunner
+from app.agents.manager import ChatManager
 
 
 class ChatMessage(BaseModel):
@@ -33,9 +33,9 @@ class ContinueChatRequest(BaseModel):
 
 router = APIRouter(prefix="/chats", tags=["chat"])
 
-# Use gemini-2.0-flash as the model name for history manager
+# Use gemini-2.0-flash as the model name for chat manager
 AGENT_MODEL = "gemini-2.0-flash"
-chat_manager = ChatHistoryManager(model=AGENT_MODEL)
+chat_manager = ChatManager(model=AGENT_MODEL)
 
 
 @router.get("/")
@@ -70,8 +70,8 @@ async def start_chat(
     session_id = x_session_id or "default"
     chat_id = str(uuid.uuid4())
 
-    # Clear agent context before running
-    clear_agent_context()
+    # Clear context for this chat before running
+    chat_manager.clear_context(chat_id, session_id)
 
     # Create the agent runner
     runner = SmartDataAgentRunner(
@@ -81,19 +81,20 @@ async def start_chat(
         model=AGENT_MODEL,
         session_id=session_id,
         chat_id=chat_id,
-        history_manager=chat_manager,
+        chat_manager=chat_manager,
     )
 
     # Run the agent
     await runner.run(request.content)
 
-    # Get ordinance sources from context
-    agent_context = get_agent_context()
-    ordinance_sources = agent_context.get_ordinance_sources_dict()
+    # Get sources from the runner's context
+    agent_context = runner.get_agent_context()
+    ordinance_sources = agent_context.get_store("ordinances").to_dict_list()
+    development_plan_sources = agent_context.get_store("development_plans").to_dict_list()
 
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Chat response ordinance sources count: {len(ordinance_sources)}")
+    logger.info(f"Chat response sources: {len(ordinance_sources)} ordinances, {len(development_plan_sources)} dev plans")
 
     # Generate title from first message
     title = request.content[:50]
@@ -116,6 +117,7 @@ async def start_chat(
             "agent_type": runner.agent_type,
         },
         "ordinance_sources": ordinance_sources,
+        "development_plan_sources": development_plan_sources,
     }
 
     return chat_response
@@ -145,8 +147,8 @@ async def continue_chat(
     new_latitude = request.latitude
     new_longitude = request.longitude
 
-    # Clear agent context before running
-    clear_agent_context()
+    # Clear context for this chat before running
+    chat_manager.clear_context(chat_id, session_id)
 
     # Create runner with saved context
     runner = SmartDataAgentRunner(
@@ -156,7 +158,7 @@ async def continue_chat(
         model=AGENT_MODEL,
         session_id=session_id,
         chat_id=chat_id,
-        history_manager=chat_manager,
+        chat_manager=chat_manager,
     )
 
     # Restore history
@@ -166,21 +168,25 @@ async def continue_chat(
     if new_latitude is not None and new_longitude is not None:
         # User selected a new location
         if saved_latitude != new_latitude or saved_longitude != new_longitude:
+            # switch_to_location_mode replays history with location change notice
             await runner.switch_to_location_mode(
                 latitude=new_latitude,
                 longitude=new_longitude,
             )
-    elif new_latitude is None and new_longitude is None and saved_latitude is not None:
-        # User deselected location - but only if explicitly requested
-        # For now, keep the same mode unless coordinates are explicitly changed
-        pass
+        else:
+            # Same location, replay history
+            await runner.replay_history()
+    else:
+        # No location or same as before, replay history
+        await runner.replay_history()
 
     # Run the agent
     await runner.run(request.content)
 
-    # Get ordinance sources from context
-    agent_context = get_agent_context()
-    ordinance_sources = agent_context.get_ordinance_sources_dict()
+    # Get sources from the runner's context
+    agent_context = runner.get_agent_context()
+    ordinance_sources = agent_context.get_store("ordinances").to_dict_list()
+    development_plan_sources = agent_context.get_store("development_plans").to_dict_list()
 
     # Save to disk
     runner.save_to_disk(title=chat.get("title"))
@@ -198,6 +204,7 @@ async def continue_chat(
             "agent_type": runner.agent_type,
         },
         "ordinance_sources": ordinance_sources,
+        "development_plan_sources": development_plan_sources,
     }
 
     return chat_response

@@ -20,9 +20,19 @@ This article was produced as part of the final project for Harvard’s
 
 Why are some neighborhoods full of high-rise towers while others are lined with low-rise homes? The answer lies in **zoning ordinances**—the legal rules that determine how land can be used and what can be built. These ordinances have a profound impact on the built environment. A familiar example is Boston’s Back Bay. Its iconic low-rise streetscape exists largely because the area is zoned **H-3-65**, capping building height at 65 feet.
 
-[Image of Back Bay](#)
+| ![Image of Back Bay](/docs/images/back-bay_wbur.jpeg)
+| :--: | 
+| *Boston's Back Bay is a classic example of how zoning ordinances shape the built environment—its low-rise landscape results from strict height regulations.* |
+<!-- <figcaption align="center"><em>Source: WBUR. Boston's Back Bay is a classic example of how zoning ordinances shape the built environment—its low-rise landscape results from strict height regulations.</em></figcaption> -->
+
+
+<!-- [Image of Back Bay](/docs/images/back_bay.jpeg) -->
 
 Despite their importance, zoning ordinances are notoriously difficult to work with. Many exceed 1,000 pages, use dense legal language, and are updated frequently. This creates challenges for both **developers**, who must navigate the regulations, and **government officials**, who rely on these rules to make informed decisions.
+
+| ![Image of Los Angeles zoning ordinance](/docs/images/los-angeles-zoning.png)
+| :--: | 
+| *Los Angeles zoning ordinance is around 1700 pages long and is difficult to navigate.* |
 
 Given that zoning ordinances are:
 - large in size  
@@ -31,7 +41,9 @@ Given that zoning ordinances are:
 
 they present an ideal use case for **AI Operations**, the focus of Harvard’s AC215. Our team chose zoning as our domain of intervention for this reason.
 
-[Image of our interface](#)
+| ![Image of our interface](/docs/images/zoning-interaction-intro.png)
+| :--: | 
+| *Our interface allows users to query zoning information and development plans.* |
 
 ---
 
@@ -58,7 +70,7 @@ We added data beyond the zoning ordinance for two reasons:
 
 ### What's with the development plans?
 
-Zoning maps and census data are expected sources, but development plans are less obvious. As we reviewed the ordinance text, we noticed that many zoning descriptions depend heavily on local context. For example, Article 26, Section 1 describes the S2 Main Street Mixed Use district:
+Zoning maps and census data are expected sources, but development plans are less obvious. As we reviewed the ordinance text, we noticed that many zoning descriptions depend heavily on local context. For example, Boston's Article 26, Section 1 describes the S2 Main Street Mixed Use district:
 
 > “S2 buildings can fill the width of the lot to help create a continuous and active main street… [and] include requirements for Outdoor Amenity Space and a maximum for the blank wall of a facade.”
 
@@ -68,15 +80,21 @@ However, terms like *continuous and active main street* or *blank wall maximums*
 
 Since our project is based in Boston, we began with the **Boston Planning & Development Agency (BPDA)**, which offers extensive public records. We built a scraper for BPDA development plans using their online archive:
 
-https://apps.bostonplans.org/recordslibrary/
+| ![Boston Planning & Development Agency Development Plans](/docs/images/boston-article80.png)
+| :--: | 
+| *[Boston Planning & Development Agency Development Plans for Article 80](https://apps.bostonplans.org/recordslibrary/* |
 
 Next, we built a collector for zoning ordinances. Many U.S. municipalities store their codes on **Municode**, so we built a scraper for Municode as well and used it to collect Boston and Cambridge ordinances.
 
-[Municode Platform Image](#)
+| ![Municode Platform for Boston Zoning Ordinances](/docs/images/boston-municode.png)
+| :--: | 
+| *[Municode Platform for Boston Zoning Ordinances](https://library.municode.com)* |
 
 For zoning maps and census-tract maps, we tapped into city GIS systems, most of which use **ArcGIS Feature Server**. We built a general-purpose collector that takes only a resource URL as input.
 
-[Boston Zoning Maps Image](#)
+| ![Boston Zoning Maps](/docs/images/boston-zoning-arcgis.png)
+| :--: | 
+| *[Boston Zoning Maps published through arcgis](https://boston.maps.arcgis.com/home/item.html?id=fffb5de90c814daabf2cfd5538b8d22c)* |
 
 For census data, we used the **U.S. Census Bureau API**. Because we collected many ACS tables (income, demographics, employment, housing, transportation), we needed a schema that could grow without redesign. We created three core tables:
 

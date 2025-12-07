@@ -133,6 +133,35 @@ After improvements:
 
 ---
 
+## Retrieval-Augmented Generation (RAG)
+
+The core of our application is the RAG layer, which connects a user’s question to the relevant legal text and development history. Instead of asking an LLM to hallucinate zoning rules, we wanted it to act as an intelligent interface over the official documents.
+
+### How retrieval works
+
+Retrieving the right answer from thousands of pages requires balancing two things: guaranteeing precision and understanding meaning. So, we built a two-stage retrieval process:
+
+1.  **Metadata Filtering (Speed & Precision):** Before searching for text, we strictly filter the database using the structured data we extracted earlier (City, Zoning District, NER tags). This instantly discards 99% of irrelevant documents.
+2.  **Vector Search (Semantic Understanding):** Within that highly relevant slice, we use Google Vertex AI embeddings to find the specific paragraphs that match the user's intent.
+
+This combination ensures that when a user asks about "setbacks in the S-3 district," the system is fast because it ignores the rest of the city, and accurate because it only retrieves rules that legally apply.
+
+### Scoping the search
+
+When a user is exploring a city broadly, the system searches the entire corpus of ordinances and development plans. This is great for comparative questions like, *"How does Cambridge regulate lab space compared to office space?"*
+
+When a user clicks a specific parcel, however, the system narrows its focus. It uses PostGIS to identify the exact zoning district for that location, then restricts the vector search to:
+1.  The specific articles of the zoning code that apply to that district.
+2.  Past development plans from that same district or immediate vicinity.
+
+This spatial filtering is what allows the model to answer highly specific questions like *"Can I build a 6-story building here?"* with a degree of precision that a general chatbot simply cannot match.
+
+### Fighting hallucinations
+
+In a domain like zoning, a "hallucination" where the model invents a rule is unacceptable. To mitigate this, we treat the retrieved text as a strict boundary. The model is configured to answer only using the provided snippets and to explicitly cite its sources. On the frontend, we visualize these citations. Every claim in the model's answer is linked to the specific article, section, or development plan it came from.
+
+---
+
 ## Infrastructure and Deployment
 
 We built both the backend and frontend to deliver a production-ready application.

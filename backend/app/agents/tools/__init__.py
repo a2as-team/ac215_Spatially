@@ -15,8 +15,6 @@ Structure:
 from .functions import (
     # Census
     query_census_data,
-    query_census_by_geoids,
-    query_census_by_geojson,
     # Zoning
     query_zoning_ordinance,
     query_zoning_by_location,
@@ -56,8 +54,6 @@ __all__ = [
     "BaseTool",
     # Census functions
     "query_census_data",
-    "query_census_by_geoids",
-    "query_census_by_geojson",
     # Zoning functions
     "query_zoning_ordinance",
     "query_zoning_by_location",

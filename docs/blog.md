@@ -104,13 +104,15 @@ For census data, we used the **U.S. Census Bureau API**. Because we collected ma
 
 This structure allows new ACS datasets to be added seamlessly.
 
-[Census Data Table Structure Image](#)
+| ![Census Data Table Structure](/docs/images/acs-diagram.png)
+| :--: | 
+| *Census Data Table Structure* |
 
 ### How did we process the data?
 
 Zoning ordinances and development plans needed to be vectorized for retrieval. We used **Google Vertex AI** for embeddings. Zoning ordinances come with clean metadata (articles, sections), but development plans are unstructured and vary across developers.
 
-To use metadata filtering in the vector DB, we needed structured fields—so we fine-tuned a **Named Entity Recognition (NER)** model to extract metadata automatically.
+To use metadata filtering in the vector DB, we needed structured fields—so we fine-tuned a **Named Entity Recognition (NER)** model to extract metadata automatically from development plans.
 
 ---
 
@@ -118,7 +120,10 @@ To use metadata filtering in the vector DB, we needed structured fields—so we 
 
 We fine-tuned a customized NER model based on **legal-bert-base-uncased**. We collected ~1,400 development plans from the BPDA and manually annotated them using **Label Studio**.
 
-[Label Studio Image](#)
+| ![Label Studio Image](/docs/images/label-studio.png)
+| :--: | 
+| *Labelling entities in development plans using Label Studio* |
+
 
 We initially targeted entities such as:
 - Construction details  
@@ -149,6 +154,10 @@ After improvements:
 - The model produced consistent B-/I-tag patterns  
 - Confidence scores became reasonable (20–50%)
 
+| ![Wandb Results](/docs/images/wandb.png)
+| :--: | 
+| *Wandb Results after improvements* |
+
 ---
 
 ## Retrieval-Augmented Generation (RAG)
@@ -164,19 +173,10 @@ Retrieving the right answer from thousands of pages requires balancing two thing
 
 This combination ensures that when a user asks about "setbacks in the S-3 district," the system is fast because it ignores the rest of the city, and accurate because it only retrieves rules that legally apply.
 
-### Scoping the search
+| ![Vector DB With Metadata Filtering](/docs/images/vector-db.png)
+| :--: | 
+| *Vector DB With Metadata Filtering* |
 
-When a user is exploring a city broadly, the system searches the entire corpus of ordinances and development plans. This is great for comparative questions like, *"How does Cambridge regulate lab space compared to office space?"*
-
-When a user clicks a specific parcel, however, the system narrows its focus. It uses PostGIS to identify the exact zoning district for that location, then restricts the vector search to:
-1.  The specific articles of the zoning code that apply to that district.
-2.  Past development plans from that same district or immediate vicinity.
-
-This spatial filtering is what allows the model to answer highly specific questions like *"Can I build a 6-story building here?"* with a degree of precision that a general chatbot simply cannot match.
-
-### Fighting hallucinations
-
-In a domain like zoning, a "hallucination" where the model invents a rule is unacceptable. To mitigate this, we treat the retrieved text as a strict boundary. The model is configured to answer only using the provided snippets and to explicitly cite its sources. On the frontend, we visualize these citations. Every claim in the model's answer is linked to the specific article, section, or development plan it came from.
 
 ---
 
@@ -193,7 +193,9 @@ We built both the backend and frontend to deliver a production-ready application
 
 We intentionally avoided Pulumi or cloud-specific deployment tools so governments could more easily adopt the repository.
 
-[Nginx Ingress Image](#)
+| ![Nginx Ingress](/docs/images/deploy-gke.png)
+| :--: | 
+| *Using Github workflows to deploy the backend to GKE using kubectl* |
 
 ### Frontend
 We used **Next.js**, allowing zoning map data to be pre-rendered for performance. Deployment on **Vercel** was straightforward.
@@ -206,11 +208,15 @@ Our deployed application begins with a list of cities instead of a single combin
 1. Matches real user behavior—people usually have a specific municipality in mind  
 2. Avoids the heavy rendering cost of loading all zoning maps simultaneously  
 
-[City Page Image](#)
+| ![City Page](/docs/images/city-homepage.png)
+| :--: | 
+| *City Page showing the zoning map for Boston* |
 
 Because end-users such as developers and city officials care deeply about **accuracy**, the interface privileges document sources. The left panel highlights source documents, while the chat UI appears as a minimal floating panel.
 
-[User Interface Image](#)
+| ![User Interface](/docs/images/zoning-height-question.png)
+| :--: | 
+| *User Interface showing the response for height limits question on zoning 3* |
 
 Users can query:
 1. Zoning information  
@@ -222,16 +228,22 @@ We implemented two main agents:
 ### 1. City Data Agent
 Handles general questions about development trends, zoning policies, and demographics.
 
-[General Information Example Response Image](#)
+| ![City Data Agent](/docs/images/city-developments.png)
+| :--: | 
+| *City Data Agent showing the response for development trends question* |
 
 ### 2. Location Data Agent
 Handles spatial queries—for example, zoning at a particular address or parcel.
 
-[Zoning Information at a Specific Location Example Response Image](#)
+| ![Location Data Agent](/docs/images/location-building.png)
+| :--: | 
+| *Location Data Agent showing the response for zoning information question at a specific location* |
 
 A **Smart Data Agent** routes requests between these two based on the user’s query type.
 
-[Smart Data Agent Diagram](#)
+| ![Smart Data Agent](/docs/images/double-agent.png)
+| :--: | 
+| *Smart Data Agent routing requests between City Data Agent and Location Data Agent based on the user's query type* |
 
 ---
 

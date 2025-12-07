@@ -12,7 +12,7 @@ This article was produced as part of the final project for Harvard’s
 4. Model Fine-Tuning  
 5. Infrastructure and Deployment  
 6. Features  
-7. Future Work  
+7. Reflections
 
 ---
 
@@ -188,16 +188,28 @@ A **Smart Data Agent** routes requests between these two based on the user’s q
 
 ---
 
-## Future Work
+## Reflections
 
-We interviewed government officials and real estate developers throughout the project. The idea to integrate development plans came from **Phillip Smith** (Oxford Properties Group), who emphasized that developers often rely on past plans to understand how zoning is interpreted. The emphasis on explicit document sources came from **Will Cohen**, a GIS specialist for the City of Boston.
+### What We Learned from Experts
 
-However, many experts pointed out—and our results confirmed—that LLMs still struggle with:
-1. The *nuanced legal language* of zoning ordinances  
-2. The *spatial reasoning* needed to interpret zoning in physical context  
+Throughout the project, we spoke with government officials and real estate developers to ground our work in real needs. These conversations shaped key design decisions.
 
-Because zoning codes evolve over decades and include ambiguous or context-dependent language, even a well-designed RAG system cannot fully replace human interpretation.
+**Phillip Smith** (Oxford Properties Group) suggested integrating development plans—something we hadn't initially considered. He explained that developers routinely study past proposals to understand how zoning rules are actually interpreted. This insight led us to build the BPDA scraper and fine-tune our NER model for metadata extraction.
 
-Still, our goal was to create a framework others could use or build upon. We hope this project inspires additional tools that support municipalities in managing and communicating their zoning information.
+**Will Cohen**, a GIS specialist for the City of Boston, emphasized the importance of showing document sources explicitly. For government officials, trust comes from traceability. This feedback shaped our UI: the left panel highlights source documents, while the chat remains a minimal floating panel.
+
+### Limitations We Discovered
+
+Both experts—and our own testing—confirmed that LLMs still struggle with:
+1. **Nuanced legal language** — Zoning ordinances are written by lawyers over decades, with context-dependent terms that resist simple retrieval
+2. **Spatial reasoning** — Questions like "Can I build a 6-story building here?" require understanding setbacks, overlays, and adjacent zones simultaneously
+
+A well-designed RAG system can surface relevant passages, but it cannot fully replace human interpretation. We learned to be honest about this boundary.
+
+### What This Project Taught Us
+
+Building Spatially was an exercise in bridging domains: legal text, geospatial data, urban planning, and machine learning. The hardest part wasn't any single technical challenge—it was designing a system flexible enough to accommodate messy, real-world data while remaining simple enough for municipalities to adopt.
+
+We hope this project serves as a foundation others can build upon. The collectors, processors, and agents are modular by design. If even one city finds this useful, we'll consider it a success.
 
 You can explore our work at **https://teamspatially.com**.

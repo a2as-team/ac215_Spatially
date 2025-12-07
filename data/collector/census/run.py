@@ -35,16 +35,48 @@ if __name__ == "__main__":
     args["county"] = city_county_info["county"]
     print(f"City '{city_key}' mapped to state={args['state']}, county={args['county']}")
 
-    # Get valid geoids from database (only Boston's 207 tracts)
+    # Get valid geoids from database filtered by city
     db_name = os.environ.get("APP_DB_NAME")
     valid_geoids = set()
     if db_name:
         try:
             db = DBAccessor(db_name=db_name)
             try:
-                results = db.execute("SELECT DISTINCT geoid FROM census_tract")
-                valid_geoids = {row["geoid"] for row in results}
-                print(f"✅ Found {len(valid_geoids)} valid geoids in census_tract table")
+                db.connect()
+                from psycopg2.extras import RealDictCursor
+                with db.conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    # First, get city_id from cities table
+                    cur.execute("SELECT id FROM cities WHERE name = %s", (city_key,))
+                    city_result = cur.fetchone()
+                    
+                    if not city_result:
+                        print(f"⚠️  City '{city_key}' not found in cities table")
+                        print(f"   Will collect all data without filtering")
+                    else:
+                        city_id = city_result["id"]
+                        print(f"✅ Found city_id={city_id} for city '{city_key}'")
+                        
+                        # Query census_tracts filtered by city_id
+                        # Check if city_id column exists, otherwise fall back to all tracts
+                        try:
+                            cur.execute("""
+                                SELECT DISTINCT geoid 
+                                FROM census_tracts 
+                                WHERE city_id = %s
+                            """, (city_id,))
+                            results = cur.fetchall()
+                            valid_geoids = {row["geoid"] for row in results}
+                            print(f"✅ Found {len(valid_geoids)} valid geoids in census_tracts table for city_id={city_id}")
+                        except Exception as e:
+                            # If city_id column doesn't exist, fall back to all tracts
+                            if "column \"city_id\" does not exist" in str(e).lower():
+                                print(f"⚠️  city_id column not found in census_tracts table, using all tracts")
+                                cur.execute("SELECT DISTINCT geoid FROM census_tracts")
+                                results = cur.fetchall()
+                                valid_geoids = {row["geoid"] for row in results}
+                                print(f"✅ Found {len(valid_geoids)} valid geoids in census_tracts table (all tracts)")
+                            else:
+                                raise
             except Exception as e:
                 print(f"⚠️  Could not query database for geoids: {e}")
                 print(f"   Will collect all data without filtering")
@@ -58,7 +90,7 @@ if __name__ == "__main__":
 
     collector = CensusCollector()
     table_codes = list(collector.caller_map.keys())
-    years = list(range(2009, 2024))  # Include 2023
+    years = list(range(2022, 2024))  # Include 2023
 
     out_dir = os.path.join(os.path.dirname(__file__), "downloads")
     os.makedirs(out_dir, exist_ok=True)

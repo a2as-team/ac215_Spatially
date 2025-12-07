@@ -35,7 +35,8 @@ STATE_NAME_TO_ABBR = {
 # Format: "city_name": {"state": "STATE_ABBR", "county": "COUNTY_FIPS"}
 # Only cities with county mappings are supported for census data collection
 CITY_COUNTY_MAPPING = {
-    "boston": {"state": "MA", "county": "025"},        # Suffolk County - 207 tracts
+    "boston": {"state": "MA", "county": "025"},
+    "cambridge": {"state": "MA", "county": "017"},
 }
 
 def get_city_county(city_name: str) -> dict:

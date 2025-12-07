@@ -82,13 +82,14 @@ For zoning maps and census-tract maps, we tapped into city GIS systems, most of 
 
 [Boston Zoning Maps Image](#)
 
-For census data, we used the **U.S. Census Bureau API**. Because we collected many ACS tables (income, demographics, employment, housing, transportation), we needed a schema that could grow without redesign. We created three core tables:
+For census data, we built a collector that fetches from the **U.S. Census Bureau API**. We collected 18 ACS tables across income, demographics, employment, housing, and transportation—pulling tract-level data (11-digit GEOIDs) for fine-grained spatial analysis. Because these tables contain hundreds of variables, we needed a schema that could grow without redesign. We created four core tables:
 
+- **CENSUS_TRACT** — geographic boundaries with PostGIS geometry for spatial queries
 - **ACS_TABLE** — groups variables into topical categories
 - **ACS_VARIABLE** — stores variable identifiers (e.g., median income)
-- **ACS_VALUE** — stores the actual measurements
+- **ACS_VALUE** — stores the actual measurements with year for temporal analysis
 
-This structure allows new ACS datasets to be added seamlessly.
+This normalized structure allows new ACS datasets to be added seamlessly.
 
 [Census Data Table Structure Image](#)
 

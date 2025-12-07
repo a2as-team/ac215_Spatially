@@ -63,7 +63,6 @@ class CensusText2SQL:
            - variable_id (STRING, PRIMARY KEY): Variable identifier
            - acs_table_id (STRING, FOREIGN KEY): References acs_table.acs_table_id
            - name (STRING): Variable name
-           - concept (STRING): Variable concept/description
         
         4. acs_value
            - acs_value_id (INT, PRIMARY KEY): Value identifier

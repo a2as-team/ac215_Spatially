@@ -70,16 +70,15 @@ erDiagram
     }
 
     ACS_VARIABLE {
-        string variable_id PK
+        int id PK
         string acs_table_id FK
         string name
-        string concept
     }
 
     ACS_VALUE {
         int acs_value_id PK
         string geoid FK
-        string variable_id FK
+        int variable_id FK
         int year
         float value
     }

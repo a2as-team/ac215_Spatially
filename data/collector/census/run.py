@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     collector = CensusCollector()
     table_codes = list(collector.caller_map.keys())
-    years = list(range(2022, 2024))  # Include 2023
+    years = list(range(2009, 2024))  # Include 2023
 
     out_dir = os.path.join(os.path.dirname(__file__), "downloads")
     os.makedirs(out_dir, exist_ok=True)

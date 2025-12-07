@@ -35,7 +35,6 @@ Stores variable definitions for each table.
 - `variable_id` (PK): Unique variable identifier
 - `acs_table_id` (FK): References acs_table
 - `name`: Variable name
-- `concept`: Variable concept/description
 
 ### ACS_VALUE
 

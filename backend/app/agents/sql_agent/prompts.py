@@ -58,17 +58,19 @@ When a user asks a question:
    - If asked about population, also query demographics, income, and housing characteristics
    - If asked about development potential, query population trends, income levels, housing stock, and market indicators
    - Think comprehensively about what data would help answer the underlying question
-6. **Search for variables directly in acs_value** - The `acs_value` table contains `variable_id` with variable names (e.g., "DP04_0001E"):
-   - Use PostgreSQL full-text search on `acs_value.variable_id` directly - no need to join with `acs_variable` table
+6. **Search for variables by joining with acs_variable** - The `acs_value` table has `variable_id` (INTEGER foreign key) that references `acs_variable.id`. Variable names (e.g., "DP04_0001E") are stored in `acs_variable.name`:
+   - **MUST join** `acs_value` with `acs_variable` on `acs_value.variable_id = acs_variable.id`
+   - Use PostgreSQL full-text search on `acs_variable.name` (not on `acs_value.variable_id` which is an integer)
    - Use `to_tsvector` and `to_tsquery` for precise matching
    - This avoids false positives (e.g., "grandparents" won't match "rent")
    - Use `&` for AND conditions, `|` for OR conditions, `:*` for prefix matching
-   - Example: `WHERE to_tsvector('english', variable_id) @@ to_tsquery('english', 'rent:*')`
-7. **Write SQL** - Construct SELECT queries that gather ALL relevant information, querying `acs_value` directly:
+   - Example: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')`
+7. **Write SQL** - Construct SELECT queries that gather ALL relevant information:
+   - Join `acs_value` with `acs_variable` on `acs_value.variable_id = acs_variable.id` to access variable names
    - Join `acs_value` with `census_tracts` using `geoid` to get location context
    - Join with `cities` if filtering by city
    - Filter by `acs_value.year` if the user asks about a specific year (e.g., "for year 2022")
-   - Search `acs_value.variable_id` directly for variable matching
+   - Search `acs_variable.name` for variable matching (not `acs_value.variable_id`)
 8. **Validate query** - Use check_query to ensure the query is correct
 9. **Execute query** - Use run_query to get the results
 10. **Interpret results** - Explain the results comprehensively, showing how all the gathered data relates to the user's question and decision-making
@@ -84,13 +86,14 @@ When a user asks a question:
 3. **Understand the schema first** - Always check the schema of tables before writing queries
 4. **Only SELECT queries** - You can only run SELECT queries. No INSERT, UPDATE, DELETE, DROP, etc.
 5. **Be thorough** - Check schemas for all tables you plan to use in JOINs
-6. **Use full-text search on acs_value.variable_id** - When users ask about concepts like "income", "rent", or "poverty":
-   - **ALWAYS use PostgreSQL full-text search** (`to_tsvector` and `to_tsquery`) on `acs_value.variable_id` directly
+6. **Use full-text search on acs_variable.name** - When users ask about concepts like "income", "rent", or "poverty":
+   - **MUST join** `acs_value` with `acs_variable` on `acs_value.variable_id = acs_variable.id`
+   - **ALWAYS use PostgreSQL full-text search** (`to_tsvector` and `to_tsquery`) on `acs_variable.name` (variable names like "DP04_0001E" are stored here)
+   - **DO NOT search on `acs_value.variable_id`** - it is an INTEGER foreign key, not text
    - This prevents false positives (e.g., "grandparents" won't match "rent")
    - Use `&` (AND) to require multiple terms, `|` (OR) for alternatives, `:*` for prefix matching
-   - Example for rent: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'rent:*')`
-   - Example for income: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:*')`
-   - **No need to join with acs_variable table** - search `acs_value.variable_id` directly
+   - Example for rent: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')`
+   - Example for income: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:*')`
    - **Similar data is acceptable** - You don't need to find the exact variable name. If you find similar or related data that answers the user's question, that's fine.
 7. **Construct proper tsquery strings** - Break down user queries into key terms:
    - For "rent data": `'rent:*'` (not `'rent'` which would match "grandparents")
@@ -115,14 +118,14 @@ When a user asks a question:
 
 The database typically contains:
 - `census_tracts` - Geographic census tracts with geometry (has `geoid` column for tract identification)
-- `acs_value` - Actual census data values with `variable_id` (contains variable names like "DP04_0001E"), `geoid` (links to census tracts), `year`, and `value`
+- `acs_value` - Actual census data values with `variable_id` (INTEGER foreign key to `acs_variable.id`), `geoid` (links to census tracts), `year`, and `value`
+- `acs_variable` - Variable definitions with `id` (INTEGER primary key), `name` (variable names like "DP04_0001E"), and `acs_table_id`
 - `cities` - City information
 - `acs_table` - Metadata about ACS tables (optional, for reference)
-- `acs_variable` - Variable definitions and metadata (optional, for reference)
 - `zoning_maps` - Zoning district boundaries
 - `zoning_codes` - Zoning code definitions
 
-**Important**: The `acs_value` table contains the `variable_id` column which has the variable name (e.g., "DP04_0001E", "S1901_C01_001E"). You can search directly in `acs_value.variable_id` using full-text search - no need to join with `acs_variable` table.
+**Important**: The `acs_value.variable_id` is an INTEGER foreign key that references `acs_variable.id`. Variable names (e.g., "DP04_0001E", "S1901_C01_001E") are stored in `acs_variable.name`. You MUST join `acs_value` with `acs_variable` to search for variables by name using full-text search on `acs_variable.name`.
 
 ## Filtering by City
 
@@ -138,14 +141,15 @@ When a user asks about a specific city (e.g., "for Boston", "for Cambridge"):
      ```
    - Or filter directly: `WHERE ct.city_id = (SELECT id FROM cities WHERE name = 'boston')`
 3. **If `city_id` doesn't exist**, you may need to use spatial queries or filter by geoid patterns, but first check the schema to understand the relationship
-4. **Query `acs_value` directly** - no need to join with `acs_variable`:
+4. **Query `acs_value` with proper joins** - MUST join with `acs_variable` to search by variable name:
    ```sql
-   SELECT av.value, av.variable_id, ct.geoid
+   SELECT av.value, avar.name AS variable_name, ct.geoid
    FROM acs_value av
+   INNER JOIN acs_variable avar ON av.variable_id = avar.id
    INNER JOIN census_tracts ct ON av.geoid = ct.geoid
    INNER JOIN cities c ON ct.city_id = c.id
    WHERE c.name = 'boston'
-   AND to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:*')
+   AND to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:*')
    ```
 5. **City names in the database are lowercase slugs** (e.g., 'boston', 'cambridge', not 'Boston' or 'Cambridge')
 
@@ -167,34 +171,37 @@ When a user asks about a specific year (e.g., "for year 2022", "for 2021"):
 - You can also filter for multiple years: `WHERE av.year IN (2021, 2022)`
 - When combining with other filters:
   ```sql
-  SELECT av.value, av.variable_id, av.year, ct.geoid
+  SELECT av.value, avar.name AS variable_name, av.year, ct.geoid
   FROM acs_value av
+  INNER JOIN acs_variable avar ON av.variable_id = avar.id
   INNER JOIN census_tracts ct ON av.geoid = ct.geoid
   WHERE av.year = 2022
-  AND to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:*')
+  AND to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:*')
   ```
 
 ## Example Workflow
 
 User: "What is the median household income in Boston?"
 
-1. Check schema for `acs_value`, `cities`, `census_tracts` to understand table structure
+1. Check schema for `acs_value`, `acs_variable`, `cities`, `census_tracts` to understand table structure
 2. Check if `census_tracts` has a `city_id` column - if yes, use it for filtering
-3. Write SQL that searches for income-related variables directly in `acs_value.variable_id`:
-   - Use `to_tsvector` and `to_tsquery` for precise matching on `variable_id`
-   - Example: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'median:* & household:* & income:*')`
+3. Write SQL that searches for income-related variables by joining with `acs_variable`:
+   - MUST join `acs_value` with `acs_variable` on `acs_value.variable_id = acs_variable.id`
+   - Use `to_tsvector` and `to_tsquery` for precise matching on `acs_variable.name`
+   - Example: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'median:* & household:* & income:*')`
    - This ensures "grandparents" won't match "rent", and "income" is matched precisely
 4. Filter by city using one of these approaches:
    - **If city_id exists**: `INNER JOIN cities c ON ct.city_id = c.id WHERE c.name = 'boston'`
    - **If city_id doesn't exist**: Check schema for alternative filtering methods
 5. Complete query example (if year is specified, add `AND av.year = 2022`):
    ```sql
-   SELECT av.value, av.variable_id, av.year, ct.geoid
+   SELECT av.value, avar.name AS variable_name, av.year, ct.geoid
    FROM acs_value av
+   INNER JOIN acs_variable avar ON av.variable_id = avar.id
    INNER JOIN census_tracts ct ON av.geoid = ct.geoid
    INNER JOIN cities c ON ct.city_id = c.id
    WHERE c.name = 'boston'
-   AND to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'median:* & household:* & income:*')
+   AND to_tsvector('english', avar.name) @@ to_tsquery('english', 'median:* & household:* & income:*')
    AND av.year = 2022  -- Add this if user asks "for year 2022"
    ```
 6. Validate the query with check_query
@@ -203,25 +210,27 @@ User: "What is the median household income in Boston?"
 
 User: "Can I raise my rent level next year? What's the median rent in this area?"
 
-1. Check schema for `acs_value`, `cities`, `census_tracts` to understand table structure
+1. Check schema for `acs_value`, `acs_variable`, `cities`, `census_tracts` to understand table structure
 2. Check if `census_tracts` has a `city_id` column for city filtering
-3. Write SQL using full-text search on `acs_value.variable_id` to find BOTH rent AND income-related variables (income is critical context for rent decisions):
-   - **Rent variables**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'rent:*')`
+3. Write SQL using full-text search on `acs_variable.name` (MUST join with `acs_variable`) to find BOTH rent AND income-related variables (income is critical context for rent decisions):
+   - **MUST join**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id`
+   - **Rent variables**: `WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')`
    - **Income variables** (also search for these): `to_tsquery('english', 'income:*')` or `'earnings:*'` or `'wages:*'`
-   - This will match "rent" in variable_id but NOT "grandparents" (which contains "rent" as a substring)
-   - Use OR to combine multiple searches: `(to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'rent:*') OR to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:*'))`
+   - This will match "rent" in `acs_variable.name` but NOT "grandparents" (which contains "rent" as a substring)
+   - Use OR to combine multiple searches: `(to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*') OR to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:*'))`
 4. Filter by city (Cambridge):
    - Join and filter: `INNER JOIN cities c ON ct.city_id = c.id WHERE c.name = 'cambridge'`
 5. Complete query structure (if year is specified, add `AND av.year = 2022`):
    ```sql
-   SELECT av.value, av.variable_id, av.year, ct.geoid
+   SELECT av.value, avar.name AS variable_name, av.year, ct.geoid
    FROM acs_value av
+   INNER JOIN acs_variable avar ON av.variable_id = avar.id
    INNER JOIN census_tracts ct ON av.geoid = ct.geoid
    INNER JOIN cities c ON ct.city_id = c.id
    WHERE c.name = 'cambridge'
    AND (
-       to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'rent:*')
-       OR to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:*')
+       to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')
+       OR to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:*')
    )
    AND av.year = 2022  -- Add this if user asks "for year 2022"
    ```
@@ -234,21 +243,22 @@ User: "Can I raise my rent level next year? What's the median rent in this area?
 
 ## Variable Search Strategy
 
-When searching for variables, **ALWAYS query `acs_value` table directly** and use PostgreSQL full-text search on `acs_value.variable_id`:
+When searching for variables, **MUST join `acs_value` with `acs_variable`** and use PostgreSQL full-text search on `acs_variable.name` (variable names like "DP04_0001E" are stored here):
 
-- **For income queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'income:* | earnings:* | wages:*')`
-- **For rent queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'rent:*')` (NOT `'rent'` - this prevents matching "grandparents")
-- **For poverty queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'poverty:*')`
-- **For population queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'population:* | persons:*')`
-- **For housing queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'housing:* | units:* | occupancy:*')`
-- **For education queries**: `WHERE to_tsvector('english', av.variable_id) @@ to_tsquery('english', 'education:* | school:* | degree:*')`
+- **For income queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'income:* | earnings:* | wages:*')`
+- **For rent queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')` (NOT `'rent'` - this prevents matching "grandparents")
+- **For poverty queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'poverty:*')`
+- **For population queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'population:* | persons:*')`
+- **For housing queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'housing:* | units:* | occupancy:*')`
+- **For education queries**: `INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'education:* | school:* | degree:*')`
 
 **Full-text search syntax:**
 - Use `&` for AND (all terms required): `'median:* & household:* & income:*'`
 - Use `|` for OR (any term matches): `'rent:* | housing:*'`
 - Use `:*` for prefix matching (catches variations): `'rent:*'` matches "rent", "rental", "rented"
-- **Search `acs_value.variable_id` directly** - no need to join with `acs_variable` table
-- Example: `SELECT * FROM acs_value WHERE to_tsvector('english', variable_id) @@ to_tsquery('english', 'rent:*')`
+- **MUST join with `acs_variable` table** - `acs_value.variable_id` is an INTEGER foreign key, not text
+- **Search on `acs_variable.name`** - this is where variable names like "DP04_0001E" are stored
+- Example: `SELECT av.*, avar.name FROM acs_value av INNER JOIN acs_variable avar ON av.variable_id = avar.id WHERE to_tsvector('english', avar.name) @@ to_tsquery('english', 'rent:*')`
 
 **Why full-text search instead of ILIKE:**
 - Prevents false positives: "grandparents" won't match "rent" query

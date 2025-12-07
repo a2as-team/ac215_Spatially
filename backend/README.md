@@ -5,6 +5,7 @@ FastAPI backend for the Spatially application, providing REST APIs for querying 
 ## Overview
 
 The backend provides three main API endpoints:
+
 - **Census API**: Natural language queries about census data using text-to-SQL
 - **Zoning Ordinance API**: Semantic search in zoning ordinance documents
 - **Development Plans API**: Semantic search and NER-based entity extraction for development plans
@@ -88,6 +89,7 @@ ENVIRONMENT=local
 ```
 
 Alternatively, you can use the secrets files in the `secrets/` directory:
+
 - `ac215-spatially-project.env`
 - `ac215-spatially-aws-postgres-db.env`
 
@@ -170,11 +172,13 @@ Once the server is running, access the interactive API documentation:
 ### Census API
 
 **Search Census Data**
+
 ```
 GET /api/v1/census/search?question={your_question}&city={city}&year={year}
 ```
 
 Example:
+
 ```bash
 curl "http://localhost:8000/api/v1/census/search?question=What%20is%20the%20median%20household%20income%20in%20Boston?&city=boston&year=2023"
 ```
@@ -182,21 +186,25 @@ curl "http://localhost:8000/api/v1/census/search?question=What%20is%20the%20medi
 ### Zoning Ordinance API
 
 **Search Zoning Ordinances**
+
 ```
 GET /api/v1/zoning_ordinance/search?city={city}&question={your_question}&top_k={k}
 ```
 
 Example:
+
 ```bash
 curl "http://localhost:8000/api/v1/zoning_ordinance/search?city=boston&question=What%20are%20the%20height%20restrictions%20for%20residential%20zones?&top_k=5"
 ```
 
 **Get Zoning at Location**
+
 ```
 GET /api/v1/zoning_ordinance/zoning?city={city}&latitude={lat}&longitude={lon}
 ```
 
 Example:
+
 ```bash
 curl "http://localhost:8000/api/v1/zoning_ordinance/zoning?city=boston&latitude=42.3601&longitude=-71.0589"
 ```
@@ -315,8 +323,8 @@ uv run pytest --cov=app --cov-report=html
 
 ### Test Files
 
-| File | Description |
-|------|-------------|
+| File                     | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
 | `test_agent_location.py` | Tests for LocationDataAgent, CityDataAgent, and SmartDataAgentRunner |
 
 ## Code Quality

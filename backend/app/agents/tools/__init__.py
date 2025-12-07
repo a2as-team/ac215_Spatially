@@ -15,8 +15,6 @@ Structure:
 from .functions import (
     # Census
     query_census_data,
-    query_census_by_geoids,
-    query_census_by_geojson,
     # Zoning
     query_zoning_ordinance,
     query_zoning_by_location,
@@ -32,6 +30,7 @@ from .functions import (
 # Creators - factory functions that bind parameters
 from .creators import (
     create_census_tool,
+    create_location_census_tool,
     create_zoning_tool,
     create_location_zoning_tool,
     create_location_zoning_code_tool,
@@ -56,8 +55,6 @@ __all__ = [
     "BaseTool",
     # Census functions
     "query_census_data",
-    "query_census_by_geoids",
-    "query_census_by_geojson",
     # Zoning functions
     "query_zoning_ordinance",
     "query_zoning_by_location",
@@ -70,6 +67,7 @@ __all__ = [
     "query_development_plans_by_zone",
     # Census creators
     "create_census_tool",
+    "create_location_census_tool",
     # Zoning creators
     "create_zoning_tool",
     "create_location_zoning_tool",

@@ -1,10 +1,5 @@
 from utils.selenium import SeleniumUtil
-from utils.db_accessor import DBAccessor
 from .base import CensusTractBaseCollector
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException
 import geopandas as gpd
 import time
 from pathlib import Path
@@ -19,6 +14,9 @@ class CambridgeCensusTractCollector(CensusTractBaseCollector):
 
     def city(self) -> str:
         return "cambridge"
+
+    def state(self) -> str:
+        return "Massachusetts"
 
     def resource_url(self) -> str:
         return "https://services1.arcgis.com/WnzC35krSYGuYov4/arcgis/rest/services/2020_Tracts/FeatureServer"
@@ -37,24 +35,6 @@ class CambridgeCensusTractCollector(CensusTractBaseCollector):
             file_path=file_path,
             destination_path=f"{self.gcp_storage_parent_directory()}/{gcs_filename}",
         )
-
-    def upload_to_db(self, gdf: gpd.GeoDataFrame):
-        """Upload the geopandas dataframe to the database."""
-        # Create table if needed (database is auto-created on first connect)
-        self._create_census_tract_table(self.db)
-
-        # Ensure GeoDataFrame is in the correct CRS
-        gdf = self._ensure_crs(gdf)
-
-        # Insert each row
-        geoid_col = self.geoid_column()
-
-        for _, row in gdf.iterrows():
-            geoid = row[geoid_col]
-            # Convert geometry to WKT (Well-Known Text)
-            geometry_wkt = row["geometry"].wkt
-
-            self._insert_census_tract(self.db, geoid, geometry_wkt)
 
     def _wait_for_download_complete(self, timeout=60):
         """Wait for download to complete by checking for downloaded file."""

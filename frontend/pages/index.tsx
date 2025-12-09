@@ -12,7 +12,7 @@ import {
   Stack,
   Center,
 } from "@mantine/core";
-import { IconMapPin } from "@tabler/icons-react";
+import { IconMapPin, IconFileImport } from "@tabler/icons-react";
 import { getCitiesServerSide, City } from "@/services/citiesApi";
 
 interface HomeProps {
@@ -81,6 +81,36 @@ export default function Home({ cities }: HomeProps) {
               ))}
             </SimpleGrid>
           )}
+        </div>
+
+        {/* GIS Converter Section */}
+        <div>
+          <Title order={2} mb="md">
+            Tools for Municipalities
+          </Title>
+          <Card
+            shadow="sm"
+            padding="lg"
+            radius="md"
+            withBorder
+            style={{ cursor: "pointer" }}
+            onClick={() => router.push("/convert")}
+            className="hover:shadow-lg transition-shadow"
+          >
+            <Group justify="space-between" mb="xs">
+              <Text fw={500} size="lg">
+                PDF/Image to GIS Converter
+              </Text>
+              <IconFileImport size={24} />
+            </Group>
+            <Text size="sm" c="dimmed">
+              Convert hand-drawn or PDF zoning maps into GIS-ready data.
+              Perfect for municipalities without GIS capacity.
+            </Text>
+            <Badge color="violet" variant="light" mt="md">
+              Free for Municipalities
+            </Badge>
+          </Card>
         </div>
       </Stack>
     </Container>

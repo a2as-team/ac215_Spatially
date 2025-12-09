@@ -200,6 +200,7 @@ We intentionally avoided Pulumi or cloud-specific deployment tools so government
 ### Frontend
 We used **Next.js**, allowing zoning map data to be pre-rendered for performance. Deployment on **Vercel** was straightforward.
 
+### Overall Architecture
 | ![Overall Architecture Diagram](/docs/images/technical-architecture.jpeg)
 | :--: |
 | *This diagram shows the end-to-end architecture of Spatially—from data ingestion and processing (ETL), to NER fine-tuning, vector embedding generation, database storage, and finally the deployment of LLM-powered Smart Data Agents accessible through the Next.js frontend.* |

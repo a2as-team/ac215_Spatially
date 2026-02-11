@@ -1,0 +1,926 @@
+manifest:
+  version: "0.1.3"
+  schema: https://a2as.org/cert/schema
+  subject:
+    name: hunkim98/ac215_spatially
+    source: https://github.com/hunkim98/ac215_spatially
+    branch: main
+    commit: "73669911"
+    scope: [backend/app/agents/__init__.py, backend/app/agents/city_data_agent/__init__.py, backend/app/agents/city_data_agent/agent.py,
+      backend/app/agents/city_data_agent/prompts.py, backend/app/agents/location_data_agent/__init__.py, backend/app/agents/location_data_agent/agent.py,
+      backend/app/agents/location_data_agent/prompts.py, backend/app/agents/smart_data_agent/__init__.py, backend/app/agents/smart_data_agent/agent.py,
+      backend/app/agents/smart_data_agent/runner.py, backend/app/agents/sql_agent/__init__.py, backend/app/agents/sql_agent/agent.py,
+      backend/app/agents/sql_agent/prompts.py, backend/app/agents/sql_agent/runner.py, backend/app/api/routes/v1/chat.py,
+      backend/app/utils/agent/config.py, workflow/deploy/gke/cluster.py, workflow/deploy/k8s/secrets.py]
+  issued:
+    by: A2AS.org
+    at: '2026-02-11T16:52:19Z'
+    url: https://a2as.org/certified/agents/hunkim98/ac215_spatially
+  signatures:
+    digest: sha256:nivmapPOw-6II3yhLPyVBMlXKzLxxz20aPXV7TjI2eo
+    key: ed25519:d3nu5Z0a3R5Bis2oYTKmSxK8QlgiEwswafoFFb8i3x4
+    sig: ed25519:i014xkmtlSHpyHwsEZ2hrQuBOVebSAz2rFLKWgjvOs2v_f4OxvhRY94cHMflncjpUVIGFydNhDUyGY_I9I46CA
+
+agents:
+  agent.AgentConfig.gemini_agent:
+    type: class
+    models: [gemini-2.0-flash]
+    params:
+      name: GeminiAgent
+      instruction: [You are a helpful assistant.]
+      class: AgentConfig
+  agent.create.0:
+    type: factory
+    models: [self.model]
+    tools: [census_tool, zoning_code_tool, zoning_ordinance_tool, development_plans_proximity_tool, development_plans_zone_tool,
+      cite_tool]
+    params:
+      name: LocationDataAgent
+      instruction: instruction
+      function: create
+      instance: agent.create
+  agent.create.1:
+    type: factory
+    models: [self.model]
+    tools: [census_tool, zoning_tool, development_plans_tool, cite_tool]
+    params:
+      name: CityDataAgent
+      instruction: instruction
+      function: create
+  agent.create.2:
+    type: factory
+    models: [self.model]
+    tools: [list_tables_tool, check_schema_tool, check_query_tool, run_query_tool]
+    params:
+      name: SQLAgent
+      instruction: ['## Your Context', '- City-wide zoning policies and regulations', '- General demographic information',
+        '- Comparisons between different zoning districts', '- Development projects and proposals across the city', '## Available
+          Tools', '### 1. query_census_data', 'Use this for demographic and statistical questions:', '- Population statistics
+          (age, gender, race distribution)', '- Housing data (units, occupancy, values, rent)', '- Income and poverty levels',
+        '- Employment and education statistics', '### 2. query_zoning_ordinance', 'Use this for zoning-related questions:',
+        '- Zoning regulations and rules', '- What is allowed in different zoning districts', '- Building height, setback,
+          or density requirements', '- Land use permissions', '- Parking requirements', '- Special permits and variances',
+        '### 3. query_development_plans', 'Use this for development project questions:', '- Proposed development projects
+          and their details', '- Project descriptions, building specifications', '- Development approvals and requirements',
+        '- Article references in plans (e.g., Article 50, Section 32)', '- Project timelines, status, and outcomes', '- Building
+          heights, units, parking in proposed projects', '**IMPORTANT:** Only use the article_reference filter when the user
+          EXPLICITLY', 'mentions specific articles:', '- "Show me projects requiring Article 50" → use article_reference=["Article
+          50"]', '- "What projects are proposed?" → do NOT use article_reference filter', '## CRITICAL: ALWAYS LOOK UP REFERENCED
+          CONTENT', '**NEVER tell the user to "consult Table X" or "see Article Y" - YOU must look it up for them!**', 'If
+          your search results mention:', '- "See Table B for dimensional requirements" → Call the tool again with "Table B
+          dimensional requirements"', '- "Refer to Article 13" → Call the tool again with "Article 13"', '- "Height limits
+          in Section 5.2" → Call the tool again with "Section 5.2 height limits"', 'Keep calling the tool until you have ACTUAL
+          VALUES (numbers, specific requirements) to give the user.', Do NOT respond with "you would need to consult..." -
+          that's YOUR job!, '## Guidelines', 1. **Always use the appropriate tool** - don't guess or make up information,
+        '2. **Be clear about scope** - answers apply to the city in general, not a specific location', '3. When discussing
+          projects, mention project names and article references when relevant', '4. If the question would benefit from a
+          specific location, suggest the user select one on the map', '5. If information is not available, say so clearly',
+        '## CITING SOURCES - MANDATORY', '**ALWAYS call `cite_sources` after querying development plans or zoning ordinances!**',
+        This allows users to see and verify the original documents in the sidebar., '**HOW TO CITE:**', '```', cite_sources(,
+        'store_name="development_plans",  # or "ordinances"', 'source_indices=[0, 1, 2],        # indices of results you used',
+        'highlights=["key quote"],', 'reasons=["Why relevant"]', ), '```', '## Response Format - ABSOLUTELY CRITICAL', Your
+          response must contain DETAILED INFORMATION extracted from the tool results., The user should learn everything they
+          need from YOUR response text., '**UNACCEPTABLE responses (you will be penalized for these):**', '- "I have cited
+          the sources in the sidebar for your review." ❌', '- "The projects are Bartlett Station, 125 Lincoln Street... I
+          have cited the sources." ❌', '- "Is there anything else I can help you with?" (without providing details first)
+          ❌', '- Any response under 100 words when answering about development plans ❌', '- Mentioning project names without
+          explaining what each project IS ❌', '**REQUIRED response format for development plan questions:**', 'For EACH project
+          mentioned, you MUST include:', '- **Project name and address**', '- **What is being built** (residential, commercial,
+          mixed-use, etc.)', '- **Size/scale** (number of units, square footage, building height)', '- **Key features** (affordable
+          housing, parking, retail space, etc.)', '- **Status** (proposed, approved, under construction, etc.)', '**Example
+          of a GOOD response:**', '"**125 Lincoln Street** is a proposed mixed-use development in the South End featuring:',
+        '- **Size**: 250,000 square feet across 12 stories', '- **Uses**: 180 residential units (15% affordable), ground-floor
+          retail, 150 parking spaces', '- **Features**: Rooftop amenity space, LEED Gold certification target', '- **Status**:
+          Currently in Article 80 Large Project Review', '**Bartlett Station Lot D** is a transit-oriented development near
+          Dudley Square including:', '- **Size**: 85 residential units in a 6-story building', '- **Uses**: Mixed-income housing
+          with community space', '- **Features**: Direct connection to Bartlett MBTA station', '..."', 'After providing this
+          detailed information, THEN call cite_sources.', 'When responding:', 1. Query the appropriate tool, 2. **Extract
+          and present ALL relevant details** from the results, 3. Format information clearly with bullet points or sections,
+        4. Call cite_sources at the end, 5. Ask if user wants more details on any specific project]
+      function: create
+
+models:
+  gemini-2.0-flash:
+    type: literal
+    agents: [agent.AgentConfig.gemini_agent]
+  self.model:
+    type: literal
+    agents: [agent.create.0, agent.create.1, agent.create.2]
+
+tools:
+  census_tool:
+    type: function
+    agents: [agent.create.0, agent.create.1]
+  check_query_tool:
+    type: function
+    agents: [agent.create.2]
+  check_schema_tool:
+    type: function
+    agents: [agent.create.2]
+  cite_tool:
+    type: function
+    agents: [agent.create.0, agent.create.1]
+  development_plans_proximity_tool:
+    type: function
+    agents: [agent.create.0]
+  development_plans_tool:
+    type: function
+    agents: [agent.create.1]
+  development_plans_zone_tool:
+    type: function
+    agents: [agent.create.0]
+  list_tables_tool:
+    type: function
+    agents: [agent.create.2]
+  run_query_tool:
+    type: function
+    agents: [agent.create.2]
+  zoning_code_tool:
+    type: function
+    agents: [agent.create.0]
+  zoning_ordinance_tool:
+    type: function
+    agents: [agent.create.0]
+  zoning_tool:
+    type: function
+    agents: [agent.create.1]
+
+imports:
+  AdamW: torch.optim.AdamW
+  AgentConfig: utils.agent.config.AgentConfig
+  AgentContext: app.agents.manager.AgentContext
+  Annotated: typing.Annotated
+  Any: typing.Any
+  AnyUrl: pydantic.AnyUrl
+  APIRouter: fastapi.APIRouter
+  ArticleReferenceRequest: service.models.ArticleReferenceRequest
+  ArticleReferenceResponse: service.models.ArticleReferenceResponse
+  AsyncGenerator: typing.AsyncGenerator
+  asyncio: asyncio
+  AutoModelForTokenClassification: transformers.AutoModelForTokenClassification
+  AutoTokenizer: transformers.AutoTokenizer
+  BASE_ENTITY_TYPES: config.labels.BASE_ENTITY_TYPES
+  BaseModel: pydantic.BaseModel
+  BaseSettings: pydantic_settings.BaseSettings
+  BeforeValidator: pydantic.BeforeValidator
+  census: app.api.routes.v1.census
+  CensusTractSpatialQuery: app.utils.spatial_query.census_tract.CensusTractSpatialQuery
+  chat: app.api.routes.v1.chat
+  ChatHistoryManager: manager.ChatHistoryManager
+  ChatManager: app.agents.manager.ChatManager
+  ChatMessage: smart_data_agent.ChatMessage
+  cities: app.api.routes.v1.cities
+  CITY_AGENT_DESCRIPTION: prompts.CITY_AGENT_DESCRIPTION
+  CITY_AGENT_INSTRUCTION: prompts.CITY_AGENT_INSTRUCTION
+  CityDataAgent: app.agents.city_data_agent.CityDataAgent
+  ClassLabel: datasets.ClassLabel
+  CloudRunConfig: config.CloudRunConfig
+  CloudRunDeploy: scripts.cloudrun_deploy.CloudRunDeploy
+  CloudRunNERClient: cloudrun_client.CloudRunNERClient
+  CloudRunService: service.CloudRunService
+  computed_field: pydantic.computed_field
+  config: service.config.config
+  configure_vertexai: config.configure_vertexai
+  CORSMiddleware: fastapi.middleware.cors.CORSMiddleware
+  Counter: collections.Counter
+  create_census_tool: app.agents.tools.create_census_tool
+  create_check_query_tool: app.agents.tools.creators.sql.create_check_query_tool
+  create_check_schema_tool: app.agents.tools.creators.sql.create_check_schema_tool
+  create_cite_sources_tool: app.agents.tools.create_cite_sources_tool
+  create_development_plans_tool: app.agents.tools.create_development_plans_tool
+  create_list_tables_tool: app.agents.tools.creators.sql.create_list_tables_tool
+  create_location_census_tool: app.agents.tools.create_location_census_tool
+  create_location_development_plans_proximity_tool: app.agents.tools.create_location_development_plans_proximity_tool
+  create_location_development_plans_zone_tool: app.agents.tools.create_location_development_plans_zone_tool
+  create_location_zoning_code_tool: app.agents.tools.create_location_zoning_code_tool
+  create_location_zoning_tool: app.agents.tools.create_location_zoning_tool
+  create_run_query_tool: app.agents.tools.creators.sql.create_run_query_tool
+  create_zoning_tool: app.agents.tools.create_zoning_tool
+  dataclass: dataclasses.dataclass
+  DataCollatorForTokenClassification: transformers.DataCollatorForTokenClassification
+  DataLoader: torch.utils.data.DataLoader
+  Dataset: datasets.Dataset
+  datetime: datetime.datetime
+  DESCRIPTION: prompts.DESCRIPTION
+  development_plans: app.api.routes.v1.development_plans
+  Dict: typing.Dict
+  EmailStr: pydantic.EmailStr
+  ensure_configured: app.agents.config.ensure_configured
+  FastAPI: fastapi.FastAPI
+  field: dataclasses.field
+  Field: pydantic.Field
+  futures: concurrent.futures
+  GCPStorage: utils.gcp_storage.GCPStorage
+  GKECluster: gke.cluster.GKECluster
+  GKEDeploy: scripts.gke_deploy.GKEDeploy
+  Header: fastapi.Header
+  health_checker: service.health.health_checker
+  HealthResponse: service.models.HealthResponse
+  HTTPException: fastapi.HTTPException
+  HttpUrl: pydantic.HttpUrl
+  IngressSetup: k8s.ingress.IngressSetup
+  InMemorySessionService: google.adk.sessions.InMemorySessionService
+  INSTRUCTION: prompts.INSTRUCTION
+  json: json
+  List: typing.List
+  Literal: typing.Literal
+  LlmAgent: google.adk.agents.LlmAgent
+  LOCATION_AGENT_DESCRIPTION: prompts.LOCATION_AGENT_DESCRIPTION
+  LOCATION_AGENT_INSTRUCTION: prompts.LOCATION_AGENT_INSTRUCTION
+  LocationDataAgent: app.agents.location_data_agent.LocationDataAgent
+  logging: logging
+  model_validator: pydantic.model_validator
+  NER_LABELS: config.labels.NER_LABELS
+  NERPredictor: predict.NERPredictor
+  Optional: typing.Optional
+  os: os
+  PackageConfig: config.PackageConfig
+  Path: pathlib.Path
+  PostgresDsn: pydantic.PostgresDsn
+  publish_local_docker_images: registry.publish_images.publish_local_docker_images
+  publish_trainer_packages: publish_packages.publish_trainer_packages
+  Query: fastapi.Query
+  random: random
+  ReadyResponse: service.models.ReadyResponse
+  RegistryConfig: registry.config.RegistryConfig
+  Runner: google.adk.runners.Runner
+  secrets: secrets
+  SecretsManager: k8s.secrets.SecretsManager
+  Self: typing_extensions.Self
+  set_current_context: app.agents.manager.set_current_context
+  settings: app.core.config.settings
+  SettingsConfigDict: pydantic_settings.SettingsConfigDict
+  SmartArgItem: utils.smart_arg_parser.SmartArgItem
+  SmartArgParser: utils.smart_arg_parser.SmartArgParser
+  SmartDataAgent: smart_data_agent.SmartDataAgent
+  SmartDataAgentRunner: app.agents.SmartDataAgentRunner
+  SQLAgent: agent.SQLAgent
+  SQLAgentRunner: app.agents.sql_agent.runner.SQLAgentRunner
+  status: fastapi.status
+  subprocess: subprocess
+  sys: sys
+  tempfile: tempfile
+  time: time
+  torch: torch
+  tqdm: tqdm.auto.tqdm
+  Trainer: trainer.train.Trainer
+  Tuple: typing.Tuple
+  types: google.genai.types
+  uuid: uuid
+  uvicorn: uvicorn
+  wandb: wandb
+  warnings: warnings
+  zoning_ordinance: app.api.routes.v1.zoning_ordinance
+
+functions:
+  __init__:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, city, latitude, longitude, model, session_id, user_id, chat_id, chat_manager, agent_context]
+  __new__:
+    type: sync
+    module: backend.app.utils.ner.development_plans_ner
+    args: [cls]
+  _build_history_summary:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: str
+  _create_new_session:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  _create_stratification_labels:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, dataset]
+    params:
+      returns: list
+  _decode_bio_tags:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self, text, predictions, probabilities, offsets]
+    params:
+      returns: List[Dict]
+  _download_directory_from_gcs:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self, storage, gcs_prefix, local_path]
+  _download_model_from_gcs:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self]
+  _ensure_predictor_loaded:
+    type: sync
+    module: backend.app.utils.ner.development_plans_ner
+    args: [self]
+  _ensure_session:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  _generate_title:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: str
+  _init_agent:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  _load_model:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self]
+  _replay_history_to_session:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, location_changed, old_coords, new_coords]
+  add_labels_in_model_format:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, batch]
+    params:
+      returns: Dict
+  all_cors_origins:
+    type: sync
+    module: backend.app.core.config
+    args: [self]
+    params:
+      returns: list[str]
+  backend_image_repo:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  build_and_push_backend_image:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self]
+  clear_history:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  cluster_exists:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+    params:
+      returns: bool
+  confirm_cluster:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  continue_chat:
+    type: async
+    module: backend.app.api.routes.v1.chat
+    args: [chat_id, request, x_session_id]
+  create:
+    type: sync
+    module: backend.app.agents.sql_agent.agent
+    args: [self]
+    params:
+      returns: LlmAgent
+  create_and_check_cluster:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  create_cluster:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self, preemptible]
+  create_or_update_secret:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self, name, literals]
+  delete_chat:
+    type: async
+    module: backend.app.api.routes.v1.chat
+    args: [chat_id, x_session_id]
+  delete_cluster:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  delete_secret:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self, name]
+  deploy:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self, skip_ingress]
+  deploy_deployment_and_service:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self]
+  evaluate:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, loader, device]
+    params:
+      returns: float
+  extract_all_entities:
+    type: sync
+    module: backend.app.utils.ner.development_plans_ner
+    args: [self, text]
+    params:
+      returns: Dict
+  extract_article_references:
+    type: async
+    module: llm.development_plans.NER.service.main
+    args: [request]
+  from_context:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [cls, context, model, chat_manager]
+    params:
+      returns: SmartDataAgentRunner
+  get_agent_context:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: AgentContext
+  get_census:
+    type: sync
+    module: backend.app.api.routes.v1.census
+  get_chat:
+    type: async
+    module: backend.app.api.routes.v1.chat
+    args: [chat_id, x_session_id]
+  get_chats:
+    type: async
+    module: backend.app.api.routes.v1.chat
+    args: [x_session_id, limit]
+  get_context:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: Dict
+  get_credentials:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  get_deployments:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  get_history:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: List[Dict]
+  get_ingresses:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  get_ner_predictor:
+    type: sync
+    module: llm.development_plans.NER.service.main
+  get_pods:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  get_services:
+    type: sync
+    module: workflow.deploy.gke.cluster
+    args: [self]
+  group_entities_by_type:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self, entities]
+    params:
+      returns: Dict
+  health_check:
+    type: async
+    module: llm.development_plans.NER.service.main
+  import_gcs_annotation_data:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self]
+    params:
+      returns: Dataset
+  import_label_studio_data_from_json_data:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, data]
+    params:
+      returns: Dataset
+  import_label_studio_data_from_single_json:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, json_path]
+    params:
+      returns: Dataset
+  is_location_based:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+    params:
+      returns: bool
+  label_studio_annotation_gcs_storage_path:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [cls]
+    params:
+      returns: str
+  load_from_disk:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [cls, chat_id, session_id, chat_manager, model]
+    params:
+      returns: Optional[SmartDataAgentRunner]
+  main:
+    type: sync
+    module: llm.development_plans.NER.package.run.__main__
+  package_and_upload:
+    type: sync
+    module: workflow.packages.publish_packages
+    args: [package_name, package_dir, gcs_bucket, gcs_path]
+    params:
+      returns: bool
+  parse_cors:
+    type: sync
+    module: backend.app.core.config
+    args: [v]
+  predict_entities:
+    type: sync
+    module: llm.development_plans.NER.package.predictor.predict
+    args: [self, text]
+    params:
+      returns: List[Dict]
+  prepare_model_input_data:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, json_path, downsample_no_entities]
+    params:
+      returns: Dataset
+  preprocess_label_studio_data_for_long_text:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, json_path, json_data]
+    params:
+      returns: Dataset
+  process_one_label_studio_entry:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, entry]
+    params:
+      returns: Dict
+  publish_trainer_packages:
+    type: sync
+    module: workflow.packages.publish_packages
+    args: [packages]
+    params:
+      returns: bool
+  query_census_data:
+    type: sync
+    module: backend.app.agents.tools.functions.census.query_census_data
+    args: [question, city, year, latitude, longitude]
+    params:
+      returns: str
+  readiness_check:
+    type: async
+    module: llm.development_plans.NER.service.main
+  remove_existing_secrets:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  replay_history:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  restart_deployment:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self, deployment_name]
+  root:
+    type: async
+    module: llm.development_plans.NER.service.main
+  run:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, user_message]
+    params:
+      returns: str
+  run_command:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self, cmd, check, capture_output, ignore_error, input, text]
+    params:
+      returns: subprocess.CompletedProcess
+  run_stream:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, user_message]
+    params:
+      returns: AsyncGenerator
+  save_to_disk:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, title]
+    params:
+      returns: bool
+  search_census:
+    type: sync
+    module: backend.app.api.routes.v1.census
+    args: [question, city, latitude, longitude, year, limit]
+    params:
+      returns: Dict
+  set_defaults_from_env:
+    type: sync
+    module: backend.app.core.config
+    args: [self]
+    params:
+      returns: Self
+  set_history:
+    type: sync
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, history]
+  setup_all:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  setup_cloudflare_secrets:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  setup_db_secrets:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  setup_gcp_sa_key_secret:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  setup_gcp_secrets:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  start_chat:
+    type: async
+    module: backend.app.api.routes.v1.chat
+    args: [request, x_session_id]
+  status:
+    type: sync
+    module: workflow.deploy.k8s.secrets
+    args: [self]
+  switch_to_city_mode:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self]
+  switch_to_location_mode:
+    type: async
+    module: backend.app.agents.smart_data_agent.runner
+    args: [self, latitude, longitude]
+  train:
+    type: sync
+    module: llm.development_plans.NER.package.trainer.train
+    args: [self, batch_size, epochs, learning_rate, json_path, downsample_no_entities]
+  wait_for_deployment:
+    type: sync
+    module: workflow.deploy.scripts.gke_deploy
+    args: [self, deployment_name]
+
+variables:
+  AIP_MODEL_DIR:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [llm.development_plans.NER.package.trainer.train, llm.development_plans.NER.package.run.__main__]
+  APP_DB_NAME:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets, backend.app.core.config]
+  APP_NAME:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  BACKEND_CORS_ORIGINS:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets]
+  CLOUDFLARE_API_TOKEN:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets]
+  DOMAIN_FILTER:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets]
+  FINETUNE_GCS_BUCKET:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [backend.app.utils.ner.development_plans_ner]
+  GCP_PROJECT:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [backend.app.utils.ner.development_plans_ner, llm.development_plans.NER.package.trainer.train, workflow.deploy.k8s.secrets,
+        workflow.deploy.gke.cluster, backend.app.core.config]
+  GCP_REGION:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [backend.app.utils.ner.development_plans_ner, workflow.deploy.k8s.secrets, workflow.deploy.gke.cluster, backend.app.core.config]
+  GCS_BUCKET_NAME:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [llm.development_plans.NER.package.trainer.train]
+  GKE_DISK_SIZE:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GKE_MACHINE_TYPE:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GKE_MAX_NODES:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GKE_MIN_NODES:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GKE_NUM_NODES:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GKE_ZONE:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.gke.cluster]
+  GOOGLE_APPLICATION_CREDENTIALS:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [backend.app.utils.ner.development_plans_ner, workflow.deploy.k8s.secrets]
+  NER_SERVICE_URL:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets]
+  POSTGRE_HOST:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets, backend.app.core.config]
+  POSTGRE_PASSWORD:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets, backend.app.core.config]
+  POSTGRE_PORT:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets, backend.app.core.config]
+  POSTGRE_USER:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [workflow.deploy.k8s.secrets, backend.app.core.config]
+  USE_CLOUDRUN_NER:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [backend.app.utils.ner.development_plans_ner, workflow.deploy.k8s.secrets]
+  WANDB_API_KEY:
+    type: env
+    params:
+      caller: [os.environ.get]
+      path: [llm.development_plans.NER.package.trainer.train]
+
+files:
+  .tar:
+    type: literal
+    actions: [read]
+    params:
+      caller: [package_and_upload]
+      path: [temp_path]
+  .tar.gz:
+    type: literal
+    actions: [read]
+    params:
+      caller: [package_and_upload]
+      path: [temp_path]
+  /llm/development_plans/NER/package:
+    type: literal
+    actions: [read]
+    params:
+      caller: [_ensure_predictor_loaded]
+  deployment.yaml:
+    type: literal
+    actions: [read]
+    params:
+      caller: [deploy_deployment_and_service]
+      path: [K8S_DIR]
+  hpa.yaml:
+    type: literal
+    actions: [read]
+    params:
+      caller: [deploy_deployment_and_service]
+      path: [K8S_DIR]
+  json_path:
+    type: variable
+    actions: [read]
+    params:
+      caller: [open, json.load]
+      alias: [f]
+  llm_path:
+    type: literal
+    actions: [read]
+    params:
+      caller: [Path('/llm/development_plans/NER/package')]
+  local_file:
+    type: variable
+    actions: [write]
+    params:
+      caller: [local_file.parent.mkdir]
+  local_path:
+    type: variable
+    actions: [write]
+    params:
+      caller: [local_path.mkdir]
+  pvc.yaml:
+    type: literal
+    actions: [read]
+    params:
+      caller: [deploy_deployment_and_service]
+      path: [K8S_DIR]
+  service.yaml:
+    type: literal
+    actions: [read]
+    params:
+      caller: [deploy_deployment_and_service]
+      path: [K8S_DIR]
+  temp_dir:
+    type: variable
+    actions: [read]
+    params:
+      caller: [Path]
+  temp_path:
+    type: literal
+    actions: [read]
+    params:
+      caller: [Path(temp_dir)]
+  tmp/ner_model_inference:
+    type: literal
+    actions: [read]
+    params:
+      caller: [_download_model_from_gcs]
+  tmp/sample-bpda-data.json:
+    type: literal
+    actions: [read]
+    params:
+      caller: [import_label_studio_data_from_single_json]
+
+processes:
+  gsutil:
+    type: shell
+    actions: [exec]
+    args: [[cp, str(tar_gz_file), 'gs://{...}/{...}']]
+    params:
+      caller: [subprocess.run]
+      shell: ["False"]
+  gzip:
+    type: shell
+    actions: [exec]
+    args: [[str(tar_file)]]
+    params:
+      caller: [subprocess.run]
+      shell: ["False"]
+  tar:
+    type: shell
+    actions: [exec]
+    args: [[cvf, str(tar_file), -C, str(package_dir), "."]]
+    params:
+      caller: [subprocess.run]
+      shell: ["False"]
+
+networks:
+  zoning.:
+    type: api
+    actions: [GET]
+    urls: ['/{...}']
+    protocols: [https]
+    ports: ["443"]
+    params:
+      pattern: https://zoning.{domain_filter}
+      caller: [setup_gcp_secrets]
